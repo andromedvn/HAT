@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="124dp"
+            android:height="124dp"
+            android:viewportWidth="124"
+            android:viewportHeight="124">
+            
+            <group android:scaleX="0.70" android:scaleY="0.70" android:pivotX="62" android:pivotY="62">
+                
+                <!-- Brim grows perfectly from exact mathematical center outwards -->
+                <group android:name="base_brim_matrix" android:pivotX="60.4" android:pivotY="83.1" android:scaleX="0.0" android:alpha="0">
+                    <path
+                        android:pathData="M 34.6,81 L 86.2,81 A 1.8,1.8 0 0,1 88,82.8 L 88,83.4 A 1.8,1.8 0 0,1 86.2,85.2 L 34.6,85.2 A 1.8,1.8 0 0,1 32.8,83.4 L 32.8,82.8 A 1.8,1.8 0 0,1 34.6,81 Z"
+                        android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline" />
+                </group>
+
+                <!-- Independent Waterfall Columns -->
+                <group android:name="bar1" android:pivotY="75.4" android:scaleY="0.0">
+                    <path android:pathData="M 39,41 A 2.2,2.2 0 0,1 43.4,41 L 43.4,75.4 A 2.2,2.2 0 0,1 39,75.4 Z"
+                        android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline" />
+                </group>
+
+                <group android:name="bar2" android:pivotY="75.4" android:scaleY="0.0">
+                    <path android:pathData="M 48.6,41 A 2.2,2.2 0 0,1 53,41 L 53,75.4 A 2.2,2.2 0 0,1 48.6,75.4 Z"
+                        android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline" />
+                </group>
+
+                <group android:name="bar3" android:pivotY="75.4" android:scaleY="0.0">
+                    <path android:pathData="M 58.2,41 A 2.2,2.2 0 0,1 62.6,41 L 62.6,75.4 A 2.2,2.2 0 0,1 58.2,75.4 Z"
+                        android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline" />
+                </group>
+
+                <group android:name="bar4" android:pivotY="75.4" android:scaleY="0.0">
+                    <path android:pathData="M 67.8,41 A 2.2,2.2 0 0,1 72.2,41 L 72.2,75.4 A 2.2,2.2 0 0,1 67.8,75.4 Z"
+                        android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline" />
+                </group>
+                
+                <!-- 5th Column Mechanics: Rises exactly like the others as a single unified piece, then geometrically separates by sliding upward perfectly mimicking the UI Chart click -->
+                <group android:name="bar5" android:pivotY="75.4" android:scaleY="0.0">
+                    
+                    <path android:name="bar5_unified_path"
+                        android:pathData="M 77.4,43.6 A 2.2,2.2 0 0,1 81.8,43.6 L 81.8,75.4 A 2.2,2.2 0 0,1 77.4,75.4 Z"
+                        android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline"
+                        android:fillAlpha="1.0" android:strokeAlpha="1.0" />
+                    
+                    <!-- Top Stack initialized exactly 2.6dp pushed down, rendering natively merged with the lower half to avoid artifacting before translation starts -->
+                    <group android:name="bar5_split_upper" android:translateY="2.6">
+                        <path android:name="bar5_split_upper_path"
+                            android:pathData="M 77.4,41 A 2.2,2.2 0 0,1 81.8,41 L 81.8,50 A 2.2,2.2 0 0,1 77.4,50 Z"
+                            android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline"
+                            android:fillAlpha="0.0" android:strokeAlpha="0.0" />
+                    </group>
+
+                    <group android:name="bar5_split_lower" android:translateY="0.0">
+                        <path android:name="bar5_split_lower_path"
+                            android:pathData="M 77.4,57 A 2.2,2.2 0 0,1 81.8,57 L 81.8,75.4 A 2.2,2.2 0 0,1 77.4,75.4 Z"
+                            android:fillColor="@color/hat_anim_fill" android:strokeWidth="1.8" android:strokeColor="@color/hat_anim_outline"
+                            android:fillAlpha="0.0" android:strokeAlpha="0.0" />
+                    </group>
+                </group>
+
+            </group>
+        </vector>
+    </aapt:attr>
+
+    <!-- Phase 1: Base Brim -->
+    <target android:name="base_brim_matrix">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="scaleX" android:duration="400" android:valueFrom="0.0" android:valueTo="1.0" android:interpolator="@android:anim/overshoot_interpolator" />
+                <objectAnimator android:propertyName="alpha" android:duration="100" android:valueFrom="0.0" android:valueTo="1.0" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <!-- Phase 2: Waterfall sequential scaling -->
+    <target android:name="bar1">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleY" android:startOffset="200" android:duration="300" android:valueFrom="0.0" android:valueTo="1.0" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="bar2">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleY" android:startOffset="270" android:duration="300" android:valueFrom="0.0" android:valueTo="1.0" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="bar3">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleY" android:startOffset="340" android:duration="300" android:valueFrom="0.0" android:valueTo="1.0" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="bar4">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleY" android:startOffset="410" android:duration="300" android:valueFrom="0.0" android:valueTo="1.0" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="bar5">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleY" android:startOffset="480" android:duration="300" android:valueFrom="0.0" android:valueTo="1.0" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+
+    <!-- Phase 3: Morphological State Transition (Perfect alpha swapping of Path strokes) -->
+    <target android:name="bar5_unified_path">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="fillAlpha" android:startOffset="820" android:duration="10" android:valueFrom="1.0" android:valueTo="0.0" />
+                <objectAnimator android:propertyName="strokeAlpha" android:startOffset="820" android:duration="10" android:valueFrom="1.0" android:valueTo="0.0" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <target android:name="bar5_split_upper_path">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="fillAlpha" android:startOffset="820" android:duration="10" android:valueFrom="0.0" android:valueTo="1.0" />
+                <objectAnimator android:propertyName="strokeAlpha" android:startOffset="820" android:duration="10" android:valueFrom="0.0" android:valueTo="1.0" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <target android:name="bar5_split_lower_path">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="fillAlpha" android:startOffset="820" android:duration="10" android:valueFrom="0.0" android:valueTo="1.0" />
+                <objectAnimator android:propertyName="strokeAlpha" android:startOffset="820" android:duration="10" android:valueFrom="0.0" android:valueTo="1.0" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <!-- Phase 4: Dynamic UI Chart Upward Separation Physics -->
+    <target android:name="bar5_split_upper">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="translateY" android:startOffset="820" android:duration="350" android:valueFrom="2.6" android:valueTo="0.0" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+
+</animated-vector>

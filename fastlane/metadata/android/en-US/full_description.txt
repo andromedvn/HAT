@@ -1,0 +1,9 @@
+HAT (Heuristic Activity Tracker) is a completely passive, 100% local Android activity tracker that reconstructs your day by identifying offline gaps based on your app usage from OS data.
+
+How it Works:
+HAT reads Android's native usage stats to know when you were on your phone. When you aren't on your phone, it creates a "gap". You can leave that gap empty, or label it (e.g., "Sleeping", "Working", "Reading").
+
+Features:
+* 100% Local: There are no servers. There is no cloud. The app does not possess internet permissions.
+* Your Data is Yours: Everything is stored in a local SQLite database. You can export it as an encrypted zip file.
+* Battery Friendly: It does not run a constant background service draining your battery. It queries the OS dynamically upon resume.

@@ -1,0 +1,1 @@
+A privacy-first local activity tracker.

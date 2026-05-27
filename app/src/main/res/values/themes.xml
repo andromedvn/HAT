@@ -1,0 +1,7 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.ComposeEmptyActivity" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/boot_background</item>
+        <item name="android:navigationBarColor">@color/boot_background</item>
+        <item name="android:windowBackground">@color/boot_background</item>
+    </style>
+</resources>

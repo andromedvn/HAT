@@ -1,0 +1,4 @@
+name: HAT (Heuristic Activity Tracker)
+description: A local, privacy-first time-tracking app.
+url: "https://andromedvn.github.io"
+baseurl: "/HAT"

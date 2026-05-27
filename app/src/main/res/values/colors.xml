@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="boot_background">#1B1B1F</color>
+    <color name="hat_ic_bg">#221611</color>
+    <color name="hat_anim_outline">#FFB878</color>
+    <color name="hat_anim_fill">#33FFB878</color>
+</resources>

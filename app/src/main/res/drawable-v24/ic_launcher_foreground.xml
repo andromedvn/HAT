@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="124dp"
+    android:height="124dp"
+    android:viewportWidth="124"
+    android:viewportHeight="124">
+    
+    <!-- 70% Scale wrapper to shrink the icon inside the app drawer boundaries -->
+    <group android:scaleX="0.70" android:scaleY="0.70" android:pivotX="62" android:pivotY="62">
+        <path
+            android:pathData="
+                M 39,41 A 2.2,2.2 0 0,1 43.4,41 L 43.4,75.4 A 2.2,2.2 0 0,1 39,75.4 Z
+                M 48.6,41 A 2.2,2.2 0 0,1 53,41 L 53,75.4 A 2.2,2.2 0 0,1 48.6,75.4 Z
+                M 58.2,41 A 2.2,2.2 0 0,1 62.6,41 L 62.6,75.4 A 2.2,2.2 0 0,1 58.2,75.4 Z
+                M 67.8,41 A 2.2,2.2 0 0,1 72.2,41 L 72.2,75.4 A 2.2,2.2 0 0,1 67.8,75.4 Z
+                M 77.4,41 A 2.2,2.2 0 0,1 81.8,41 L 81.8,50 A 2.2,2.2 0 0,1 77.4,50 Z 
+                M 77.4,57 A 2.2,2.2 0 0,1 81.8,57 L 81.8,75.4 A 2.2,2.2 0 0,1 77.4,75.4 Z 
+                M 34.6,81 L 86.2,81 A 1.8,1.8 0 0,1 88,82.8 L 88,83.4 A 1.8,1.8 0 0,1 86.2,85.2 L 34.6,85.2 A 1.8,1.8 0 0,1 32.8,83.4 L 32.8,82.8 A 1.8,1.8 0 0,1 34.6,81 Z"
+            android:fillColor="@color/hat_anim_fill"
+            android:strokeWidth="1.8"
+            android:strokeColor="@color/hat_anim_outline" />
+    </group>
+</vector>
