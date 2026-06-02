@@ -168,12 +168,12 @@ From the recovery screen you can export crash logs and diagnostic events, initia
 
 > Screenshots available in [`fastlane/metadata/android/en-US/images/phoneScreenshots/`](fastlane/metadata/android/en-US/images/phoneScreenshots/)
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 20px 0;">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" alt="Screenshot 1" style="width: 100%; height: auto;"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" alt="Screenshot 2" style="width: 100%; height: auto;"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" alt="Screenshot 3" style="width: 100%; height: auto;"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" alt="Screenshot 4" style="width: 100%; height: auto;"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.jpg" alt="Screenshot 5" style="width: 100%; height: auto;"/>
+<div style="overflow-x: auto; display: flex; gap: 15px; padding: 20px 0; margin: 0 -20px; padding-left: 20px; padding-right: 20px;">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" alt="Screenshot 1" style="height: 400px; width: auto; flex-shrink: 0;"/>
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" alt="Screenshot 2" style="height: 400px; width: auto; flex-shrink: 0;"/>
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" alt="Screenshot 3" style="height: 400px; width: auto; flex-shrink: 0;"/>
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" alt="Screenshot 4" style="height: 400px; width: auto; flex-shrink: 0;"/>
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.jpg" alt="Screenshot 5" style="height: 400px; width: auto; flex-shrink: 0;"/>
 </div>
 
 ---
