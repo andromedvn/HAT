@@ -67,14 +67,13 @@ Android's `UsageStatsManager` API gives every app access to a log of when apps w
 
 The flow looks like this:
 
-```
-Raw OS Events → UsageStatsEngine → Interval Map → Gap Detection → Timeline
-                                        ↓
-                              HeuristicEngine processes:
-                              • Ghost session detection
-                              • Session clustering
-                              • Interval subtraction
-                              • Chart bucketing (hourly/daily)
+```text
+Android OS Events → UsageStatsEngine → HeuristicEngine → UI Timeline
+                     (Interval Math)           │
+                                               ├─> Ghost Isolation (Keyguard Bracket)
+                                               ├─> Gap Detection (Subtractive Matrix)
+                                               ├─> Session Clustering (Tolerance Merge)
+                                               └─> Chart Bucketing (Hourly/Daily)
 ```
 
 When you label a gap (say, "Sleeping" from 11 PM to 7 AM), that label gets stored in the local database alongside its timestamp and duration. It shows up in the offline timeline alongside your app usage. The two streams — digital and physical — are rendered together on the dashboard.
@@ -108,7 +107,7 @@ Dismissed ghost sessions are stored and can be restored later from the Dismissed
 
 ### History Archiving
 
-Android only retains usage event data for a limited window (typically a few weeks, varying by device and OS version). HAT includes a background `ArchiveSyncWorker` that silently wakes up on a configurable schedule to read and store your usage history before the OS deletes it.
+Android only retains usage event data for a limited window (typically a few weeks, varying by device and OS version). HAT includes a background `ArchiveSyncWorker` that silently wakes up on a configurable schedule to read and store your usage history before the OS permanently deletes it.
 
 The archive sync:
 - Runs only when battery is not low
@@ -375,7 +374,7 @@ adb shell appops set andromedvn.heuristic.activity.tracker GET_USAGE_STATS allow
 
 ## Project Structure
 
-```
+```text
 app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
 │
 ├── MainActivity.kt                  # Entry point, navigation host, splash routing
@@ -403,6 +402,8 @@ app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
 │   │   ├── DashboardScreen.kt       # Main timeline + app + offline activity lists
 │   │   ├── ActivityDetailsScreen.kt # Drill-down session view for apps or offline items
 │   │   ├── LabelGapsScreen.kt       # Unaccounted gap labeling interface
+│   │   ├── PermissionScreen.kt      # System capability & access gating
+│   │   ├── OfflineStatsScreen.kt    # Dedicated analytics for offline logs
 │   │   ├── SettingsScreen.kt        # Engine config, vault, hidden apps, about
 │   │   ├── HatSplashScreen.kt       # Animated splash with custom HAT logo drawing
 │   │   ├── HiddenAppsScreen.kt      # Manage hidden package list
@@ -473,7 +474,7 @@ Yes, with a caveat. The `UsageStatsManager` API is part of AOSP, so it works on 
 
 SQLite directly via `SQLiteOpenHelper` gives explicit control over transaction batching, which matters for the vault merge operation (merging thousands of archived intervals in a single transaction with periodic yielding). Room adds abstraction that would complicate this. The schema is simple enough that Room's benefits don't outweigh the added indirection.
 
-**Can I export my data to CSV or JSON?**
+**Can I export my data to CSV or JSON?**n
 
 Yes. HAT contains a hidden Developer Diagnostics screen. By tapping the "HAT Dashboard" header on the main screen 5 times, you can unlock Developer Mode and export a "Total Unbounded Matrix" — a complete JSON dump of your computed intervals. You can also export diagnostic logs and crash stack traces from here.
 
@@ -489,7 +490,7 @@ Not yet. The AGPL-3.0 license and zero-dependency approach make it a natural fit
 
 ## License
 
-```
+```text
 HAT - Heuristic Activity Tracker
 Copyright (C) 2026 andromedvn
 
