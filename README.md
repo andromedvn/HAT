@@ -67,14 +67,13 @@ Android's `UsageStatsManager` API gives every app access to a log of when apps w
 
 The flow looks like this:
 
-```
-Raw OS Events → UsageStatsEngine → Interval Map → Gap Detection → Timeline
-                                        ↓
-                              HeuristicEngine processes:
-                              • Ghost session detection
-                              • Session clustering
-                              • Interval subtraction
-                              • Chart bucketing (hourly/daily)
+```text
+Android OS Events → UsageStatsEngine → HeuristicEngine → UI Timeline
+                     (Interval Math)           │
+                                               ├─> Ghost Isolation (Keyguard Bracket)
+                                               ├─> Gap Detection (Subtractive Matrix)
+                                               ├─> Session Clustering (Tolerance Merge)
+                                               └─> Chart Bucketing (Hourly/Daily)
 ```
 
 When you label a gap (say, "Sleeping" from 11 PM to 7 AM), that label gets stored in the local database alongside its timestamp and duration. It shows up in the offline timeline alongside your app usage. The two streams — digital and physical — are rendered together on the dashboard.
@@ -108,7 +107,7 @@ Dismissed ghost sessions are stored and can be restored later from the Dismissed
 
 ### History Archiving
 
-Android only retains usage event data for a limited window (typically a few weeks, varying by device and OS version). HAT includes a background `ArchiveSyncWorker` that silently wakes up on a configurable schedule to read and store your usage history before the OS deletes it.
+Android only retains usage event data for a limited window (typically a few weeks, varying by device and OS version). HAT includes a background `ArchiveSyncWorker` that silently wakes up on a configurable schedule to read and store your usage history before the OS permanently deletes it.
 
 The archive sync:
 - Runs only when battery is not low
@@ -128,7 +127,7 @@ The merge logic is intelligent: importing a vault doesn't erase existing data. I
 HAT supports two theme modes:
 
 - **Dynamic Material (Material You)** — On Android 12+, the theme derives its colors from your wallpaper using Android's system dynamic color API. The entire app — backgrounds, borders, icons, text — adapts to your phone's accent color.
-- **Static Default** — A classic orange palette used for HAT (`#FFB878`) if you prefer a consistent look or are on Android 11 or earlier.
+- **Static Default** — A classic deep orange palette (`#FFB878`) if you prefer a consistent look or are on Android 11 or earlier.
 
 On devices below Android 12, the dynamic mode falls back to a monochromatic palette generated from the wallpaper's dominant color via a custom HSL extraction routine.
 
@@ -168,13 +167,9 @@ From the recovery screen you can export crash logs and diagnostic events, initia
 
 > Screenshots available in [`fastlane/metadata/android/en-US/images/phoneScreenshots/`](fastlane/metadata/android/en-US/images/phoneScreenshots/)
 
-<p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" width="19%"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" width="19%"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" width="19%"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" width="19%"/>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.jpg" width="19%"/>
-</p>
+| | | | | |
+|:---:|:---:|:---:|:---:|:---:|
+| <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.jpg" width="260"/> |
 
 ---
 
@@ -379,7 +374,7 @@ adb shell appops set andromedvn.heuristic.activity.tracker GET_USAGE_STATS allow
 
 ## Project Structure
 
-```
+```text
 app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
 │
 ├── MainActivity.kt                  # Entry point, navigation host, splash routing
@@ -407,6 +402,8 @@ app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
 │   │   ├── DashboardScreen.kt       # Main timeline + app + offline activity lists
 │   │   ├── ActivityDetailsScreen.kt # Drill-down session view for apps or offline items
 │   │   ├── LabelGapsScreen.kt       # Unaccounted gap labeling interface
+│   │   ├── PermissionScreen.kt      # System capability & access gating
+│   │   ├── OfflineStatsScreen.kt    # Dedicated analytics for offline logs
 │   │   ├── SettingsScreen.kt        # Engine config, vault, hidden apps, about
 │   │   ├── HatSplashScreen.kt       # Animated splash with custom HAT logo drawing
 │   │   ├── HiddenAppsScreen.kt      # Manage hidden package list
@@ -493,7 +490,7 @@ Not yet. The AGPL-3.0 license and zero-dependency approach make it a natural fit
 
 ## License
 
-```
+```text
 HAT - Heuristic Activity Tracker
 Copyright (C) 2026 andromedvn
 
@@ -516,7 +513,12 @@ See [LICENSE](LICENSE) for the full text.
 ---
 
 <div align="center">
-
-*Built on-device. No cloud. No ads. No tracking. Just your time.*
-
+  <h3>Star History</h3>
+  <a href="https://star-history.com/#andromedvn/HAT&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=andromedvn/HAT&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=andromedvn/HAT&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=andromedvn/HAT&type=Date" />
+    </picture>
+  </a>
 </div>
