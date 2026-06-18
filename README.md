@@ -11,15 +11,15 @@
 <br/>
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-orange.svg?style=flat-square)](https://www.gnu.org/licenses/agpl-3.0)
-[![F-Droid](https://img.shields.io/badge/F--Droid-Pending-green.svg?style=flat-square)](https://gitlab.com/fdroid/rfp/-/issues/3896)
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-Pending-ea4aaa.svg?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/andromedvn)
+[![Material You](https://img.shields.io/badge/Theme-Material_You-orange.svg?style=flat-square)](#dynamic-theme-engine)
 [![Android](https://img.shields.io/badge/Platform-Android_8.0%2B-orange.svg?style=flat-square&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Language-Kotlin-orange.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack_Compose-orange.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![No Internet](https://img.shields.io/badge/Internet_Permission-NONE-brightgreen.svg?style=flat-square)](https://andromedvn.github.io/HAT/PRIVACY.html)
 [![No Tracking](https://img.shields.io/badge/Tracking-ZERO-brightgreen.svg?style=flat-square)](#privacy--security)
 [![No Cloud](https://img.shields.io/badge/Cloud-NONE-brightgreen.svg?style=flat-square)](#privacy--security)
-[![Material You](https://img.shields.io/badge/Theme-Material_You-orange.svg?style=flat-square)](#dynamic-theme-engine)
+[![F-Droid](https://img.shields.io/badge/F--Droid-Pending-green.svg?style=flat-square)](https://gitlab.com/fdroid/rfp/-/issues/3896)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-Pending-ea4aaa.svg?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/andromedvn)
 
 <br/>
 
@@ -88,11 +88,19 @@ Nothing runs in the background unless you explicitly enable the archive worker. 
 
 **App Usage Timeline** — See exactly which apps you used and for how long, down to the session level. Each app entry can be drilled into to view individual session clusters: when you opened it, when you closed it, and how long each session lasted.
 
+**Stacked Bars:** Some bars in the chart can be tapped, while doing so it wil instantly split the visual graph and isolate the exact ratio of screen time to offline gaps for that hour.
+
+**Bi-Directional Highlighting:** Long-pressing a gap or app card automatically scrolls the chart to that exact block of time and highlights it. Long-pressing a bar in the chart auto-scrolls to the timeline below it and highlights the cards in that timeframe.
+
+**In App Calendar:** Tap the date navigator below the chart to leap across months of data instantly.
+
 **Offline Gap Labeling** — When you weren't on your phone, HAT shows you that gap and lets you label it. You can name it anything, pick an icon, and the entry is permanently stored in your timeline.
 
 **Day / Week / Month Views** — Switch between granularities without losing your place. The interactive chart at the top of each screen adjusts to show hourly buckets (day view) or daily buckets (week and month views). Tapping a bar on the chart scrolls the list to the matching sessions.
 
 **Batch Gap Operations** — Long-press multiple gaps to select them, then label the entire batch at once. Useful for recurring activities like "Commute" that appear across dozens of short blocks throughout the week.
+
+**Smart Suggestions:** When you tap to label a gap, HAT probabilistically suggests your most likely habits based on the current hour of the day.
 
 ### Ghost Session Detection
 
@@ -180,22 +188,23 @@ HAT uses MVVM with Jetpack Compose. A few of the design decisions are non-obviou
 ### Layer Overview
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                      UI Layer                       │
-│  Compose Screens → ViewModels → StateFlows          │
-├─────────────────────────────────────────────────────┤
-│                   Domain Layer                      │
-│  HeuristicEngine — pure computation, no I/O         │
-├─────────────────────────────────────────────────────┤
-│                   Data Layer                        │
-│  ActivityRepository — coordinates all data access   │
-│     ├── UsageStatsEngine (OS events, live)          │
-│     ├── OfflineStorage (SQLite + DataStore)         │
-│     └── VaultSecurity (export/import)               │
-├─────────────────────────────────────────────────────┤
-│                  Worker Layer                       │
-│  ArchiveSyncWorker (WorkManager, periodic)          │
-└─────────────────────────────────────────────────────┘
++-----------------------------------------------------+
+|                      UI Layer                       |
+|  Compose Screens -> ViewModels -> StateFlows        |
++-----------------------------------------------------+
+|                    Domain Layer                     |
+|  HeuristicEngine - pure computation, no I/O         |
++-----------------------------------------------------+
+|                     Data Layer                      |
+|  ActivityRepository - coordinates all data access   |
+|    |-- UsageStatsEngine (OS events, live)           |
+|    |-- OfflineStorage (SQLite + DataStore)          |
+|    `-- VaultSecurity (export/import)                |
++-----------------------------------------------------+
+|                    Worker Layer                     |
+|  ArchiveSyncWorker (WorkManager, periodic)          |
++-----------------------------------------------------+
+
 ```
 
 ### Key Design Decisions
