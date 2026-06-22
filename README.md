@@ -63,7 +63,7 @@ This is the full source code.
 
 Most screen-time trackers just count how long you used each app. HAT does that too, but it also asks a harder question: what were you doing when you *weren't* on your phone?
 
-Android's `UsageStatsManager` API gives every app access to a log of when apps were opened, paused, resumed, and closed. HAT reads this log to build a complete minute-by-minute timeline for any day. When there's a continuous block of time with no app activity, that becomes a **gap** — an unaccounted period waiting to be labeled.
+Android's `UsageStatsManager` gives every app access to a log of when apps were opened, paused, resumed, and closed. HAT reads this log to build a complete minute-by-minute timeline for any day. When there's a continuous block of time with no app activity, that becomes a **gap** — an unaccounted period waiting to be labeled.
 
 The flow looks like this:
 
@@ -88,7 +88,7 @@ Nothing runs in the background unless you explicitly enable the archive worker. 
 
 **App Usage Timeline** — See exactly which apps you used and for how long, down to the session level. Each app entry can be drilled into to view individual session clusters: when you opened it, when you closed it, and how long each session lasted.
 
-**Stacked Bars:** Some bars in the chart can be tapped, while doing so it wil instantly split the visual graph and isolate the exact ratio of screen time to offline gaps for that hour.
+**Stacked Bars:** Some bars in the chart can be tapped, while doing so it will instantly split the visual graph and isolate the exact ratio of screen time to offline gaps for that hour.
 
 **Bi-Directional Highlighting:** Long-pressing a gap or app card automatically scrolls the chart to that exact block of time and highlights it. Long-pressing a bar in the chart auto-scrolls to the timeline below it and highlights the cards in that timeframe.
 
@@ -134,7 +134,7 @@ The merge logic is intelligent: importing a vault doesn't erase existing data. I
 
 HAT supports two theme modes:
 
-- **Dynamic Material (Material You)** — On Android 12+, the theme derives its colors from your wallpaper using Android's system dynamic color API. The entire app — backgrounds, borders, icons, text — adapts to your phone's accent color.
+- **Dynamic Material (Material You)** — On Android 12+, the theme derives its colors from your wallpaper using Android's system dynamic color. The entire app — backgrounds, borders, icons, text — adapts to your phone's accent color.
 - **Static Default** — A classic deep orange palette (`#FFB878`) if you prefer a consistent look or are on Android 11 or earlier.
 
 On devices below Android 12, the dynamic mode falls back to a monochromatic palette generated from the wallpaper's dominant color via a custom HSL extraction routine.
@@ -362,7 +362,7 @@ adb shell appops set andromedvn.heuristic.activity.tracker GET_USAGE_STATS allow
 
 ## Tech Stack
 
-| Component | Library / API |
+| Component | Library |
 |---|---|
 | UI Framework | Jetpack Compose (BOM) |
 | Navigation | Navigation Compose |
@@ -373,7 +373,7 @@ adb shell appops set andromedvn.heuristic.activity.tracker GET_USAGE_STATS allow
 | Background Jobs | WorkManager |
 | Serialization | kotlinx.serialization |
 | Theme | Material 3 + Dynamic Color |
-| Usage Data | Android `UsageStatsManager` API |
+| Usage Data | Android `UsageStatsManager` |
 | Vault Security | HmacSHA256 (javax.crypto) |
 | Crash Handler | Custom (no third-party SDK) |
 
@@ -477,7 +477,7 @@ Android's `UsageStatsManager` only retains event data for a limited period — t
 
 **Can I use this on a custom ROM or degoogled phone?**
 
-Yes, with a caveat. The `UsageStatsManager` API is part of AOSP, so it works on most custom ROMs. The dynamic color theme (`ThemeType.DYNAMIC`) requires Android 12's dynamic color system, which may not be present on some custom ROMs. If it's missing, HAT automatically falls back to the static orange theme.
+Yes, with a caveat. The `UsageStatsManager` is part of AOSP, so it works on most custom ROMs. The dynamic color theme (`ThemeType.DYNAMIC`) requires Android 12's dynamic color system, which may not be present on some custom ROMs. If it's missing, HAT automatically falls back to the static orange theme.
 
 **Why SQLite instead of Room?**
 

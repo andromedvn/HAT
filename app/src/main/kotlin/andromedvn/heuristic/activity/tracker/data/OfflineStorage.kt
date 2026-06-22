@@ -233,6 +233,8 @@ class OfflineStorage private constructor(private val context: Context) {
             } catch (e: Exception) { HatLogger.logError("OfflineStorage", "Legacy Merge: Ack Table missing (Skipping)", e) }
 
             success = true
+        } catch (e: android.database.sqlite.SQLiteException) {
+            HatLogger.logError("OfflineStorage", "Vault Merge Failed: Imported file is malformed or not a valid SQLite database.", e)
         } catch (e: Exception) {
             HatLogger.logError("OfflineStorage", "Exception during Time-Stitch Database Merge", e)
         } finally {
