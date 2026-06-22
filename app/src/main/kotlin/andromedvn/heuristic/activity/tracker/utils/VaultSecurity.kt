@@ -1,8 +1,5 @@
 package andromedvn.heuristic.activity.tracker.utils
 
-import android.content.Context
-import android.net.Uri
-import android.provider.DocumentsContract
 import android.util.Base64
 import java.io.File
 import java.io.FileInputStream
@@ -16,6 +13,8 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 object VaultSecurity {
+    // Note: This is an integrity key, not cryptographic security against the device owner.
+    // Tying this to hardware IDs would permanently break cross-device vault migration.
     private const val SECRET_KEY = "HAT_HEURISTIC_VAULT_SECURE_KEY_V1"
     private const val ALGORITHM = "HmacSHA256"
 
@@ -53,7 +52,6 @@ object VaultSecurity {
         }
     }
 
-
     fun importMasterVault(inputStream: InputStream, tempDir: File): Pair<File, String>? {
         val mac = getMac()
         var prefsStr: String? = null
@@ -61,9 +59,21 @@ object VaultSecurity {
         val dbTempFile = File(tempDir, "temp_restore.db")
 
         try {
+            val canonicalTempDir = tempDir.canonicalPath
+
             ZipInputStream(inputStream).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
+                    // SECURITY PATCH: Zip-Slip Prevention (Canonical Path Validation)
+                    val targetFile = File(tempDir, entry.name)
+                    val canonicalTarget = targetFile.canonicalPath
+                    if (!canonicalTarget.startsWith(canonicalTempDir)) {
+                        HatLogger.logError("VaultSecurity", "Zip Slip blocked: Extracted file path traverses outside temp directory -> ${entry.name}")
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                        continue
+                    }
+
                     when (entry.name) {
                         "preferences.json" -> {
                             val bytes = zis.readBytes()
