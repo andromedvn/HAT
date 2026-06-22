@@ -31,7 +31,7 @@
 
 ## What is HAT?
 
-HAT is an Android app that answers a question most people never think to ask: *where did my day actually go?*
+HAT is an Android app that answers a question most people dismiss asking: *where did my day actually go?*
 
 It does this by watching your app usage — something Android already tracks in the background — and inverting it. Every minute you weren't on your phone becomes a labeled block of time called a **gap**. You can leave those gaps empty, or fill them in: `Sleeping`, `Working`, `Reading`, `At the gym`. Over time, you end up with a complete picture of how you spend both your screen time and your offline time.
 
