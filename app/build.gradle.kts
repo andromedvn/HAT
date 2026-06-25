@@ -12,14 +12,16 @@ android {
         applicationId = "andromedvn.heuristic.activity.tracker"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // This binds the debug key to the optimized release build
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
