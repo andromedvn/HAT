@@ -1,5 +1,8 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,15 +35,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
-import andromedvn.heuristic.activity.tracker.ui.components.HatDynamicHeader
-import andromedvn.heuristic.activity.tracker.ui.components.HatOutlinedDialog
-import andromedvn.heuristic.activity.tracker.ui.components.hatSwitchColors
+import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
+import andromedvn.heuristic.activity.tracker.ui.components.*
+import andromedvn.heuristic.activity.tracker.utils.HatLogger
+import andromedvn.heuristic.activity.tracker.utils.TimeUtils
+import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.worker.WorkerScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -55,6 +63,13 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
     val scrollState = rememberScrollState()
     var customDialogSetting by remember { mutableStateOf<String?>(null) } 
     var localSortType by remember(currentSettings?.sortType) { mutableStateOf(currentSettings?.sortType ?: SortType.DURATION) }
+
+    var showExportDatePicker by rememberSaveable { mutableStateOf(false) }
+    var oldestDataTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        oldestDataTimestamp = repository.getOldestDataTimestamp()
+    }
 
     val appVersion = remember {
         try {
@@ -108,6 +123,68 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (e: Exception) {}
     }
 
+    if (showExportDatePicker) {
+        HatDatePickerModal(
+            initialDate = System.currentTimeMillis(),
+            oldestData = oldestDataTimestamp,
+            bypassHistoryLimit = currentSettings!!.bypassHistoryLimit,
+            onDismiss = { showExportDatePicker = false },
+            onDateSelected = { selectedDateMillis ->
+                showExportDatePicker = false
+                scope.launch(Dispatchers.Default) {
+                    try {
+                        val engine = HeuristicEngine(repository, UsageStatsEngine(context))
+                        
+                        val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+                        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+                        val start = cal.timeInMillis
+                        cal.add(Calendar.DAY_OF_YEAR, 1)
+                        val end = cal.timeInMillis - 1
+                        
+                        val hiddenPkgs = storage.getHiddenPackagesFlow().first()
+                        val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
+                        
+                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, currentSettings!!.ghostTimeTriggerHours, hiddenPkgs, ackGhosts)
+                        val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)
+                        
+                        val totalOfflineMillis = offlineItems.sumOf { it.durationInMillis }
+                        val totalCombinedRaw = rawScreenTime + totalOfflineMillis
+                        val clampedCombined = minOf(totalCombinedRaw, end - start)
+                        val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - rawScreenTime else totalOfflineMillis
+            
+                        val dateStr = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(start))
+                        
+                        val sb = StringBuilder()
+                        sb.appendLine("HAT Daily Summary - $dateStr")
+                        sb.appendLine("-----------------------------------")
+                        sb.appendLine("[Offline Activities]")
+                        if (offlineItems.isEmpty()) sb.appendLine("None logged.")
+                        else offlineItems.forEach { sb.appendLine("- ${it.title}: ${it.timeFormatted}") }
+                        
+                        sb.appendLine("\n[App Usage]")
+                        if (topAppsList.isEmpty()) sb.appendLine("None logged.")
+                        else topAppsList.take(15).forEach { sb.appendLine("- ${it.title}: ${it.timeFormatted}") }
+                        
+                        sb.appendLine("\n[Totals]")
+                        sb.appendLine("Screen Time: ${TimeUtils.formatDuration(rawScreenTime)}")
+                        sb.appendLine("Offline Time: ${TimeUtils.formatDuration(clampedOffline)}")
+                        sb.appendLine("Total Tracked: ${TimeUtils.formatDuration(clampedCombined)}")
+                        
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("HAT Summary", sb.toString())
+                        clipboard.setPrimaryClip(clip)
+                        
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Summary copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        HatLogger.logError("SettingsScreen", "Failed to export summary", e)
+                    }
+                }
+            }
+        )
+    }
+
     if (customDialogSetting != null) {
         var input by remember { mutableStateOf("") }
         HatOutlinedDialog(onDismissRequest = { customDialogSetting = null }, title = "Custom Value") {
@@ -149,6 +226,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 // GROUP 2: DATA CONTROL
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("DATA CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
+                    SettingsItem("Copy Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
                     SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
                     SettingsItem("Restore Master Vault", "Import a previously saved master vault.") { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }

@@ -35,16 +35,26 @@ object HatLogger {
             val dir = File(ctx.filesDir, "diagnostics")
             if (!dir.exists()) dir.mkdirs()
             val file = File(dir, "diagnostic_events.txt")
-            
-            // Limit diagnostic file to ~1MB to prevent bloat
             if (file.exists() && file.length() > 1024 * 1024) file.delete()
-            
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
             file.appendText("[$timestamp] [$tag] $message\n")
             e?.let { file.appendText("${it.stackTraceToString()}\n") }
-        } catch (ex: Exception) {
-            // Failsafe
-        }
+        } catch (ex: Exception) {}
+    }
+
+    // V.11.12 BACKGROUND LEDGER: Persists silent worker actions that don't belong in the UI breadcrumbs
+    fun logBackgroundEvent(tag: String, message: String) {
+        log("BACKGROUND [$tag]: $message")
+        val ctx = appContext ?: return
+        try {
+            val dir = File(ctx.filesDir, "diagnostics")
+            if (!dir.exists()) dir.mkdirs()
+            val file = File(dir, "background_worker_ledger.txt")
+            // Limit to ~1MB to prevent stealth storage bloat
+            if (file.exists() && file.length() > 1024 * 1024) file.delete()
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+            file.appendText("[$timestamp] [$tag] $message\n")
+        } catch (ex: Exception) {}
     }
 
     fun setupCrashHandler(context: Context) {
@@ -58,13 +68,11 @@ object HatLogger {
             
             try {
                 val logFileName = saveCrashLog(context, thread, throwable)
-                
                 val intent = Intent(context, andromedvn.heuristic.activity.tracker.CrashRecoveryActivity::class.java).apply {
                     putExtra("LOG_FILE", logFileName)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 context.startActivity(intent)
-                
             } catch (e: Exception) {
                 defaultHandler?.uncaughtException(thread, throwable)
             } finally {
@@ -87,12 +95,8 @@ object HatLogger {
             writer.println("Manufacturer: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
             writer.println("Thread: ${thread.name}")
             writer.println("Time: $timestamp")
-            
             writer.println("\n--- BREADCRUMBS (Last $MAX_BREADCRUMBS) ---")
-            synchronized(breadcrumbs) {
-                breadcrumbs.forEach { writer.println(it) }
-            }
-            
+            synchronized(breadcrumbs) { breadcrumbs.forEach { writer.println(it) } }
             writer.println("\n--- STACKTRACE ---")
             throwable.printStackTrace(writer)
         }
@@ -105,17 +109,19 @@ object HatLogger {
     }
     
     fun getDiagnosticLogs(context: Context): List<File> {
-        val file = File(context.filesDir, "diagnostics/diagnostic_events.txt")
-        return if (file.exists()) listOf(file) else emptyList()
+        val diagFile = File(context.filesDir, "diagnostics/diagnostic_events.txt")
+        val bgFile = File(context.filesDir, "diagnostics/background_worker_ledger.txt")
+        return listOfNotNull(
+            diagFile.takeIf { it.exists() },
+            bgFile.takeIf { it.exists() }
+        )
     }
 
     fun clearLogs(context: Context) {
         val crashDir = File(context.filesDir, "crash_logs")
         if (crashDir.exists()) crashDir.listFiles()?.forEach { it.delete() }
-        
-        val diagFile = File(context.filesDir, "diagnostics/diagnostic_events.txt")
-        if (diagFile.exists()) diagFile.delete()
-        
+        val diagDir = File(context.filesDir, "diagnostics")
+        if (diagDir.exists()) diagDir.listFiles()?.forEach { it.delete() }
         log("All telemetry logs cleared")
     }
 }

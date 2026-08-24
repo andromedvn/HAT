@@ -10,14 +10,14 @@ import andromedvn.heuristic.activity.tracker.utils.HatLogger
 class ArchiveSyncWorker(appContext: Context, workerParams: WorkerParameters) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
         try {
-            HatLogger.log("ArchiveSyncWorker: Starting silent background execution")
+            HatLogger.logBackgroundEvent("ArchiveWorker", "Starting silent background sync execution")
             val storage = OfflineStorage.getInstance(applicationContext)
             val repository = ActivityRepository(applicationContext, storage)
             repository.syncArchive()
-            HatLogger.log("ArchiveSyncWorker: Execution successful")
+            HatLogger.logBackgroundEvent("ArchiveWorker", "Execution successful. Data safely archived.")
             return Result.success()
         } catch (e: Exception) {
-            HatLogger.log("ArchiveSyncWorker: Execution failed - ${e.message}")
+            HatLogger.logBackgroundEvent("ArchiveWorker", "Execution failed: ${e.message}")
             return Result.retry()
         }
     }
