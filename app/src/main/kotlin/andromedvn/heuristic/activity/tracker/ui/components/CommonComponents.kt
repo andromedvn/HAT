@@ -179,7 +179,7 @@ fun HatOutlinedDialog(onDismissRequest: () -> Unit, title: String, content: @Com
 }
 
 @Composable
-fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: Boolean, onDismiss: () -> Unit, onDateSelected: (Long) -> Unit) {
+fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: Boolean, confirmButtonText: String = "Jump", onDismiss: () -> Unit, onDateSelected: (Long) -> Unit) {
     var selectedDate by remember { mutableStateOf(initialDate) }
     var displayMonthCal by remember { mutableStateOf(Calendar.getInstance().apply { timeInMillis = initialDate; set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }) }
     val todayCal = Calendar.getInstance()
@@ -245,7 +245,7 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
                     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)) }
                         Spacer(modifier = Modifier.width(16.dp))
-                        TextButton(onClick = { onDateSelected(selectedDate); onDismiss() }) { Text("Jump", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)) }
+                        TextButton(onClick = { onDateSelected(selectedDate); onDismiss() }) { Text(confirmButtonText, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)) }
                     }
                 }
             }

@@ -128,6 +128,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
             initialDate = System.currentTimeMillis(),
             oldestData = oldestDataTimestamp,
             bypassHistoryLimit = currentSettings!!.bypassHistoryLimit,
+            confirmButtonText = "Copy",
             onDismiss = { showExportDatePicker = false },
             onDateSelected = { selectedDateMillis ->
                 showExportDatePicker = false
@@ -226,7 +227,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 // GROUP 2: DATA CONTROL
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("DATA CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    SettingsItem("Copy Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
+                    SettingsItem("Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
                     SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
                     SettingsItem("Restore Master Vault", "Import a previously saved master vault.") { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
