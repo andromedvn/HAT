@@ -44,8 +44,8 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         return tags
     }
 
-    suspend fun getAppUsage(start: Long, end: Long, range: TimeRangeLabel, ghostHours: Int, hiddenPkgs: Set<String>, ackGhosts: List<AcknowledgedGhost>): Triple<Long, Long, List<AppUsageItem>> = withContext(Dispatchers.Default) {
-        val ghostMillis = if (ghostHours <= 0) Long.MAX_VALUE else ghostHours * 60L * 60L * 1000L
+    suspend fun getAppUsage(start: Long, end: Long, range: TimeRangeLabel, ghostMins: Int, hiddenPkgs: Set<String>, ackGhosts: List<AcknowledgedGhost>): Triple<Long, Long, List<AppUsageItem>> = withContext(Dispatchers.Default) {
+        val ghostMillis = if (ghostMins <= 0) Long.MAX_VALUE else ghostMins * 60L * 1000L
         val intervalsMap = repository.getFilteredIntervals(start, end, hiddenPkgs)
         val rawGhosts = engine.getGhostCandidateIntervals(start, end)
         var totalAppExecution = 0L
@@ -73,8 +73,8 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         Triple(maxOf(trueDeviceScreenTime, 0L), maxOf(totalAppExecution, 0L), validApps)
     }
 
-    suspend fun getAppDetail(packageName: String, start: Long, end: Long, ghostHours: Int, ackGhosts: List<AcknowledgedGhost>): AppUsageItem? = withContext(Dispatchers.Default) {
-        val ghostMillis = if (ghostHours <= 0) Long.MAX_VALUE else ghostHours * 60L * 60L * 1000L
+    suspend fun getAppDetail(packageName: String, start: Long, end: Long, ghostMins: Int, ackGhosts: List<AcknowledgedGhost>): AppUsageItem? = withContext(Dispatchers.Default) {
+        val ghostMillis = if (ghostMins <= 0) Long.MAX_VALUE else ghostMins * 60L * 1000L
         val intervalsMap = repository.getAllIntervalsCached(start, end)
         val intervals = intervalsMap[packageName] ?: emptyList()
         val merged = engine.mergeIntervals(intervals)

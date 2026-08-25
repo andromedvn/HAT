@@ -102,6 +102,12 @@ Nothing runs in the background unless you explicitly enable the archive worker. 
 
 **Smart Suggestions:** When you tap to label a gap, HAT probabilistically suggests your most likely habits based on the current hour of the day.
 
+### Export & Integrations
+
+**Daily Markdown Summary** — Easily copy a clean, text-based daily summary of your app usage and offline gaps straight to your clipboard. Perfect for pasting into Obsidian, Notion, or personal LLM assistants for custom analysis.
+
+**Master Vault (Backup & Restore)** — Your entire local database — app usage history, offline logs, hidden apps, dismissed sessions — can be exported as a single encrypted `.zip` file called the Master Vault. The file is protected with an HMAC-SHA256 signature to prevent corruption.
+
 ### Ghost Session Detection
 
 Sometimes your screen stays on for hours in a single app — your phone was playing music, running a background process, or simply left idle with a map open. HAT detects these "ghost sessions" by looking for app activity that happened while the screen was not interactively engaged (no keyguard unlock, no user-facing events).
@@ -122,14 +128,6 @@ The archive sync:
 - Processes up to 5 days per execution to stay lightweight
 - Merges with live OS data so the timeline is always continuous
 
-### Master Vault (Backup & Restore)
-
-Your entire local database — app usage history, offline logs, hidden apps, dismissed sessions — can be exported as a single encrypted `.zip` file called the **Master Vault**.
-
-The vault file is protected with an HMAC-SHA256 signature using a known key. On restore, the signature is verified before any data is touched. If the file has been tampered with or is corrupted, the restore is rejected entirely.
-
-The merge logic is intelligent: importing a vault doesn't erase existing data. It merges, skipping any entries that would create a temporal overlap with what's already on device. You can safely import an old vault to backfill history without duplicating current data.
-
 ### Dynamic Theme Engine
 
 HAT supports two theme modes:
@@ -146,6 +144,7 @@ The Settings screen exposes several tunable parameters that control how the heur
 | Setting | What it does |
 |---|---|
 | **Global Timeline Sort** | Order items by total duration, most recent activity, or chronological first-use |
+| **Idle App Detection** | Flag an app as a "Suspicious Idle Session" if it stays on screen without interaction for N minutes |
 | **Background History Sync** | How often the archive worker runs (Off / 2h / 6h / custom) |
 | **Actionable Gap Minimum** | Minimum gap duration to show in the labeling list (filters out bathroom breaks, quick transitions) |
 | **Session Merge Tolerance** | If you switch apps and come back within N minutes, HAT merges those into one session |
@@ -243,11 +242,11 @@ The subtraction is done with `subtractIntervals()` in `UsageStatsEngine`, which 
 
 Ghost detection works by correlating screen-interactive events (`SCREEN_INTERACTIVE`, `KEYGUARD_HIDDEN`) with app activity events (`ACTIVITY_RESUMED`, `ACTIVITY_PAUSED`). An interval of app activity that occurred entirely without a preceding `KEYGUARD_HIDDEN` event is mathematically isolated as a ghost candidate — the app was "on" but no human was actually present to unlock the glass.
 
-The `ghostTimeTriggerHours` setting (default: 1 hour) controls the minimum duration a ghost interval must reach before HAT surfaces it. Short ghost intervals — like a 45-second screen-on while playing music or receiving a notification in your pocket — are cleanly discarded by the math.
+The `ghostTimeTriggerMins` setting controls the minimum duration a ghost interval must reach before HAT surfaces it. Short ghost intervals — like a 45-second screen-on while playing music or receiving a notification in your pocket — are cleanly discarded by the math.
 
 ### Session Clustering
 
-Raw OS events produce many tiny intervals for apps with frequent pause/resume cycles (especially social media, messaging apps). The `sessionClusteringMins` setting (default: 1 minute) merges adjacent intervals that are separated by less than the threshold. A 1-minute gap between Instagram sessions becomes one continuous session instead of two.
+Raw OS events produce many tiny intervals for apps with frequent pause/resume cycles (especially social media, messaging apps). The `sessionClusteringMins` setting merges adjacent intervals that are separated by less than the threshold. A 1-minute gap between Instagram sessions becomes one continuous session instead of two.
 
 This cuts the session list noise significantly and produces more meaningful duration numbers.
 
@@ -518,16 +517,3 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 ```
 
 See [LICENSE](LICENSE) for the full text.
-
----
-
-<div align="center">
-  <h3>Star History</h3>
-  <a href="https://star-history.com/#andromedvn/HAT&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=andromedvn/HAT&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=andromedvn/HAT&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=andromedvn/HAT&type=Date" />
-    </picture>
-  </a>
-</div>

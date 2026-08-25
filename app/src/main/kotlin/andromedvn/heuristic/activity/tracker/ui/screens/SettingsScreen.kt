@@ -145,7 +145,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         val hiddenPkgs = storage.getHiddenPackagesFlow().first()
                         val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
                         
-                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, currentSettings!!.ghostTimeTriggerHours, hiddenPkgs, ackGhosts)
+                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, currentSettings!!.ghostTimeTriggerMins, hiddenPkgs, ackGhosts)
                         val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)
                         
                         val totalOfflineMillis = offlineItems.sumOf { it.durationInMillis }
@@ -191,7 +191,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         HatOutlinedDialog(onDismissRequest = { customDialogSetting = null }, title = "Custom Value") {
             OutlinedTextField(
                 value = input, onValueChange = { if (it.all { char -> char.isDigit() }) input = it }, 
-                label = { Text(if (customDialogSetting == "gap" || customDialogSetting == "cluster") "Minutes" else "Hours") }, 
+                label = { Text(if (customDialogSetting == "gap" || customDialogSetting == "cluster" || customDialogSetting == "ghost") "Minutes" else "Hours") }, 
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
             )
             Spacer(modifier = Modifier.height(24.dp))
@@ -204,6 +204,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         "gap" -> updateSettings(currentSettings!!.copy(minGapThresholdMins = value))
                         "cluster" -> updateSettings(currentSettings!!.copy(sessionClusteringMins = value))
                         "archive" -> updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = value))
+                        "ghost" -> updateSettings(currentSettings!!.copy(ghostTimeTriggerMins = value))
                     }
                     customDialogSetting = null
                 }) { Text("Save", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
@@ -238,6 +239,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("HEURISTIC ENGINE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Duration" to SortType.DURATION, "Recent" to SortType.RECENT, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
+                    HatSlidingSelector<Int>("Idle App Detection", "Flag an app as a 'Suspicious Idle Session' if it stays on screen without interaction.", listOf("Off" to 0, "30m" to 30, "1h" to 60, "Custom" to -1), currentSettings!!.ghostTimeTriggerMins, "m", { updateSettings(currentSettings!!.copy(ghostTimeTriggerMins = it)) }, { customDialogSetting = "ghost" })
                     HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to archive your usage history before Android deletes it.", listOf("Off" to 0, "2h" to 2, "6h" to 6, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
                     HatSlidingSelector<Int>("Actionable Gap Minimum", "Hides tiny gaps from your labeling list so you aren't asked to categorize quick bathroom breaks.\nThe time itself is never deleted from your timeline.", listOf("Off" to 0, "5m" to 5, "15m" to 15, "Custom" to -1), currentSettings!!.minGapThresholdMins, "m", { updateSettings(currentSettings!!.copy(minGapThresholdMins = it)) }, { customDialogSetting = "gap" })
                     HatSlidingSelector<Int>("Session Merge Tolerance", "If you switch apps and come back within this window,\nHAT treats it as one continuous session.", listOf("Off" to 0, "1m" to 1, "5m" to 5, "Custom" to -1), currentSettings!!.sessionClusteringMins, "m", { updateSettings(currentSettings!!.copy(sessionClusteringMins = it)) }, { customDialogSetting = "cluster" })

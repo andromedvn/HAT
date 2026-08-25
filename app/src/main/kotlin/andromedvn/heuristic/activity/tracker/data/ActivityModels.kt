@@ -24,7 +24,7 @@ data class UserSettings(
     val archiveSyncIntervalHours: Int = 12,
     val minGapThresholdMins: Int = 5,
     val sessionClusteringMins: Int = 1,
-    val ghostTimeTriggerHours: Int = 1
+    val ghostTimeTriggerMins: Int = 60
 )
 
 @Serializable

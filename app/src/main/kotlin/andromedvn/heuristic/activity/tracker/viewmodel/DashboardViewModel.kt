@@ -200,7 +200,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                 val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
                 val pattern = if (range == TimeRangeLabel.WEEK) "EEE" else "dd"
 
-                val appUsageDef = async { heuristicEngine.getAppUsage(start, end, range, settings.ghostTimeTriggerHours, hiddenPkgs, ackGhosts) }
+                val appUsageDef = async { heuristicEngine.getAppUsage(start, end, range, settings.ghostTimeTriggerMins, hiddenPkgs, ackGhosts) }
                 val gapsDef = async { if (range == TimeRangeLabel.DAY) heuristicEngine.scanForGaps(start, end, hiddenPkgs) else emptyList() }
                 val chartDataDef = async { if (range == TimeRangeLabel.DAY) heuristicEngine.getHourlyBreakdown(start, end, hiddenPkgs) else heuristicEngine.getDailyBreakdown(start, end, pattern, hiddenPkgs) }
                 val appBreakdownDef = async { heuristicEngine.getAppBreakdown(start, end, range, hiddenPkgs) }
