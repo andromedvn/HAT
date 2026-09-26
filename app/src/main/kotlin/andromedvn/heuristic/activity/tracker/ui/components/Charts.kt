@@ -107,7 +107,7 @@ fun HatChart(
     val maxMins = (maxDataSum * if (isHourly) 60 else 24 * 60).toInt()
     
     val dynamicLabels = remember(maxMins) {
-        val top = max(if(isHourly) 60 else 24 * 60, maxMins); val mid = top / 2; val formatLabel = { mins: Int -> TimeUtils.formatDuration(mins * 60 * 1000L) }
+        val top = max(if(isHourly) 60 else 24 * 60, maxMins); val mid = top / 2; val formatLabel = { mins: Int -> TimeUtils.formatDuration(mins * 60L * 1000L) }
         listOf(formatLabel(top), formatLabel(mid), "0m")
     }
 

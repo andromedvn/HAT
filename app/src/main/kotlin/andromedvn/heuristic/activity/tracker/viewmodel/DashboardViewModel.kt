@@ -225,7 +225,10 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                 val clampedCombined = minOf(totalCombinedRaw, end - start)
                 val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - rawScreenTime else totalOfflineMillis
 
-                val minGapMillis = settings.minGapThresholdMins * 60 * 1000L
+                // `* 60L` promotes before the multiply; `* 60` would evaluate as
+                // Int*Int and overflow above ~35k minutes, silently making every
+                // gap qualify as "major". Same fix as HeuristicEngine.
+                val minGapMillis = settings.minGapThresholdMins * 60L * 1000L
                 val majorGaps = allGaps.filter { it.durationInMillis >= minGapMillis }
                 val minorGaps = allGaps.filter { it.durationInMillis < minGapMillis }
 

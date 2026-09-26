@@ -28,7 +28,7 @@ object HeuristicQuotes {
 
         // 2. The Future
         if (isFuture) {
-            val isHeavyScreenTime = totalScreenTimeMillis > 4 * 60 * 60 * 1000L
+            val isHeavyScreenTime = totalScreenTimeMillis > 4L * 60L * 60L * 1000L
             return if (isHeavyScreenTime) {
                 "You've been on your phone a fair amount today.\nThis block hasn't happened yet."
             } else {
