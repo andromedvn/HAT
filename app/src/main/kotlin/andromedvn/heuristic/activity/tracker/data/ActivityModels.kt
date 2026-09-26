@@ -80,6 +80,20 @@ data class SessionItem(
     val startTime: Long, val endTime: Long, val activeDuration: Long, val subIntervals: List<Pair<Long, Long>> = emptyList()
 ) {
     val spanDuration: Long get() = endTime - startTime
+
+    /**
+     * The figure shown for a session in the UI, and the one that must be summed
+     * when sessions are combined.
+     *
+     * This is the ACTIVE duration — the sum of the real sub-intervals, excluding
+     * the idle gaps that were bridged by the session-clustering tolerance. It is
+     * deliberately NOT [spanDuration] (the wall-clock span from first resume to
+     * last pause), which is larger whenever a cluster contains an internal gap.
+     *
+     * Summing [spanDuration] across selected sessions made the header total
+     * disagree with the sum of the rows beneath it. Always aggregate this.
+     */
+    val displayedDuration: Long get() = activeDuration
     fun getTimeRangeStr(range: TimeRangeLabel): String {
         val sdfTime = SimpleDateFormat("h:mm a", Locale.getDefault())
         return when (range) {

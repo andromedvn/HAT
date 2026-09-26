@@ -289,7 +289,10 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                     Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f, fill=false).padding(end = 16.dp)) { 
                             Text("${selectedSessions.size} Selected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(TimeUtils.formatDuration(selectedSessions.sumOf { it.spanDuration }), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            // Must be displayedDuration (active sum), not spanDuration
+                            // (wall span), or the header total exceeds the sum of the
+                            // session rows below it whenever a cluster has an internal gap.
+                            Text(TimeUtils.formatDuration(selectedSessions.sumOf { it.displayedDuration }), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                             val isOnlyGhosts = selectedSessions.all { s -> (uiState.activity as? AppUsageItem)?.ghostIntervals?.any { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis } == true }
