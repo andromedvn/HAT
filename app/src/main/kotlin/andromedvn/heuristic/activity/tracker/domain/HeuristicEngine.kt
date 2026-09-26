@@ -44,6 +44,27 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         return tags
     }
 
+    /**
+     * Returns `Triple(trueDeviceScreenTime, totalAppExecution, validApps)`.
+     *
+     * Accounting invariants, deliberately NOT enforced by clamping:
+     *
+     * - [trueDeviceScreenTime] is the merged duration of **all** app intervals,
+     *   hidden included. It is the device's real foreground time.
+     * - [totalAppExecution] is the sum of **per-app** durations over non-hidden
+     *   packages. Because it is a per-app sum it is **not** mutually exclusive
+     *   with [trueDeviceScreenTime]: on split-screen, or when a package
+     *   re-resumes, two packages can have overlapping intervals, so the sum can
+     *   legitimately exceed the merged total.
+     * - Hidden app time appears in neither [totalAppExecution] (filtered out) nor
+     *   in sharded offline time (subtracted as real usage). It is erased by
+     *   design; `scanForGaps` marks the affected gaps with
+     *   `hasHiddenAppFootprint` so the gap list can explain them.
+     *
+     * Consumers must treat [totalAppExecution] as a per-app figure, not a device
+     * figure. Clamping it to [trueDeviceScreenTime] would silently hide real
+     * split-screen overlap.
+     */
     suspend fun getAppUsage(start: Long, end: Long, range: TimeRangeLabel, ghostMins: Int, hiddenPkgs: Set<String>, ackGhosts: List<AcknowledgedGhost>): Triple<Long, Long, List<AppUsageItem>> = withContext(Dispatchers.Default) {
         val ghostMillis = if (ghostMins <= 0) Long.MAX_VALUE else ghostMins * 60L * 1000L
         val intervalsMap = repository.getFilteredIntervals(start, end, hiddenPkgs)
