@@ -103,7 +103,7 @@ object VaultSecurity {
                 val calculatedSig = Base64.encodeToString(mac.doFinal(), Base64.NO_WRAP)
                 if (calculatedSig == signatureStr) {
                     HatLogger.log("VaultSecurity: Signature verified.")
-                    return Pair(dbTempFile, prefsStr!!)
+                    return Pair(dbTempFile, prefsStr)
                 } else {
                     HatLogger.logError("VaultSecurity", "Signature mismatch. Expected: $signatureStr, Calculated: $calculatedSig")
                 }

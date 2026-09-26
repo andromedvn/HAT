@@ -77,7 +77,12 @@ fun ComposeEmptyActivityTheme(settings: UserSettings, content: @Composable () ->
         SideEffect {
             val window = (view.context as Activity).window
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            // Deprecated in API 35 in favour of edge-to-edge + enableEdgeToEdge(),
+            // but they still work and the modern replacement is a visual change
+            // that needs device verification. Suppressed deliberately, not overlooked.
+            @Suppress("DEPRECATION")
             window.statusBarColor = android.graphics.Color.TRANSPARENT
+            @Suppress("DEPRECATION")
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

@@ -33,7 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -231,6 +231,35 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                 val isSessionSelected = selectedSessions.contains(session)
                                 val isGhost = appActivity?.ghostIntervals?.any { ghost -> session.startTime <= ghost.startMillis && session.endTime >= ghost.endMillis } == true
 
+                                // Extracted from an inline lambda so the body is a named
+                                // function; this also let the redundant null check be
+                                // replaced with an explicit requireNotNull (see below).
+                                fun handleLongPress(s: SessionItem) {
+                                    if (type == "app" && selectedSessions.isEmpty()) {
+                                        // isGhost is defined as
+                                        //   appActivity?.ghostIntervals?.any { ... } == true
+                                        // so isGhost == true already implies appActivity is
+                                        // non-null. The old `appActivity != null` check was
+                                        // therefore provably redundant, which is why the
+                                        // compiler warned "condition is always true".
+                                        // requireNotNull states that invariant explicitly and
+                                        // fails loudly if a future edit breaks it, instead of
+                                        // silently NPE-ing on the next dereference.
+                                        if (isGhost) {
+                                            val act = requireNotNull(appActivity) {
+                                                "isGhost == true implies appActivity is non-null"
+                                            }
+                                            ghostPkg = act.packageName
+                                            ghostAppName = act.title
+                                            ghostStart = s.startTime
+                                            ghostEnd = s.endTime
+                                            showIdleActionDialog = true
+                                        } else {
+                                            selectedSessions.add(s)
+                                        }
+                                    }
+                                }
+
                                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(IntrinsicSize.Min)) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(32.dp).fillMaxHeight()) {
                                         if (index > 0) Box(modifier = Modifier.width(2.dp).height(pinOffset).background(MaterialTheme.colorScheme.primary.copy(alpha=0.5f))) else Spacer(modifier = Modifier.height(pinOffset))
@@ -243,7 +272,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                             .clip(RoundedCornerShape(16.dp))
                                             .combinedClickable(
                                                 onClick = { if (selectedSessions.isNotEmpty()) { if (isSessionSelected) selectedSessions.remove(session) else selectedSessions.add(session) } },
-                                                onLongClick = { if (type == "app" && selectedSessions.isEmpty()) { if (isGhost && appActivity != null) { ghostPkg = appActivity.packageName; ghostAppName = appActivity.title; ghostStart = session.startTime; ghostEnd = session.endTime; showIdleActionDialog = true } else { selectedSessions.add(session) } } }
+                                                onLongClick = { handleLongPress(session) }
                                             ), 
                                         colors = CardDefaults.cardColors(containerColor = if(isSessionSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.05f) else Color.Transparent)
                                     ) {
