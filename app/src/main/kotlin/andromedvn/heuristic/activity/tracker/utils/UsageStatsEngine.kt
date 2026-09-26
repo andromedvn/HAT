@@ -135,41 +135,13 @@ class UsageStatsEngine(context: Context) {
     }
 
     suspend fun mergeIntervals(intervals: List<Pair<Long, Long>>): List<Pair<Long, Long>> {
-        if (intervals.isEmpty()) return emptyList()
-        val sorted = intervals.sortedBy { it.first }
-        val merged = mutableListOf<Pair<Long, Long>>()
-        var current = sorted[0]
-
-        var yieldCounter = 0
-        for (i in 1 until sorted.size) {
-            if (yieldCounter++ % 100 == 0) yield()
-            val next = sorted[i]
-            if (current.second >= next.first) {
-                current = current.copy(second = maxOf(current.second, next.second))
-            } else {
-                merged.add(current)
-                current = next
-            }
-        }
-        merged.add(current)
-        return merged
+        yield()
+        return andromedvn.heuristic.activity.tracker.domain.mergeIntervals(intervals)
     }
 
     suspend fun subtractIntervals(source: List<Pair<Long, Long>>, remove: List<Pair<Long, Long>>): List<Pair<Long, Long>> {
-        var current = source
-        for (rem in remove) {
-            yield()
-            val next = mutableListOf<Pair<Long, Long>>()
-            for (src in current) {
-                if (src.second <= rem.first || src.first >= rem.second) next.add(src) 
-                else { 
-                    if (src.first < rem.first) next.add(src.first to rem.first)
-                    if (src.second > rem.second) next.add(rem.second to src.second) 
-                }
-            }
-            current = next
-        }
-        return current
+        yield()
+        return andromedvn.heuristic.activity.tracker.domain.subtractIntervals(source, remove)
     }
 
     suspend fun sliceIntervals(intervals: List<Pair<Long, Long>>, bucketType: Int): Map<Long, Long> {

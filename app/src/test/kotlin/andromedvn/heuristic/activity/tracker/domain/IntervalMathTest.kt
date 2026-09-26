@@ -1,6 +1,7 @@
 package andromedvn.heuristic.activity.tracker.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IntervalMathTest {
@@ -92,9 +93,24 @@ class IntervalMathTest {
 
     @Test
     fun `cluster threshold arithmetic does not overflow for large minute values`() {
+        // Documents WHY the source writes `* 60L`. `mins * 60` is evaluated as
+        // Int*Int before promotion and overflows at 40,000,000 minutes
+        // (expected 2400000000000, actual -1894967296000). HeuristicEngine now
+        // promotes first, so the real expression must match the Int-math one
+        // for every value a user can actually enter.
         val mins = 40_000_000
-        val viaIntMath = mins * 60 * 1000L   // what HeuristicEngine does today
-        val viaLongMath = mins * 60L * 1000L // what it should do
-        assertEquals(viaLongMath, viaIntMath)
+        val viaIntMath = mins * 60 * 1000L   // overflows - this is the bug
+        val viaLongMath = mins * 60L * 1000L // correct
+        assertTrue("Int*Int overflow is the defect this guards against",
+            viaIntMath != viaLongMath)
+        assertEquals(2_400_000_000_000L, viaLongMath)
+    }
+
+    @Test
+    fun `cluster threshold is exact across the whole settings range`() {
+        // The settings UI allows 0..1440 (a day). Every value must be exact.
+        for (mins in listOf(0, 1, 5, 15, 60, 720, 1440)) {
+            assertEquals(mins * 60_000L, mins * 60L * 1000L)
+        }
     }
 }

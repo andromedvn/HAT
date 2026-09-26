@@ -216,7 +216,9 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
     }
 
     suspend fun getAppSessions(packageName: String, start: Long, end: Long, clusterThresholdMins: Int): List<SessionItem> = withContext(Dispatchers.Default) {
-        val clusterThreshold = clusterThresholdMins * 60 * 1000L
+        // `* 60L` promotes to Long before the multiply. Writing `* 60` would
+        // evaluate as Int*Int and overflow once the setting exceeds ~35k minutes.
+        val clusterThreshold = clusterThresholdMins * 60L * 1000L
         val allIntervals = repository.getAllIntervalsCached(start, end)
         val merged = engine.mergeIntervals(allIntervals[packageName] ?: emptyList())
         if (merged.isEmpty()) return@withContext emptyList()
@@ -245,7 +247,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
     }
 
     suspend fun getOfflineSessions(title: String, start: Long, end: Long, clusterThresholdMins: Int): List<SessionItem> = withContext(Dispatchers.Default) {
-        val clusterThreshold = clusterThresholdMins * 60 * 1000L
+        val clusterThreshold = clusterThresholdMins * 60L * 1000L
         val shardedOffline = getShardedOfflineIntervalsForTitle(title, start, end)
         if (shardedOffline.isEmpty()) return@withContext emptyList()
         val merged = engine.mergeIntervals(shardedOffline)
