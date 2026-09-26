@@ -94,4 +94,11 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime.ktx)
+
+    // --- JVM unit tests (Phase B) -----------------------------------------
+    // Pure-logic tests only. No Robolectric: this machine has 4.7 GB RAM and
+    // Robolectric's instrumented class loading triggers the same AAPT2/JVM
+    // memory pressure that broke bundleRelease.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }
