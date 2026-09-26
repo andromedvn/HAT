@@ -6,8 +6,8 @@ title: Terms of Service - HAT
 # Terms of Service & End-User License Agreement
 
 **HAT (Heuristic Activity Tracker)**
-**Effective Date:** May 26, 2026
-**Last Reviewed:** May 26, 2026
+**Effective Date:** September 25, 2026
+**Last Reviewed:** September 25, 2026
 
 ---
 
@@ -41,7 +41,7 @@ In this document, the following terms have specific meanings:
 
 **"OS Events"** means the raw usage event data provided to the Application by Android's `UsageStatsManager` API.
 
-**"Third-Party Libraries"** means the open-source libraries the Application incorporates as dependencies, as listed in Section 9.
+**"Third-Party Libraries"** means the open-source libraries the Application incorporates as dependencies, as listed in Section 11.
 
 ---
 
@@ -184,7 +184,7 @@ If you are in a jurisdiction that does not permit implied warranties to be exclu
 
 **THIS LIMITATION APPLIES REGARDLESS OF THE THEORY OF LIABILITY — WHETHER CONTRACT, TORT (INCLUDING NEGLIGENCE), STRICT LIABILITY, OR OTHERWISE — AND REGARDLESS OF WHETHER THE DEVELOPER HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.**
 
-Because HAT is provided free of charge and the Developer receives no revenue from it, the Developer's maximum aggregate liability to you for any claim arising out of your use of the Application is **zero (₱0.00 / $0.00 USD / €0.00 EUR)** or the minimum amount required by mandatory applicable law, whichever is greater.
+Because HAT is distributed at no cost, the Developer receives no consideration from you in exchange for the license granted in Section 3. Any voluntary contribution made under Section 22 is a gift, not payment for the Application, and grants you no rights beyond those already granted to every user. The Developer's maximum aggregate liability to you for any claim arising out of your use of the Application is **zero (₱0.00 / $0.00 USD / €0.00 EUR)** or the minimum amount required by mandatory applicable law, whichever is greater.
 
 Some jurisdictions do not allow the exclusion or limitation of incidental or consequential damages. In such jurisdictions, liability is limited to the greatest extent the law permits.
 
@@ -347,6 +347,28 @@ For questions, concerns, or notices under these Terms:
 
 **Email:** andromedvn@proton.me
 **GitHub:** [https://github.com/andromedvn/HAT/issues](https://github.com/andromedvn/HAT/issues)
+
+---
+
+## 22. Voluntary Contributions
+
+HAT's Settings screen may include a "Support Development" link that opens a third-party contribution page in your device's default browser. The following terms govern that feature.
+
+**22.1 No consideration, no contract.** A contribution is a voluntary gift. It is not payment for the Application, not a purchase, not a subscription, and not an agreement of any kind. No consideration is accepted by the Developer in exchange for the license granted in Section 3, which is granted to all users identically and without charge.
+
+**22.2 No additional rights.** Contributing grants you no additional license, no warranty, no support commitment, no priority in bug reports or feature requests, no access to unreleased functionality, and no claim on future development. Every feature of HAT, present and future, remains available to every user regardless of whether they have ever contributed.
+
+**22.3 No functionality is gated.** HAT is not trialware, freemium, crippled, or watermarked. Every user has permanent access to the same features. Declining to contribute — permanently or at any time — has no effect on functionality, data handling, or support.
+
+**22.4 Processing by a third party.** Contributions are handled entirely by an external contribution platform under its own terms of service, privacy policy, refund policy, and applicable jurisdiction. The Developer does not process your payment, does not receive your payment credentials, and has no contractual relationship with that platform. Any dispute regarding a contribution, including refunds, chargebacks, or payment processing, is between you and that platform alone.
+
+**22.5 No linkage to your data.** A contribution cannot be linked by the Developer to your HAT installation, your timeline, your offline logs, your settings, your vault, or your device. The Application contains no payment processing, donor database, or transmission of any identifier. See Section 4.9 of the Privacy Policy.
+
+**22.6 No refund obligation.** Contributions are made to support development work already undertaken or planned. They are non-refundable except where required by the contribution platform's own policy or by mandatory applicable law. The Developer is not obligated to provide any deliverable, feature, service, or consideration in return.
+
+**22.7 Termination of the feature.** The Developer may remove, relocate, or change the contribution link at any time, and may discontinue voluntary contributions entirely, without notice and without affecting your license under Section 3.
+
+**22.8 Your statutory rights.** Nothing in this Section limits rights you may have under mandatory consumer protection law, including any right to a refund where a contribution is made under misrepresented circumstances.
 
 ---
 

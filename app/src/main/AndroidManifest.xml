@@ -6,6 +6,20 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
+    <!--
+      androidx.work:work-runtime declares ACCESS_NETWORK_STATE in its own manifest
+      so that callers can use NetworkType.CONNECTED constraints. HAT's only
+      WorkManager constraint is setRequiresBatteryNotLow(), so this permission is
+      unused here.
+
+      It is stripped so the shipped binary matches the Privacy Policy's claim that
+      HAT declares neither INTERNET nor ACCESS_NETWORK_STATE. Anyone can confirm
+      this with `aapt dump permissions`. Note that ACCESS_NETWORK_STATE would not
+      have allowed network traffic in any case — only INTERNET does — but an
+      auditor should not find a discrepancy between the policy and the binary.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />

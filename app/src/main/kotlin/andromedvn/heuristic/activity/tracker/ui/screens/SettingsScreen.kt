@@ -51,6 +51,14 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Voluntary sponsorship link. Opened via Intent.ACTION_VIEW so HAT itself makes
+ * no network request — this app declares no INTERNET permission, and that claim
+ * must stay literally true. Swapping platforms (Ko-fi / GitHub Sponsors) means
+ * changing only this constant.
+ */
+private const val SPONSOR_URL = "https://ko-fi.com/andromedvn"
+
 @Composable
 fun SettingsScreen(navController: NavController, repository: ActivityRepository) {
     val context = LocalContext.current
@@ -246,7 +254,14 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
-                // GROUP 4: ABOUT & LEGAL
+                // GROUP 4: SUPPORT (donations handled entirely on an external page)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("SUPPORT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
+                    SettingsItem("Support Development", "HAT is free with no ads, trackers, or subscriptions. If it saved you time, a coffee helps keep it maintained.") { openWebLink(SPONSOR_URL) }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+
+                // GROUP 5: ABOUT & LEGAL
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ABOUT & LEGAL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { openWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }

@@ -6,8 +6,8 @@ title: Privacy Policy - HAT
 # Privacy Policy
 
 **HAT (Heuristic Activity Tracker)**
-**Effective Date:** May 26, 2026
-**Last Reviewed:** May 26, 2026
+**Effective Date:** September 25, 2026
+**Last Reviewed:** September 25, 2026
 
 ---
 
@@ -146,6 +146,21 @@ The following rules govern that information:
 - If you attach a crash log, diagnostic export, or vault file to a support communication, its contents are used only to diagnose and respond to the issue you reported. They are not analyzed for any other purpose and are not retained after the inquiry is resolved.
 
 To request deletion of any support correspondence, email andromedvn@proton.me. The developer will make best efforts to delete stored communication within 30 days of such a request, subject to any legal obligation to retain it.
+
+### 4.9 Voluntary Sponsorship Link
+
+HAT's Settings screen includes a "Support Development" link intended for users who wish to make a voluntary contribution toward development costs. Tapping it hands a URL to your device's default browser via Android's `ACTION_VIEW` intent.
+
+This is worth stating precisely, because it is the one place where HAT's network posture is easy to misread:
+
+- **HAT does not make the request.** The Application declares no `INTERNET` permission. It cannot open a network connection of any kind, including to open this link. Android's operating system — your browser — performs the network activity, not HAT.
+- **HAT transmits no identifiers.** No user ID, install ID, advertising ID, device fingerprint, or analytics parameter is attached to that handoff. The only data transferred is the literal destination URL.
+- **HAT is not embedded.** The contribution page does not load inside an in-app WebView. HAT has no WebView, no embedded browser, and no code capable of rendering a remote page.
+- **The third-party platform governs its own data.** Once your browser opens, the contribution platform's own privacy policy, terms of service, cookie practices, and jurisdictional terms apply to you. HAT has no visibility into, control over, or contractual relationship with that platform. Consult its policy before providing any information to it.
+- **The developer receives no donor data through the app.** Contributions are processed entirely on the external platform. The Application contains no payment processing, no donor database, and no mechanism by which a contribution could be linked to your HAT installation, your timeline, your settings, or your device.
+- **It is entirely optional.** Declining to contribute changes nothing about HAT's behavior, features, data handling, or this policy. HAT is not trialware, not freemium, and no functionality is gated behind payment.
+
+If you would like to support the project without a financial contribution, the repository, issue tracker, and documentation are equally valuable.
 
 ---
 
