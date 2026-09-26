@@ -64,4 +64,32 @@ class IntegerPromotionGuardTest {
             offenders
         )
     }
+
+    /**
+     * Guards the offline-total bug class, which was found in TWO places: the
+     * dashboard widget and the exported daily summary. Both were summing raw
+     * offline durations instead of sharded ones.
+     *
+     * The invariant every consumer must follow: an offline total is always
+     * `getShardedOfflineIntervals(...).sumOf { second - first }`, never
+     * `offlineItems.sumOf { it.durationInMillis }`.
+     */
+    @Test
+    fun `offline totals are never summed raw from offline items`() {
+        val offenders = mutableListOf<String>()
+        val hazard = Regex("""offlineItems\s*\.\s*sumOf\s*\{\s*it\.durationInMillis\s*}""")
+        for (file in sourceFiles()) {
+            file.readLines().forEachIndexed { i, line ->
+                if (hazard.containsMatchIn(line)) {
+                    offenders.add("${file.name}:${i + 1}  ${line.trim()}")
+                }
+            }
+        }
+        assertEquals(
+            "Raw offline sums double-count app overlap. Use getShardedOfflineIntervals() " +
+                "and sum the sharded intervals instead.\n" + offenders.joinToString("\n"),
+            emptyList<String>(),
+            offenders
+        )
+    }
 }

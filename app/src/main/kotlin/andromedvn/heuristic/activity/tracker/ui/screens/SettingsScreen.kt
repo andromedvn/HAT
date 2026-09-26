@@ -156,7 +156,15 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, currentSettings!!.ghostTimeTriggerMins, hiddenPkgs, ackGhosts)
                         val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)
                         
-                        val totalOfflineMillis = offlineItems.sumOf { it.durationInMillis }
+                        // Must be sharded against app foreground time, exactly as the
+                        // dashboard does. Summing raw offline durations double-counted
+                        // any overlap, and the clamp below then silently absorbed the
+                        // error into a wrong "Total Tracked" instead of surfacing it.
+                        // This is exported text the user reads and shares, so an
+                        // inconsistent pair of numbers matters more here than anywhere.
+                        val totalOfflineMillis = engine
+                            .getShardedOfflineIntervals(start, end)
+                            .sumOf { it.second - it.first }
                         val totalCombinedRaw = rawScreenTime + totalOfflineMillis
                         val clampedCombined = minOf(totalCombinedRaw, end - start)
                         val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - rawScreenTime else totalOfflineMillis
