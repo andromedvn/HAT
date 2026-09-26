@@ -214,7 +214,13 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                 val offlineDetailChartData = offlineBreakdownDef.await()
                 val offlineItems = offlineActivitiesDef.await()
                 
-                val totalOfflineMillis = offlineItems.sumOf { it.durationInMillis }
+                // Offline time must be sharded against app foreground time, exactly
+                // as getShardedOfflineIntervals does everywhere else. Summing raw
+                // durations double-counted any overlap, so the app+offline stacked
+                // chart on the dashboard could exceed the visible day.
+                val totalOfflineMillis = heuristicEngine
+                    .getShardedOfflineIntervals(start, end)
+                    .sumOf { it.second - it.first }
                 val totalCombinedRaw = rawScreenTime + totalOfflineMillis
                 val clampedCombined = minOf(totalCombinedRaw, end - start)
                 val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - rawScreenTime else totalOfflineMillis

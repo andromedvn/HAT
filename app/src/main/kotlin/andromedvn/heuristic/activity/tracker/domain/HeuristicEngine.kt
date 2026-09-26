@@ -129,7 +129,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         OfflineActivityItem(title, title, totalDur, minTs, entities.first().iconName, emptySet())
     }
     
-    private suspend fun getShardedOfflineIntervals(start: Long, end: Long): List<Pair<Long, Long>> {
+    suspend fun getShardedOfflineIntervals(start: Long, end: Long): List<Pair<Long, Long>> {
         val entities = repository.getRawOfflineActivitiesBetween(start, end)
         if (entities.isEmpty()) return emptyList()
         val rawOffline = entities.map { maxOf(start, it.timestamp) to minOf(end, it.timestamp + it.durationInMillis) }.filter { it.second > it.first }
