@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,8 +35,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
 import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
+import andromedvn.heuristic.activity.tracker.domain.shouldShowSupportPrompt
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
+import andromedvn.heuristic.activity.tracker.utils.SPONSOR_URL
+import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.worker.WorkerScheduler
@@ -51,14 +53,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/**
- * Voluntary sponsorship link. Opened via Intent.ACTION_VIEW so HAT itself makes
- * no network request — this app declares no INTERNET permission, and that claim
- * must stay literally true. Swapping platforms (Ko-fi / GitHub Sponsors) means
- * changing only this constant.
- */
-private const val SPONSOR_URL = "https://ko-fi.com/andromedvn"
-
 @Composable
 fun SettingsScreen(navController: NavController, repository: ActivityRepository) {
     val context = LocalContext.current
@@ -70,6 +64,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
     
     val scrollState = rememberScrollState()
     var customDialogSetting by remember { mutableStateOf<String?>(null) } 
+    var showSupportPrompt by remember { mutableStateOf(false) }
     var localSortType by remember(currentSettings?.sortType) { mutableStateOf(currentSettings?.sortType ?: SortType.DURATION) }
 
     var showExportDatePicker by rememberSaveable { mutableStateOf(false) }
@@ -125,10 +120,6 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }
             }
         }
-    }
-
-    val openWebLink = { url: String ->
-        try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (e: Exception) {}
     }
 
     if (showExportDatePicker) {
@@ -228,6 +219,10 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         }
     }
 
+    if (showSupportPrompt) {
+        SupportPromptDialog(onDismissed = { showSupportPrompt = false })
+    }
+
     Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets(0,0,0,0)) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()).windowInsetsPadding(WindowInsets.statusBars).verticalScroll(scrollState)) {
             Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -237,7 +232,15 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("THEME ENGINE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     ThemeOptionItem("Dynamic Material", "Extracts colors from system wallpaper.", currentSettings!!.themeType == ThemeType.DYNAMIC) { updateSettings(currentSettings!!.copy(themeType = ThemeType.DYNAMIC)) }
-                    ThemeOptionItem("Default Material", "Uses the classic HAT Orange.", currentSettings!!.themeType == ThemeType.STATIC) { updateSettings(currentSettings!!.copy(themeType = ThemeType.STATIC)) }
+                    ThemeOptionItem("Custom Material", "Pick any accent color you like.", currentSettings!!.themeType == ThemeType.STATIC) {
+                        val alreadySeen = currentSettings!!.hasSeenSupportPrompt
+                        val shouldPrompt = shouldShowSupportPrompt(alreadySeen, reachedThemeControl = true)
+                        if (shouldPrompt) showSupportPrompt = true
+                        // The "seen" flag is persisted in the SAME write as the theme change.
+                        // Writing it from the dialog's dismiss handler instead would race the
+                        // theme write and can silently revert the user's choice.
+                        updateSettings(currentSettings!!.copy(themeType = ThemeType.STATIC, hasSeenSupportPrompt = alreadySeen || shouldPrompt))
+                    }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
@@ -265,15 +268,15 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 // GROUP 4: SUPPORT (donations handled entirely on an external page)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("SUPPORT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    SettingsItem("Support Development", "HAT is free with no ads, trackers, or subscriptions. If it saved you time, a coffee helps keep it maintained.") { openWebLink(SPONSOR_URL) }
+                    SettingsItem("Support Development", "HAT is free with no ads, trackers, or subscriptions. If it saved you time, a coffee helps keep it maintained.") { context.openExternalWebLink(SPONSOR_URL) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
                 // GROUP 5: ABOUT & LEGAL
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ABOUT & LEGAL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { openWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }
-                    SettingsItem("Terms of Service", "Conditions of use and liability limitations.") { openWebLink("https://andromedvn.github.io/HAT/TERMS.html") }
+                    SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }
+                    SettingsItem("Terms of Service", "Conditions of use and liability limitations.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/TERMS.html") }
                     SettingsItem("Open Source Licenses", "Third-party software attributions.") { navController.navigate("licenses") }
                     
                     Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {

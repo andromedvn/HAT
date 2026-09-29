@@ -17,7 +17,7 @@ data class UserSettings(
     val staticColor: Long = 0xFFFF8000, 
     val extractedColor: Long = 0xFF4287F5,
     val hasSeenOnboarding: Boolean = false,
-    val hasSeenTutorialPrompt: Boolean = false,
+    val hasSeenSupportPrompt: Boolean = false,
     val hasSeenHistoryLimitWarning: Boolean = false,
     val installDateMillis: Long = System.currentTimeMillis(),
     val bypassHistoryLimit: Boolean = false,
