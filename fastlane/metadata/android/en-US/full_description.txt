@@ -5,5 +5,5 @@ HAT reads Android's native usage stats to know when you were on your phone. When
 
 Features:
 * 100% Local: There are no servers. There is no cloud. The app does not possess internet permissions.
-* Your Data is Yours: Everything is stored in a local SQLite database. You can export it as an encrypted zip file.
+* Your Data is Yours: Everything is stored in a local SQLite database. You can export it as a zip file signed with HMAC-SHA256, so a modified or corrupted export is rejected on import. The export is not encrypted.
 * Battery Friendly: It does not run a constant background service draining your battery. It queries the OS dynamically upon resume.

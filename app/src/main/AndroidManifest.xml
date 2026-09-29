@@ -3,8 +3,21 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+
+    <!--
+      HAT runs no foreground service. ArchiveSyncWorker is a plain
+      CoroutineWorker: there is no setForeground() call, no <service> element
+      above, and no foregroundServiceType anywhere, so the permission is simply
+      not declared. (A `tools:node="remove"` marker was also verified to strip
+      it, but declaring nothing is simpler and there is no library declaring it
+      to strip.)
+
+      The FOREGROUND_SERVICE / WAKE_LOCK / RECEIVE_BOOT_COMPLETED entries in
+      the merged manifest come from androidx.work, which needs them to schedule
+      ArchiveSyncWorker. They are transitive rather than requested by HAT, and
+      the README's permission section says so.
+    -->
 
     <!--
       androidx.work:work-runtime declares ACCESS_NETWORK_STATE in its own manifest

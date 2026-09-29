@@ -49,3 +49,66 @@ jobs:
           name: unit-test-report
           path: app/build/reports/tests/testDebugUnitTest/
           retention-days: 14
+
+  # The unit tests above cannot catch a release-only failure: R8 minification,
+  # the merged manifest, and Android Lint all only run when a release APK is
+  # built. HAT's entire pitch is a minimal permission surface, and lint is the
+  # checker that audits exactly that — so a release build is part of CI.
+  build-and-lint:
+    name: Release build + lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # CI has no key.properties. -PallowDebugSignedRelease is exactly the
+      # escape hatch app/build.gradle.kts exposes for verification builds; the
+      # artifact is uploaded for inspection and must never be published.
+      - name: Build release APK (R8 enabled)
+        run: ./gradlew :app:assembleRelease --console=plain --no-daemon -PallowDebugSignedRelease=true
+
+      - name: Android Lint
+        run: ./gradlew :app:lintRelease --console=plain --no-daemon -PallowDebugSignedRelease=true
+
+      # The privacy claim is a product feature, so it is asserted rather than
+      # trusted. Fails the build if INTERNET ever reaches a release manifest.
+      - name: Assert no INTERNET permission in the release manifest
+        run: |
+          status=0
+          while IFS= read -r manifest; do
+            if grep -q 'android.permission.INTERNET' "$manifest"; then
+              echo "::error file=$manifest::INTERNET permission present in a release manifest"
+              status=1
+            fi
+          done < <(find app/build/intermediates -path '*release*' -name 'AndroidManifest.xml')
+          if [ "$status" -eq 0 ]; then
+            echo "OK: no INTERNET permission in any release manifest"
+          fi
+          exit "$status"
+
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hat-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 7

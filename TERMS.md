@@ -214,13 +214,18 @@ The Application incorporates the following third-party libraries. Each is licens
 | Library | Publisher | License |
 |---|---|---|
 | AndroidX Core KTX | Google / The Android Open Source Project | Apache 2.0 |
-| Jetpack Compose (BOM) | Google / AOSP | Apache 2.0 |
+| Jetpack Compose (BOM, UI, Graphics, Material 3, Material Icons Extended) | Google / AOSP | Apache 2.0 |
+| Jetpack Activity Compose | Google / AOSP | Apache 2.0 |
 | Jetpack Navigation Compose | Google / AOSP | Apache 2.0 |
-| AndroidX Lifecycle ViewModel | Google / AOSP | Apache 2.0 |
+| AndroidX Lifecycle (Runtime KTX, ViewModel Compose) | Google / AOSP | Apache 2.0 |
 | AndroidX DataStore Preferences | Google / AOSP | Apache 2.0 |
 | AndroidX WorkManager | Google / AOSP | Apache 2.0 |
-| Material Icons Extended | Google / AOSP | Apache 2.0 |
 | kotlinx.serialization | JetBrains | Apache 2.0 |
+
+The list above covers every library declared in `app/build.gradle.kts` that is
+packaged into the shipped APK. Test-only dependencies (`junit`,
+`kotlinx-coroutines-test`) are used in `app/src/test` and are not distributed
+with the Application, so they are not listed above.
 
 Full license texts for these libraries are available within the Application under Settings → Open Source Licenses.
 

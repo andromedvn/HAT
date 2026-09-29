@@ -41,10 +41,11 @@ fun LicensesScreen(navController: NavController) {
                         Text(
                             text = "HAT is built using the following open-source frameworks and libraries, provided under the Apache License 2.0:\n\n" +
                                    "• The Android Open Source Project (AOSP)\n" +
-                                   "• Jetpack Compose UI Toolkit\n" +
+                                   "• Jetpack Compose UI Toolkit (UI, Material 3, Material Icons Extended)\n" +
+                                   "• Jetpack Activity & Navigation\n" +
                                    "• Kotlin Programming Language\n" +
                                    "• Kotlinx Coroutines & Serialization\n" +
-                                   "• AndroidX DataStore & WorkManager",
+                                   "• AndroidX Core, Lifecycle, DataStore & WorkManager",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

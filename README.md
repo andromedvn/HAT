@@ -18,7 +18,7 @@
 [![No Internet](https://img.shields.io/badge/Internet_Permission-NONE-brightgreen.svg?style=flat-square)](https://andromedvn.github.io/HAT/PRIVACY.html)
 [![No Tracking](https://img.shields.io/badge/Tracking-ZERO-brightgreen.svg?style=flat-square)](#privacy--security)
 [![No Cloud](https://img.shields.io/badge/Cloud-NONE-brightgreen.svg?style=flat-square)](#privacy--security)
-[![F-Droid](https://img.shields.io/badge/F--Droid-Pending-green.svg?style=flat-square)](https://gitlab.com/fdroid/rfp/-/issues/3896)
+[![Releases](https://img.shields.io/badge/Releases-GitHub-brightgreen.svg?style=flat-square)](https://github.com/andromedvn/HAT/releases)
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-Pending-ea4aaa.svg?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/andromedvn)
 
 <br/>
@@ -104,9 +104,9 @@ Nothing runs in the background unless you explicitly enable the archive worker. 
 
 ### Export & Integrations
 
-**Daily Markdown Summary** — Easily copy a clean, text-based daily summary of your app usage and offline gaps straight to your clipboard. Perfect for pasting into Obsidian, Notion, or personal LLM assistants for custom analysis.
+**Daily Text Summary** — Copies a plain-text summary of a single day's app usage, labelled offline activities, and totals to your clipboard. The section headers are written as `[Offline Activities]`, `[App Usage]`, and `[Totals]` — bracketed labels, not Markdown headings, so they paste cleanly into a note or an LLM prompt without rendering as literal `##` syntax. (An earlier version of this README described it as a "Markdown Summary" and recommended Obsidian/Notion; the output has never been Markdown.)
 
-**Master Vault (Backup & Restore)** — Your entire local database — app usage history, offline logs, hidden apps, dismissed sessions — can be exported as a single encrypted `.zip` file called the Master Vault. The file is protected with an HMAC-SHA256 signature to prevent corruption.
+**Master Vault (Backup & Restore)** — Your entire local database — app usage history, offline logs, hidden apps, dismissed sessions — can be exported as a single integrity-signed `.zip` file called the Master Vault. There is no encryption: the zip entries are plain files. What the export gives you is tamper detection — an HMAC-SHA256 signature over the contents, so a file that was modified or corrupted after export is rejected on import instead of being silently loaded.
 
 ### Ghost Session Detection
 
@@ -313,7 +313,15 @@ HAT's privacy posture is structural, not policy-based.
 
 **No analytics, no crash reporting service.** Crashes are logged to a local file. Diagnostic events are written to a local file. Nothing is transmitted.
 
-**Usage Access is the only sensitive permission.** `PACKAGE_USAGE_STATS` is required to read app activity from `UsageStatsManager`. This is the entire permission surface. HAT does not request contacts, location, camera, microphone, notifications, or any other sensitive Android permission.
+**Usage Access is the only sensitive permission.** `PACKAGE_USAGE_STATS` is required to read app activity from `UsageStatsManager`. HAT does not request contacts, location, camera, microphone, notifications, or any other sensitive Android permission.
+
+The full merged manifest also contains `READ_EXTERNAL_STORAGE` (capped at `maxSdkVersion 28`, for vault import/export on older Android), plus `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, and `FOREGROUND_SERVICE`, which `androidx.work` contributes so that `ArchiveSyncWorker` can be scheduled. You can confirm the shipped set yourself with `aapt dump permissions`:
+
+```bash
+aapt dump permissions app/build/outputs/apk/release/app-release.apk
+```
+
+The privacy-critical result is that `INTERNET` and `ACCESS_NETWORK_STATE` are both absent — the former is never declared, and the latter is explicitly stripped from the `androidx.work` manifest. That is enforced in CI, which fails the build if `INTERNET` ever appears in a release manifest.
 
 **All data is local.** The SQLite database lives in the app's private internal storage (`context.getDatabasePath()`). The DataStore preferences live in `context.dataStore`. Neither is accessible to other apps without root.
 
@@ -331,7 +339,7 @@ HAT was built entirely on-device using **[ACS (Android Code Studio)](https://git
 
 - Android Studio Hedgehog (2023.1.1) or later
 - JDK 17
-- Android SDK with API level 34 build tools
+- Android SDK Platform 36 (`compileSdk` / `targetSdk` are 36, `minSdk` is 26)
 - A device or emulator running Android 8.0 (API 26) or higher
 
 ### Steps
@@ -459,8 +467,8 @@ Open an issue with:
 
 Before submitting a PR:
 - Check that the new code doesn't add any new internet permissions or third-party SDKs
-- Make sure it compiles against API 34 with minSdk 26
-- If you're adding a new setting, consider how it interacts with the vault merge logic (settings are serialized via `CombinedPreferences` — adding a new field requires it to be `@Serializable` and have a sensible default for old vaults that don't include it)
+- Make sure it compiles against API 36 with minSdk 26
+- If you're adding a new setting, remember it is serialized as JSON by `kotlinx.serialization` into a Preferences DataStore entry. The field must be `@Serializable` and have a sensible default so that existing installs — whose stored JSON lacks the key — still load. There is no separate schema file to update.
 
 ---
 
@@ -486,9 +494,9 @@ SQLite directly via `SQLiteOpenHelper` gives explicit control over transaction b
 
 Yes. HAT contains a hidden Developer Diagnostics screen. By tapping the "HAT Dashboard" header on the main screen 5 times, you can unlock Developer Mode and export a "Total Unbounded Matrix" — a complete JSON dump of your computed intervals. You can also export diagnostic logs and crash stack traces from here.
 
-**Is this available on F-Droid?**
+**Is this available on F-Droid or Google Play?**
 
-Not yet. The AGPL-3.0 license and zero-dependency approach make it a natural fit. [Submission is currently pending](https://gitlab.com/fdroid/rfp/-/issues/3896).
+No, and that is a decision rather than a pending step. HAT is distributed through [GitHub Releases](https://github.com/andromedvn/HAT/releases) only. An F-Droid request for approval was opened and later closed; it is not being pursued. Play Store distribution is not planned.
 
 **Who built this?**
 
@@ -517,3 +525,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 ```
 
 See [LICENSE](LICENSE) for the full text.
+
+### Licensing for organisations
+
+The AGPL is not an obstacle for most people — if you modify HAT for yourself,
+or run it for yourself, you are fine. It becomes a problem when an organisation
+wants to build on HAT without releasing its own source, or wants to run a
+modified version as a network service: the AGPL then obliges them to publish
+their corresponding source under the same terms.
+
+If that does not work for you, a **commercial licence** is available. It permits
+use in closed-source products and internal network deployments without a
+disclosure obligation, and includes support from the maintainer.
+
+Commercial licensing is negotiated directly. There is no store, no in-app
+purchase, and no listing — HAT is distributed through GitHub Releases only.
+Open an issue on this repository describing your use case, or use the contact
+method on my [GitHub profile](https://github.com/andromedvn).
+
+The repository's `LICENSE` stays AGPL-3.0. A commercial licence is granted per
+organisation, as a separate agreement; it is not a relicensing of the project.

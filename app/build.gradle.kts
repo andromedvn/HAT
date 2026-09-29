@@ -1,3 +1,4 @@
+import org.gradle.api.GradleException
 import java.util.Properties
 
 plugins {
@@ -11,10 +12,16 @@ plugins {
 // That file is gitignored — never commit it. A template is committed as
 // `key.properties.example`.
 //
-// WARNING: if this file is missing, the release build falls back to the debug
-// key so that `./gradlew assembleDebug` and CI still work. A debug-signed
-// release is accepted by Google Play ONCE and then permanently blocks every
-// future update. See RELEASE.md before producing any uploadable artifact.
+// A release signed with the debug key cannot be replaced by a correctly
+// signed one: installing it over a real release fails with
+// INSTALL_FAILED_UPDATE_INCOMPATIBLE, and the artifact is un-updatable
+// forever. Nothing can recover the key — no remote keeps a copy — so a
+// missing key.properties must FAIL the release build rather than quietly
+// produce something that looks fine.
+//
+// CI has no key.properties. It passes -PallowDebugSignedRelease=true, which
+// exists only for throwaway builds that are never published. It is opt-in
+// per invocation precisely so it cannot happen by accident.
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
@@ -22,11 +29,22 @@ val keystoreProperties = Properties().apply {
     }
 }
 val hasReleaseKey = keystorePropertiesFile.exists()
+val isReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+val allowDebugSignedRelease = (project.findProperty("allowDebugSignedRelease") as String?)?.toBoolean() ?: false
 
 if (!hasReleaseKey) {
+    if (isReleaseTask && !allowDebugSignedRelease) {
+        throw GradleException(
+            "HAT: key.properties not found, refusing to produce a debug-signed release.\n" +
+                "  A debug-signed release can never be replaced by a signed one, and the\n" +
+                "  signing key is not recoverable. See RELEASE.md.\n" +
+                "  If you are building locally to check that release compiles, re-run with\n" +
+                "  -PallowDebugSignedRelease=true. Never publish a build made that way."
+        )
+    }
     logger.warn(
-        "HAT: key.properties not found — release builds will be signed with the " +
-        "DEBUG key. Do NOT upload such a build to Google Play. See RELEASE.md."
+        "HAT: key.properties not found — any release build will use the DEBUG key. " +
+            "Do NOT publish such a build. See RELEASE.md."
     )
 }
 

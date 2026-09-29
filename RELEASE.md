@@ -63,7 +63,10 @@ Compare the `SHA256` fingerprint to the one in Proton Pass. **If it shows the
 Android debug certificate (`61:ED:47:...`), stop.** `key.properties` was not
 found, and uploading would permanently damage the app.
 
-The build also prints a loud warning when `key.properties` is missing.
+The build **fails** if `key.properties` is missing for a release task, rather
+than producing a debug-signed artifact. To compile-check a release locally
+without the key, pass `-PallowDebugSignedRelease=true` — never publish that
+output.
 
 ## Release checklist
 
@@ -74,17 +77,39 @@ The build also prints a loud warning when `key.properties` is missing.
 - [ ] Privacy Policy and Terms published on GitHub Pages
 - [ ] Fastlane metadata updated: title, short description, full description
 - [ ] Screenshots are 1080p or higher
-- [ ] CHANGELOG.md updated (note: currently gitignored — remove that line)
+- [ ] CHANGELOG.md updated
 - [ ] APK/AAB tested on a real device from the release build, not debug
 
-## Current blockers before first upload
+## Distribution
 
-1. **`targetSdk = 34`.** Play requires **API 36** since 2026-08-31.
-2. **AGP 8.1.3 cannot compile against SDK 36** — toolchain must be upgraded
-   (AGP 8.9+, Kotlin 2.0+, current Compose BOM, Gradle 8.11+).
-3. **No CI** — builds are manual until a GitHub Actions workflow exists.
-4. **No tests** — add at least basic coverage of `HeuristicEngine` and
-   `TimeUtils` before relying on automated releases.
+HAT is distributed through GitHub Releases only. It is intentionally **not**
+published to Google Play or F-Droid. That is a decision, not a missing step —
+do not add a Play Console or F-Droid submission to the release procedure.
+
+## Known gaps
+
+Both previously-listed blockers are now closed:
+
+1. **`app/proguard-rules.pro` was empty while `isMinifyEnabled = true`.** R8 was
+   running with no keep rules, so `kotlinx.serialization` serializers,
+   WorkManager workers, and ViewModels could be stripped — with the failure
+   appearing only at runtime on a user's device. The file now carries keep
+   rules for each, and CI builds a release APK so a regression fails the build
+   rather than a device.
+2. **A release build fell back to the debug signing key when `key.properties`
+   was missing.** The build succeeded and only warned. It now throws, unless
+   `-PallowDebugSignedRelease=true` is passed explicitly. Confirm the
+   fingerprint with `keytool` before distributing anything (see *Verify before
+   uploading* above).
+
+What remains genuinely unverified: **R8 correctness is checked by building, not
+by running the minified APK.** `kotlinx.serialization` and WorkManager are
+covered by keep rules, but the first real release should be smoke-tested on a
+device before it is published.
+
+Everything else is verified working: JDK 17, AGP 8.13.2, Gradle 8.13, Kotlin
+2.3.21, `compileSdk`/`targetSdk` 36, and 128 JVM unit tests run by
+`.github/workflows/unit-tests.yml` on every push.
 
 ## About targetSdk
 
