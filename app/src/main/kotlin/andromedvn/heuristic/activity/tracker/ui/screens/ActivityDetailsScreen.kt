@@ -203,8 +203,16 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                     if (event != null && pt != null) {
                                         if (returnScrollIndex == -1) { returnScrollIndex = listState.firstVisibleItemIndex; returnScrollOffset = listState.firstVisibleItemScrollOffset }
                                         dashboardViewModel.setChartHighlight(event)
-                                        val matchIndex = uiState.sessionList.indexOfFirst { if (dashState.timeRange == TimeRangeLabel.DAY) Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY).toString() == pt.syncTag else pt.syncTag.contains(it.getTimeRangeStr(dashState.timeRange).split(",")[0]) }
-                                        if (matchIndex != -1) scope.launch { listState.animateScrollToItem(matchIndex + 1 + if(uiState.activity is AppUsageItem && (uiState.activity as AppUsageItem).ghostIntervals.isNotEmpty()) (uiState.activity as AppUsageItem).ghostIntervals.size else 0) } 
+                                        // Match on the locale-independent bucket key. The old
+                                        // comparison formatted the session start with
+                                        // getTimeRangeStr (Locale.getDefault) and substring-matched
+                                        // it, so on a non-English device the strings differed and
+                                        // no row was ever found.
+                                        val matchIndex = uiState.sessionList.indexOfFirst { chartSyncKey(it.startTime, dashState.timeRange) == pt.syncTag }
+                                        // Two items precede the sessions: the dynamic header and the
+                                        // block holding the chart plus the SESSIONS caption. +1 landed
+                                        // on that SESSIONS caption item, one row above the target.
+                                        if (matchIndex != -1) scope.launch { listState.animateScrollToItem(matchIndex + 2 + if(uiState.activity is AppUsageItem && (uiState.activity as AppUsageItem).ghostIntervals.isNotEmpty()) (uiState.activity as AppUsageItem).ghostIntervals.size else 0) } 
                                     } else { dashboardViewModel.setChartHighlight(null); returnScrollIndex = -1 }
                                 }
                             )

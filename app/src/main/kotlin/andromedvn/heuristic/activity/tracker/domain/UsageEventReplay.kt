@@ -16,6 +16,7 @@ object EventCode {
     const val ACTIVITY_PAUSED = 2
     const val SCREEN_INTERACTIVE = 15
     const val SCREEN_NON_INTERACTIVE = 16
+    const val KEYGUARD_SHOWN = 17
     const val KEYGUARD_HIDDEN = 18
     const val ACTIVITY_STOPPED = 23
     const val DEVICE_SHUTDOWN = 26
@@ -26,8 +27,34 @@ object EventCode {
      * DEVICE_SHUTDOWN (26) is included because after a reboot no app is
      * genuinely foregrounded — but see [replayGhostIntervals], where it is
      * explicitly excluded from ghost detection.
+     *
+     * KEYGUARD_SHOWN (17) is included for the same reason SCREEN_NON_INTERACTIVE
+     * (16) is: a locked device is not being used, so an app left "resumed"
+     * behind the lock screen is not screen time. The two are NOT
+     * interchangeable, which is why both are listed:
+     *
+     *  - The lock screen is itself interactive, so Android does not emit
+     *    SCREEN_NON_INTERACTIVE when the device merely locks. The screen-off
+     *    event can be tens of minutes away (long screen timeout, always-on
+     *    display) or may never come at all. Without this terminator the whole
+     *    locked stretch was replayed as foreground app time.
+     *  - The reverse gap exists too: SCREEN_NON_INTERACTIVE with no
+     *    KEYGUARD_HIDDEN afterwards (device in a pocket, screen off, never
+     *    unlocked) was already covered.
+     *
+     * KEYGUARD_HIDDEN (18) is deliberately absent: unlocking does not end an
+     * app session, it is the moment the session becomes legitimately visible
+     * again. Treating it as a terminator would truncate every session on every
+     * unlock.
+     *
+     * The three are mutually exclusive within a lock cycle
+     * (SHOWN -> HIDDEN, SHOWN -> screen off), and a terminator is idempotent:
+     * the first one closes the open sessions and clears the map, so a second
+     * terminator in the same millisecond finds nothing to close. No event can
+     * therefore be counted twice, and no session can be left open across a
+     * terminator.
      */
-    val SESSION_TERMINATORS = setOf(SCREEN_NON_INTERACTIVE, DEVICE_SHUTDOWN)
+    val SESSION_TERMINATORS = setOf(SCREEN_NON_INTERACTIVE, KEYGUARD_SHOWN, DEVICE_SHUTDOWN)
 }
 
 /**
@@ -121,6 +148,34 @@ fun replayGhostIntervals(
         when (event.type) {
             EventCode.SCREEN_INTERACTIVE -> isHuman = false
             EventCode.KEYGUARD_HIDDEN -> isHuman = true
+            EventCode.KEYGUARD_SHOWN -> {
+                // A locked device is not being used, so `isHuman` is false from
+                // here on — the same conclusion SCREEN_NON_INTERACTIVE reaches,
+                // reached earlier and without waiting for the screen to go
+                // dark. Anything resumed from now on while locked is a ghost
+                // candidate, which is what makes the locked stretch convertible
+                // to an offline label instead of silently counting as screen
+                // time.
+                //
+                // A pending ghost is discarded ONLY when `isHuman` is already
+                // true, i.e. when an unlock happened after that ghost started.
+                // KEYGUARD_HIDDEN sets `isHuman = true` without clearing the
+                // pending ghost, so such a ghost is frozen rather than gone and
+                // its start predates proven human use; re-arming it would report
+                // a phantom. E.g. screen off 0, resume 2s, unlock 3s, resume 4s,
+                // pause 5s, lock 6s, screen off 7s would claim 5s of "idle"
+                // covering the 3s-5s the user was present for.
+                //
+                // When `isHuman` is already false the lock carries no new
+                // information — the device was already untouched — so a ghost
+                // running across it stays valid idle time and is closed
+                // normally by the pause that follows.
+                if (isHuman) {
+                    currentPkg = null
+                    ghostStart = -1L
+                }
+                isHuman = false
+            }
             EventCode.SCREEN_NON_INTERACTIVE -> {
                 if (!isHuman && currentPkg != null && ghostStart != -1L) {
                     ghosts.add(GhostSpan(currentPkg, ghostStart, event.timestamp))

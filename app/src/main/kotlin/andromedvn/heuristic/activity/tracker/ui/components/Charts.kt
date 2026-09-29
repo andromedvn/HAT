@@ -49,15 +49,24 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.take
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -71,6 +80,27 @@ private val ChartHeight = 180.dp
 enum class ChartMode { DASHBOARD, APP_USAGE, OFFLINE, DETAIL, GAPS }
 
 data class ChartPoint(val label: String, val values: List<Float>, val displayValue: String, val segmentValues: List<String>, val fullDateLabel: String = label, val syncTag: String = "", val isCurrent: Boolean = false, val isFuture: Boolean = false, val isNextFuture: Boolean = false)
+
+/**
+ * Stable, locale-independent identity for the bucket a millisecond value falls in.
+ *
+ * [ChartPoint.syncTag] is the tag the engine stamps on every bucket, so a list row and
+ * a bar can be matched on this key instead of on a display string. The old comparison
+ * went through [andromedvn.heuristic.activity.tracker.data.SessionItem.getTimeRangeStr],
+ * which formats with Locale.getDefault(); a device set to e.g. Turkish or Japanese
+ * produced a different string for the same instant and the row never highlighted.
+ *
+ * Patterns are pinned to [Locale.ENGLISH] to match the tags the engine builds, so the
+ * key is a function of the instant and the range only.
+ */
+fun chartSyncKey(millis: Long, range: TimeRangeLabel): String {
+    val cal = Calendar.getInstance().apply { timeInMillis = millis }
+    return when (range) {
+        TimeRangeLabel.DAY -> cal.get(Calendar.HOUR_OF_DAY).toString()
+        TimeRangeLabel.WEEK -> SimpleDateFormat("EEE", Locale.ENGLISH).format(cal.time)
+        TimeRangeLabel.MONTH -> SimpleDateFormat("MMM d", Locale.ENGLISH).format(cal.time)
+    }
+}
 
 @Composable
 fun HatChart(
@@ -100,6 +130,13 @@ fun HatChart(
     var selectedPoint by remember { mutableStateOf<ChartPoint?>(null) }
     var selectedStackIndex by remember { mutableIntStateOf(-1) } 
 
+    // One shared pulse for the whole chart. Previously each BarItem created its own
+    // rememberInfiniteTransition, so a 24-bar chart ran 24 concurrent infinite
+    // animations while only the isCurrent bar ever read one. The value is now
+    // hoisted here and passed down, leaving exactly one animation per chart.
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(initialValue = 0.4f, targetValue = 1.0f, animationSpec = infiniteRepeatable(animation = tween(1500, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse), label = "pulseAlpha")
+    
     val rawMaxDataSum = remember(dataPoints) { dataPoints.maxOfOrNull { it.values.fold(0f) { acc, fl -> acc + fl } } ?: 1f }
     val isHourly = dataPoints.size == 24
     val isWeek = dataPoints.size == 7
@@ -168,13 +205,22 @@ fun HatChart(
             }
             Spacer(modifier = Modifier.height(24.dp))
             
+            // Announced as a single summary before the individual bars are read.
+            val chartSummary = buildString {
+                append(title)
+                append(", ")
+                append(dataPoints.size)
+                append(if (dataPoints.size == 1) " bar" else " bars")
+                totalTime?.let { append(", total ").append(it) }
+            }
+
             Row(modifier = Modifier.fillMaxWidth().height(ChartHeight + 24.dp), verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.height(ChartHeight).padding(end = 12.dp), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.End) {
                     Text(dynamicLabels[0], style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 10.sp)
                     Text(dynamicLabels[1], style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 10.sp)
                     Text(dynamicLabels[2], style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 10.sp)
                 }
-                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = chartSummary }) {
                     GridLinesOverlay(labelColor)
                     
                     // V.9: Using index as key forces Compose to REUSE the node on scope swaps (Day -> Week).
@@ -197,6 +243,7 @@ fun HatChart(
                                 point = point, palette = activePalette, isSelected = isSelected, isDimmed = isDimmed, maxDataSum = maxDataSum, selectedStackIndex = if (isSelected) selectedStackIndex else -1,
                                 textAlpha = textAlpha, 
                                 animationSalt = animationSalt,
+                                pulseAlpha = pulseAlpha,
                                 onBarClick = { clickedStackIndex, isLongPress ->
                                     if (isLongPress) {
                                         selectedPoint = point; selectedStackIndex = clickedStackIndex
@@ -256,7 +303,7 @@ fun GridLinesOverlay(color: Color) {
 }
 
 @Composable
-fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelected: Boolean, isDimmed: Boolean, selectedStackIndex: Int, textAlpha: Float, animationSalt: String, onBarClick: (Int, Boolean) -> Unit) {
+fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelected: Boolean, isDimmed: Boolean, selectedStackIndex: Int, textAlpha: Float, animationSalt: String, pulseAlpha: Float, onBarClick: (Int, Boolean) -> Unit) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val trackColor = primaryColor.copy(alpha = 0.1f)
     
@@ -270,8 +317,7 @@ fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelect
     var flashAlpha by remember { mutableFloatStateOf(0f) }
     val animatedFlash by animateFloatAsState(targetValue = flashAlpha, animationSpec = tween(300), label = "flash")
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(initialValue = 0.4f, targetValue = 1.0f, animationSpec = infiniteRepeatable(animation = tween(1500, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse), label = "pulseAlpha")
+    // pulseAlpha is supplied by HatChart: one shared infinite transition per chart.
     val labelColor = if (point.isCurrent) primaryColor.copy(alpha = pulseAlpha) else if (isSelected) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant
     val labelWeight = if (point.isCurrent) FontWeight.ExtraBold else if (isSelected) FontWeight.Bold else FontWeight.Normal
 
@@ -345,7 +391,14 @@ fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelect
     }
 
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(BarWidth + 24.dp).background(Color.Transparent).alpha(alpha).pointerInput(point.syncTag, currentActiveIndices) {
+        horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(BarWidth + 24.dp).background(Color.Transparent).alpha(alpha).clearAndSetSemantics {
+            // The bar is the only carrier of its value, so name it for screen
+            // readers. clearAndSetSemantics drops the child Text's own node so the
+            // label is not announced a second time.
+            contentDescription = "${point.fullDateLabel}, ${point.displayValue}"
+            selected = isSelected
+            onClick(label = "Select ${point.label}") { currentOnBarClick(selectedStackIndex, false); true }
+        }.pointerInput(point.syncTag, currentActiveIndices) {
             detectTapGestures(
                 onTap = { offset ->
                     if (point.isFuture && !point.isNextFuture) return@detectTapGestures

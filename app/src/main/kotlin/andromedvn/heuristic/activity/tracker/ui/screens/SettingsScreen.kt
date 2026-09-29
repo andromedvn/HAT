@@ -203,18 +203,32 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
 
     if (customDialogSetting != null) {
         var input by remember { mutableStateOf("") }
+        // Previously this was `input.toIntOrNull() ?: 0`, so clearing the field
+        // and tapping Save silently wrote 0 into the setting. For the archive
+        // interval that is not merely a no-op, it is a badly broken value; for
+        // the others it disabled the feature without the user ever being told.
+        val parsedValue = input.toIntOrNull()
+        val valueError = when {
+            input.isBlank() -> "Enter a value"
+            parsedValue == null -> "Digits only"
+            parsedValue <= 0 -> "Must be at least 1"
+            parsedValue > 9999 -> "Must be 9999 or less"
+            else -> null
+        }
         HatOutlinedDialog(onDismissRequest = { customDialogSetting = null }, title = "Custom Value") {
             OutlinedTextField(
-                value = input, onValueChange = { if (it.all { char -> char.isDigit() }) input = it }, 
-                label = { Text(if (customDialogSetting == "gap" || customDialogSetting == "cluster" || customDialogSetting == "ghost") "Minutes" else "Hours") }, 
+                value = input, onValueChange = { if (it.all { char -> char.isDigit() }) input = it },
+                label = { Text(if (customDialogSetting == "gap" || customDialogSetting == "cluster" || customDialogSetting == "ghost") "Minutes" else "Hours") },
+                isError = valueError != null,
+                supportingText = { if (valueError != null) Text(valueError, color = MaterialTheme.colorScheme.error) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
             )
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { customDialogSetting = null }) { Text("Cancel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(modifier = Modifier.width(16.dp))
-                TextButton(onClick = { 
-                    val value = input.toIntOrNull() ?: 0
+                TextButton(enabled = valueError == null, onClick = {
+                    val value = parsedValue ?: return@TextButton
                     when (customDialogSetting) {
                         "gap" -> updateSettings(currentSettings!!.copy(minGapThresholdMins = value))
                         "cluster" -> updateSettings(currentSettings!!.copy(sessionClusteringMins = value))

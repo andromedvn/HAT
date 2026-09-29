@@ -61,6 +61,10 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
     
     val currentSettings by repository.settings.collectAsState(initial = null)
 
+    // Both of these are irreversible, so neither runs on a single tap.
+    var confirmClearLogs by remember { mutableStateOf(false) }
+    var confirmSimulateCrash by remember { mutableStateOf(false) }
+
     val diagMatrixLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
@@ -145,19 +149,49 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                     }
                     item {
                         DiagnosticSettingsItem("Clear Diagnostic Logs", "Delete all stored crash and diagnostic logs to free up space.") {
-                            scope.launch {
-                                repository.clearCrashLogs()
-                                Toast.makeText(context, "Logs Cleared", Toast.LENGTH_SHORT).show()
-                            }
+                            confirmClearLogs = true
                         }
                     }
                     item {
                         DiagnosticSettingsItem("Simulate Fatal Crash", "Trigger a deliberate runtime exception to natively test the disaster recovery hatch.") {
-                            throw RuntimeException("Diagnostic Test Crash initiated by user.")
+                            confirmSimulateCrash = true
                         }
                     }
                 }
             }
         }
+
+    if (confirmClearLogs) {
+        AlertDialog(
+            onDismissRequest = { confirmClearLogs = false },
+            title = { Text("Delete all logs?") },
+            text = { Text("This permanently deletes every stored crash report and diagnostic log. It cannot be undone, and the information cannot be recovered from the app afterwards.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearLogs = false
+                    scope.launch {
+                        repository.clearCrashLogs()
+                        Toast.makeText(context, "Logs Cleared", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearLogs = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (confirmSimulateCrash) {
+        AlertDialog(
+            onDismissRequest = { confirmSimulateCrash = false },
+            title = { Text("Simulate a crash?") },
+            text = { Text("HAT will deliberately crash. Any unsaved work in the current session is lost, and the app will restart into its recovery screen. Use this only to check that crash recovery works.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSimulateCrash = false
+                    throw RuntimeException("Diagnostic Test Crash initiated by user.")
+                }) { Text("Crash Now") }
+            },
+            dismissButton = { TextButton(onClick = { confirmSimulateCrash = false }) { Text("Cancel") } }
+        )
+    }
     }
 }

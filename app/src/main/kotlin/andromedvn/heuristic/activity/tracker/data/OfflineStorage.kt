@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import andromedvn.heuristic.activity.tracker.domain.IntervalOverlapIndex
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,6 +127,31 @@ class OfflineStorage private constructor(private val context: Context) {
                     val iconIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_ICON)
                     
                     var count = 0
+                    // The overlap test used to be a full table scan executed once
+                    // per imported row, which is hundreds of millions of
+                    // comparisons against a ~23,000-row destination. The
+                    // destination is now read once into an in-memory index.
+                    //
+                    // The index MUST be fed every row actually inserted: the old
+                    // SQL saw the table grow as it merged, so each new row had to
+                    // become visible to the next row's check. Omitting that is a
+                    // correctness bug, not just a lost optimisation.
+                    val overlapIndex = IntervalOverlapIndex.build(
+                        currentDb.query(
+                            HatDatabaseHelper.TABLE_OFFLINE,
+                            arrayOf(HatDatabaseHelper.COL_TIMESTAMP, HatDatabaseHelper.COL_DURATION),
+                            null, null, null, null, null
+                        ).use { c ->
+                            val sIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_TIMESTAMP)
+                            val dIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_DURATION)
+                            buildList {
+                                while (c.moveToNext()) {
+                                    val s = c.getLong(sIdx)
+                                    add(s to (s + c.getLong(dIdx)))
+                                }
+                            }
+                        }
+                    )
                     currentDb.beginTransaction()
                     try {
                         while (it.moveToNext()) {
@@ -133,13 +159,8 @@ class OfflineStorage private constructor(private val context: Context) {
                             val dur = it.getLong(durIdx)
                             val end = ts + dur
 
-                            val checkCur = currentDb.rawQuery(
-                                "SELECT 1 FROM ${HatDatabaseHelper.TABLE_OFFLINE} WHERE ${HatDatabaseHelper.COL_TIMESTAMP} < ? AND ${HatDatabaseHelper.COL_TIMESTAMP} + ${HatDatabaseHelper.COL_DURATION} > ? LIMIT 1",
-                                arrayOf(end.toString(), ts.toString())
-                            )
-                            val hasOverlap = checkCur.moveToFirst()
-                            checkCur.close()
-                            
+                            val hasOverlap = overlapIndex.overlapsAny(ts, end)
+
                             if (!hasOverlap) {
                                 val cv = ContentValues().apply {
                                     put(HatDatabaseHelper.COL_ID, it.getLong(idIdx))
@@ -149,6 +170,7 @@ class OfflineStorage private constructor(private val context: Context) {
                                     put(HatDatabaseHelper.COL_ICON, it.getString(iconIdx))
                                 }
                                 currentDb.insertWithOnConflict(HatDatabaseHelper.TABLE_OFFLINE, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
+                                overlapIndex.add(ts, end)
                             } else {
                                 HatLogger.logError("OfflineStorage", "Vault Merge: Skipped imported offline activity due to temporal overlap.")
                             }

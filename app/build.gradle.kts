@@ -77,7 +77,15 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            // Safe to pair with R8: shrinking only removes resources it can
+            // prove are unreferenced, and any resource reached reflectively
+            // is retained. Keeps the release APK meaningfully smaller.
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // The graph guard in this file fails any release task when
+            // key.properties is absent, so the "debug" branch below is
+            // unreachable for a real release build. It stays only so a
+            // release block still evaluates at configure time.
             signingConfig = signingConfigs.getByName(if (hasReleaseKey) "release" else "debug")
         }
     }
