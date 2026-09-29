@@ -186,7 +186,16 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
             writer.beginObject().name("CHUNK_START").value(chunkStart).name("CHUNK_END").value(chunkEnd)
             val offlineMatrix = storage.getOfflineActivitiesBetween(chunkStart, chunkEnd)
             writer.name("OFFLINE"); writer.beginObject()
-            offlineMatrix.groupBy { "OFFLINE::${it.title}" }.forEach { (titleKey, items) -> writer.name(titleKey); writer.beginArray(); items.sortedBy { it.timestamp }.forEach { item -> writer.beginObject().name("s").value(item.timestamp).name("e").value(item.timestamp + item.durationInMillis).endObject() }; writer.endArray() }
+            // getOfflineActivitiesBetween now returns rows that merely OVERLAP the
+            // chunk, so a row straddling a 30-day boundary comes back in two
+            // consecutive chunks. Writing it unclamped would export the whole row
+            // twice and the two halves would not add up to the original duration.
+            // Each chunk therefore carries only the part of the row inside it.
+            offlineMatrix.groupBy { "OFFLINE::${it.title}" }.forEach { (titleKey, items) -> writer.name(titleKey); writer.beginArray(); items.sortedBy { it.timestamp }.forEach { item ->
+                val rowStart = maxOf(item.timestamp, chunkStart)
+                val rowEnd = minOf(item.timestamp + item.durationInMillis, chunkEnd)
+                if (rowEnd > rowStart) writer.beginObject().name("s").value(rowStart).name("e").value(rowEnd).endObject()
+            }; writer.endArray() }
             writer.endObject()
             val rawMatrix = getFilteredIntervals(chunkStart, chunkEnd, hiddenPkgs)
             writer.name("APP_USAGE"); writer.beginObject()

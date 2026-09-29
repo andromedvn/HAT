@@ -20,6 +20,12 @@ Nothing yet.
 - A phone left unlocked but idle in a pocket counted as screen time. HAT only
   watched the screen turning off and never handled the lock event, so that time
   was never recognised as offline. Both signals are now handled.
+- A label that crossed midnight lost the hours belonging to the second day
+  entirely. Rows were looked up by "did this start inside the window", and a
+  "Sleep" label running 23:00–07:00 is stamped with its 23:00 start, so the day-2
+  window never saw it. Lookups now match on overlap and each row is clamped to
+  the window before it is counted, so a label is counted once in each day for
+  exactly the slice that belongs to it.
 - Comparing a habit at 23:00 against a profile entry at 01:00 treated them as 22
   hours apart instead of 2. The clock is circular, and the comparison now wraps.
 
@@ -65,6 +71,16 @@ Nothing yet.
 
 Not yet tagged. This release corrects the time arithmetic, closes a crash, and
 adds theme customization.
+
+### Known issue (pre-existing, not introduced here)
+
+- A day window ends at 23:59:59.999 **inclusive** while every duration is
+  computed as `end - start`, so a day spans 86,400,000 distinct milliseconds but
+  measures 86,399,999. The result is a 1 ms under-report per day. It is invisible
+  at the resolution the app displays, and it errs in the safe direction — HAT
+  under-reports rather than exceeding the day. Found while writing
+  `CrossMidnightContributionTest`, which now pins the midnight split as lossless
+  apart from this known millisecond so the behaviour cannot silently change.
 
 ### Infrastructure
 

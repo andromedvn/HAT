@@ -400,7 +400,18 @@ class OfflineStorage private constructor(private val context: Context) {
     fun getOfflineActivitiesBetween(start: Long, end: Long): List<OfflineActivityEntity> {
         val list = mutableListOf<OfflineActivityEntity>()
         val db = dbHelper.readableDatabase
-        val cursor = db.query(HatDatabaseHelper.TABLE_OFFLINE, null, "${HatDatabaseHelper.COL_TIMESTAMP} >= ? AND ${HatDatabaseHelper.COL_TIMESTAMP} <= ?", arrayOf(start.toString(), end.toString()), null, null, "${HatDatabaseHelper.COL_TIMESTAMP} ASC")
+        // Overlap, not "starts inside". A label running 01:00-03:00 has its
+        // timestamp on day 1, so a `timestamp BETWEEN start AND end` test can
+        // never return it for day 2 and that day's hours go missing.
+        //
+        // Widening the query is safe precisely because every reader passes the
+        // result through sanitizeOfflineRow, which clamps each row to the
+        // window and drops the part that falls outside. A row may therefore
+        // match two days and be counted once in each, for exactly the slice
+        // that belongs to it, with no double counting and no lost milliseconds.
+        val cursor = db.query(HatDatabaseHelper.TABLE_OFFLINE, null,
+            "${HatDatabaseHelper.COL_TIMESTAMP} <= ? AND (${HatDatabaseHelper.COL_TIMESTAMP} + ${HatDatabaseHelper.COL_DURATION}) >= ?",
+            arrayOf(end.toString(), start.toString()), null, null, "${HatDatabaseHelper.COL_TIMESTAMP} ASC")
         cursor.use { while (it.moveToNext()) list.add(mapCursorToActivity(it)) }
         return list
     }
