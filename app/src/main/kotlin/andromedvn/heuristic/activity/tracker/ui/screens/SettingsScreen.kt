@@ -117,7 +117,12 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                             context.startActivity(restartIntent)
                             Runtime.getRuntime().exit(0)
                         } else {
-                            Toast.makeText(context, "Error: Invalid or Tampered File", Toast.LENGTH_LONG).show() 
+                            // mergeDatabase only ever INSERTs (CONFLICT_IGNORE),
+                            // so nothing existing was deleted — but some tables may
+                            // have merged before the failure. Do not claim the file
+                            // was tampered with: an incomplete merge is a different
+                            // failure and the user needs to know which they hit.
+                            Toast.makeText(context, "Restore incomplete — some data could not be restored. Nothing was deleted, but the vault was not fully applied.", Toast.LENGTH_LONG).show()
                         }
                     }
                 } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }

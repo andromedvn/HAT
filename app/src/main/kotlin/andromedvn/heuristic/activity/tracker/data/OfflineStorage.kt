@@ -89,6 +89,29 @@ class OfflineStorage private constructor(private val context: Context) {
         val currentDb = dbHelper.writableDatabase
         var importedDb: SQLiteDatabase? = null
         var success = false
+        // Per-table merge failures are tracked rather than swallowed. Previously
+        // each table was wrapped in its own catch that logged and continued, and
+        // success was set to true unconditionally at the end — so a restore that
+        // lost, say, the entire archive table still reported "Vault Restored"
+        // and the user had no way to know their history was incomplete.
+        val failedTables = mutableListOf<String>()
+
+        fun tableExists(db: SQLiteDatabase, table: String): Boolean =
+            db.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", arrayOf(table)).use { it.moveToFirst() }
+
+        // A table the imported vault does not contain is an older vault, not a
+        // failure — there is simply nothing to merge. A table that IS present
+        // and then fails to merge is a real failure, and must make the whole
+        // restore report failure so the user is not told their data is intact
+        // when it is not.
+        fun recordTableFailure(table: String, e: Exception) {
+            if (importedDb?.let { tableExists(it, table) } == true) {
+                failedTables += table
+                HatLogger.logError("OfflineStorage", "Vault merge FAILED for table $table", e)
+            } else {
+                HatLogger.logError("OfflineStorage", "Vault predates $table; nothing to merge", e)
+            }
+        }
 
         try {
             importedDb = SQLiteDatabase.openDatabase(importedDbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
@@ -143,7 +166,7 @@ class OfflineStorage private constructor(private val context: Context) {
                         if (currentDb.inTransaction()) currentDb.endTransaction()
                     }
                 }
-            } catch (e: Exception) { HatLogger.logError("OfflineStorage", "Legacy Merge: Offline Table missing", e) }
+            } catch (e: Exception) { recordTableFailure(HatDatabaseHelper.TABLE_OFFLINE, e) }
 
             try {
                 val curArchive = importedDb.query(HatDatabaseHelper.TABLE_ARCHIVE, arrayOf(HatDatabaseHelper.COL_PKG, HatDatabaseHelper.COL_START, HatDatabaseHelper.COL_END), null, null, null, null, null)
@@ -172,7 +195,7 @@ class OfflineStorage private constructor(private val context: Context) {
                         if (currentDb.inTransaction()) currentDb.endTransaction()
                     }
                 }
-            } catch (e: Exception) { HatLogger.logError("OfflineStorage", "Legacy Merge: Archive Table missing", e) }
+            } catch (e: Exception) { recordTableFailure(HatDatabaseHelper.TABLE_ARCHIVE, e) }
 
             try {
                 val curIgnored = importedDb.query(HatDatabaseHelper.TABLE_IGNORED, arrayOf("package_name", "start_millis", "end_millis"), null, null, null, null, null)
@@ -201,7 +224,7 @@ class OfflineStorage private constructor(private val context: Context) {
                         if (currentDb.inTransaction()) currentDb.endTransaction()
                     }
                 }
-            } catch (e: Exception) { HatLogger.logError("OfflineStorage", "Legacy Merge: Ignored Table missing (Skipping)", e) }
+            } catch (e: Exception) { recordTableFailure(HatDatabaseHelper.TABLE_IGNORED, e) }
 
             try {
                 val curAck = importedDb.query(HatDatabaseHelper.TABLE_ACK_GHOSTS, arrayOf("package_name", "start_millis", "end_millis"), null, null, null, null, null)
@@ -230,9 +253,18 @@ class OfflineStorage private constructor(private val context: Context) {
                         if (currentDb.inTransaction()) currentDb.endTransaction()
                     }
                 }
-            } catch (e: Exception) { HatLogger.logError("OfflineStorage", "Legacy Merge: Ack Table missing (Skipping)", e) }
+            } catch (e: Exception) { recordTableFailure(HatDatabaseHelper.TABLE_ACK_GHOSTS, e) }
 
-            success = true
+            // Only claim success if every table that was actually present in the
+            // vault merged cleanly. A partial restore reported as a successful
+            // one is worse than a visible failure: the user believes their
+            // history is intact when some of it was never written.
+            if (failedTables.isNotEmpty()) {
+                HatLogger.logError("OfflineStorage", "Vault restore INCOMPLETE. Failed tables: ${failedTables.joinToString(", ")}")
+                success = false
+            } else {
+                success = true
+            }
         } catch (e: android.database.sqlite.SQLiteException) {
             HatLogger.logError("OfflineStorage", "Vault Merge Failed: Imported file is malformed or not a valid SQLite database.", e)
         } catch (e: Exception) {
