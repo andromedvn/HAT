@@ -10,22 +10,33 @@ import org.junit.Test
 /**
  * The ghost minimum-duration setting.
  *
- * `getAppUsage` and `getAppDetail` both began with
+ * An audit claimed: "`ghostMins <= 0` yields `Long.MAX_VALUE`, so a user who
+ * sets the minimum to 0 gets an empty list — zero should mean 'no minimum',
+ * return everything." That reading is wrong, and the settings UI is the
+ * evidence:
  *
- *     val ghostMillis = if (ghostMins <= 0) Long.MAX_VALUE else ghostMins * 60L * 1000L
- *     ...
- *     .filter { (it.third - it.second) >= ghostMillis }
+ *     HatSlidingSelector<Int>("Idle App Detection",
+ *         "Flag an app as a 'Suspicious Idle Session' if it stays on screen
+ *          without interaction.",
+ *         listOf("Off" to 0, "30m" to 30, "1h" to 60, "Custom" to -1), ...)
  *
- * `Long.MAX_VALUE` is the ONE value no finite duration can satisfy: the
- * comparison `duration >= Long.MAX_VALUE` is false for every real ghost span,
- * for every app, for every day. So a user who set the minimum to 0 — which
- * reads as "no minimum, show me everything" — was shown an EMPTY ghost list.
- * The setting that should surface the most candidates surfaced the fewest, and
- * the empty list was indistinguishable from "no idle time detected".
+ * (SettingsScreen.kt:296.) 0 is the option the user picks to switch idle
+ * detection OFF, and the custom-value dialog accepts 0, which the selector then
+ * renders as "Off". The same convention governs all four heuristic settings:
+ * archive sync, gap minimum and merge tolerance are each `listOf("Off" to 0,
+ * ...)`.
  *
- * 0 now means 0L, the lowest possible threshold. A genuinely large threshold
- * is still honoured exactly, because the minute-to-millis conversion stays in
- * Long and no plausible span reaches it.
+ * So the empty list at 0 is the FEATURE WORKING, not a defect. Reinterpreting 0
+ * as "no minimum" would switch the feature back on for every user who turned it
+ * off, and would surface every sub-second idle blip as a "Suspicious Idle
+ * Session". This class therefore pins the existing behaviour, and pins the
+ * reasoning, so the sentinel is not "fixed" later by someone who has not read
+ * the selector.
+ *
+ * The one genuine fragility is worth stating: "off" is encoded as
+ * `Long.MAX_VALUE` rather than as an explicit branch, so it is correct only
+ * while no duration can reach `Long.MAX_VALUE`. A real "no minimum" option
+ * would need a distinct stored value (e.g. -1) and a new selector entry.
  */
 class GhostThresholdTest {
 
@@ -34,41 +45,116 @@ class GhostThresholdTest {
     private fun ghost(start: Long, duration: Long, packageName: String = pkg) =
         Triple(packageName, start, start + duration)
 
-    // --- the threshold itself ----------------------------------------------
+    private fun select(
+        ghosts: List<Triple<String, Long, Long>>,
+        ghostMins: Int,
+        acks: List<AcknowledgedGhost> = emptyList()
+    ): List<UsageGap> =
+        selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(ghostMins), acks)
+
+    // --- 0 means Off --------------------------------------------------------
 
     @Test
-    fun `a threshold of zero means no minimum`() {
-        assertEquals(0L, ghostThresholdMillis(0))
+    fun `a setting of zero encodes the feature being off`() {
+        assertEquals(Long.MAX_VALUE, ghostThresholdMillis(0))
     }
 
     @Test
-    fun `the old expression for zero produced a threshold nothing can satisfy`() {
-        // The regression, stated as arithmetic rather than as a symptom.
-        val oldForm = if (0 <= 0) Long.MAX_VALUE else 0L
-        assertEquals(Long.MAX_VALUE, oldForm)
+    fun `the off threshold is unreachable by any finite span`() {
+        val threshold = ghostThresholdMillis(0)
         assertTrue(
-            "no finite ghost span can reach the old zero threshold",
-            listOf(0L, 1L, 3_600_000L, 86_400_000L, Long.MAX_VALUE - 1L).none { it >= oldForm }
+            "this is what makes the empty list correct rather than accidental",
+            listOf(0L, 1L, 3_600_000L, 86_400_000L, Long.MAX_VALUE - 1L).none { it >= threshold }
         )
     }
 
     @Test
-    fun `a positive threshold is exact in milliseconds`() {
-        assertEquals(3_600_000L, ghostThresholdMillis(60))
-        assertEquals(60_000L, ghostThresholdMillis(1))
-        assertEquals(86_400_000L, ghostThresholdMillis(1440))
-        for (mins in 0..1440 step 7) {
-            assertEquals(mins.toLong() * 60_000L, ghostThresholdMillis(mins))
-        }
+    fun `with the feature off the user is shown no idle sessions at all`() {
+        val ghosts = listOf(
+            ghost(1_000L, 1L),          // 1 ms
+            ghost(10_000L, 59_000L),
+            ghost(100_000L, 3_600_000L)
+        )
+        assertEquals(
+            "Off must show nothing, however long the idle stretch was",
+            emptyList<UsageGap>(),
+            select(ghosts, 0)
+        )
     }
 
     @Test
-    fun `a negative setting is treated as no minimum rather than as impossible`() {
-        // The settings UI cannot produce a negative, but a restored vault or a
-        // future slider could, and the old form turned any value <= 0 into
-        // "match nothing".
-        assertEquals(0L, ghostThresholdMillis(-1))
-        assertEquals(0L, ghostThresholdMillis(Int.MIN_VALUE))
+    fun `a negative value is also off`() {
+        // The selector's "Custom" sentinel is -1, and a restored vault could
+        // carry anything. Nothing non-positive is a usable duration.
+        assertEquals(Long.MAX_VALUE, ghostThresholdMillis(-1))
+        assertEquals(Long.MAX_VALUE, ghostThresholdMillis(Int.MIN_VALUE))
+    }
+
+    @Test
+    fun `the smallest usable setting is one minute`() {
+        assertEquals(60_000L, ghostThresholdMillis(1))
+        assertNotEquals("one minute is on, zero is off", ghostThresholdMillis(0), ghostThresholdMillis(1))
+    }
+
+    // --- a positive threshold filters --------------------------------------
+
+    @Test
+    fun `a small positive threshold drops the shorter ghosts and keeps the longer`() {
+        val ghosts = listOf(
+            ghost(1_000L, 59_000L),        // 59 s  — below a 1-minute minimum
+            ghost(100_000L, 60_000L),      // 60 s  — exactly the minimum
+            ghost(200_000L, 3_600_000L)    // 60 min — well above it
+        )
+        val selected = select(ghosts, 1)
+
+        assertEquals(2, selected.size)
+        assertEquals(listOf(100_000L, 200_000L), selected.map { it.startMillis })
+    }
+
+    @Test
+    fun `a duration exactly equal to the threshold is kept`() {
+        // The comparison is `>=`, so the boundary value is offered.
+        assertEquals(1, select(listOf(ghost(1_000L, 3_600_000L)), 60).size)
+    }
+
+    @Test
+    fun `a duration one millisecond under the threshold is dropped`() {
+        assertEquals(emptyList<UsageGap>(), select(listOf(ghost(1_000L, 3_599_999L)), 60))
+    }
+
+    @Test
+    fun `the default setting of one hour shows only hour-long idle stretches`() {
+        // `UserSettings.ghostTimeTriggerMins` defaults to 60.
+        val ghosts = listOf(ghost(1_000L, 3_599_999L), ghost(2_000L, 3_600_000L))
+        assertEquals(listOf(2_000L), select(ghosts, 60).map { it.startMillis })
+    }
+
+    @Test
+    fun `a threshold in hours drops everything below it`() {
+        val ghosts = listOf(
+            ghost(1_000L, 3_600_000L),      // 1 h
+            ghost(10_000L, 7_199_999L),     // just under 2 h
+            ghost(20_000L, 7_200_000L)      // exactly 2 h
+        )
+        assertEquals(listOf(20_000L), select(ghosts, 120).map { it.startMillis })
+    }
+
+    // --- a huge threshold returns nothing ----------------------------------
+
+    @Test
+    fun `a huge threshold returns nothing`() {
+        val ghosts = listOf(ghost(1_000L, 1L), ghost(10_000L, 86_400_000L))
+        assertEquals(
+            "even a full day is shorter than a two-day minimum",
+            emptyList<UsageGap>(),
+            select(ghosts, 2_880)
+        )
+    }
+
+    @Test
+    fun `the largest possible threshold returns nothing for any span`() {
+        val ghosts = (0..100).map { ghost(it * 1_000_000L, 999_999_999L) }
+        assertEquals(emptyList<UsageGap>(), select(ghosts, Int.MAX_VALUE))
     }
 
     @Test
@@ -82,137 +168,65 @@ class GhostThresholdTest {
         assertTrue("well inside Long", absurd < Long.MAX_VALUE)
     }
 
-    // --- 0 returns everything ----------------------------------------------
-
     @Test
-    fun `a threshold of zero returns every ghost including the shortest`() {
-        val ghosts = listOf(
-            ghost(1_000L, 1L),          // 1 ms
-            ghost(10_000L, 59_000L),
-            ghost(100_000L, 3_600_000L)
-        )
-        val selected = selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(0), emptyList())
-
-        assertEquals(3, selected.size)
-        assertEquals(listOf(1_000L to 1_001L, 10_000L to 69_000L, 100_000L to 3_700_000L), selected.map { it.startMillis to it.endMillis })
+    fun `a positive threshold is exact in milliseconds`() {
+        for (mins in 0..1440 step 7) {
+            assertEquals(mins.toLong() * 60_000L, ghostThresholdMillis(mins))
+        }
+        assertEquals(86_400_000L, ghostThresholdMillis(1440))
     }
 
-    @Test
-    fun `a threshold of zero returns ghosts for every package, not just the first`() {
-        val ghosts = listOf(
-            ghost(1_000L, 500L, "com.a"),
-            ghost(2_000L, 500L, "com.b"),
-            ghost(3_000L, 500L, "com.c")
-        )
-        assertEquals(1, selectGhostGapsForPackage(ghosts, "com.a", ghostThresholdMillis(0), emptyList()).size)
-        assertEquals(1, selectGhostGapsForPackage(ghosts, "com.b", ghostThresholdMillis(0), emptyList()).size)
-        assertEquals(1, selectGhostGapsForPackage(ghosts, "com.c", ghostThresholdMillis(0), emptyList()).size)
-    }
-
-    // --- a small positive threshold filters -------------------------------
+    // --- monotonicity -------------------------------------------------------
 
     @Test
-    fun `a small positive threshold drops the shorter ghosts and keeps the longer`() {
-        val ghosts = listOf(
-            ghost(1_000L, 59_000L),        // 59 s  — below a 1-minute minimum
-            ghost(100_000L, 60_000L),      // 60 s  — exactly the minimum
-            ghost(200_000L, 3_600_000L)    // 60 min — well above it
-        )
-        val selected = selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(1), emptyList())
-
-        assertEquals(2, selected.size)
-        assertEquals(listOf(100_000L, 200_000L), selected.map { it.startMillis })
-    }
-
-    @Test
-    fun `a threshold in hours drops everything below it`() {
-        val ghosts = listOf(
-            ghost(1_000L, 3_600_000L),      // 1 h
-            ghost(10_000L, 7_199_999L),     // just under 2 h
-            ghost(20_000L, 7_200_000L)      // exactly 2 h
-        )
-        val selected = selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(120), emptyList())
-        assertEquals(listOf(20_000L), selected.map { it.startMillis })
-    }
-
-    @Test
-    fun `a duration exactly equal to the threshold is kept`() {
-        // The comparison is `>=`, so the boundary value is offered. A ghost of
-        // exactly the configured minimum is not "shorter than the minimum".
-        val ghosts = listOf(ghost(1_000L, 3_600_000L))
-        assertEquals(1, selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(60), emptyList()).size)
-    }
-
-    @Test
-    fun `a duration one millisecond under the threshold is dropped`() {
-        val ghosts = listOf(ghost(1_000L, 3_599_999L))
-        assertEquals(emptyList<UsageGap>(), selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(60), emptyList()))
-    }
-
-    // --- a huge threshold returns nothing ----------------------------------
-
-    @Test
-    fun `a huge threshold returns nothing`() {
-        val ghosts = listOf(ghost(1_000L, 1L), ghost(10_000L, 86_400_000L))
-        assertEquals(
-            "even a full day is shorter than a two-day minimum",
-            emptyList<UsageGap>(),
-            selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(2_880), emptyList())
-        )
-    }
-
-    @Test
-    fun `the largest possible threshold returns nothing for any span`() {
-        val ghosts = (0..100).map { ghost(it * 1_000_000L, 999_999_999L) }
-        assertEquals(
-            emptyList<UsageGap>(),
-            selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(Int.MAX_VALUE), emptyList())
-        )
-    }
-
-    @Test
-    fun `the selection is monotonic in the threshold`() {
-        // Raising the minimum can only ever remove candidates, never add one.
+    fun `raising the minimum can only ever remove candidates`() {
         val ghosts = (1..20).map { ghost(it * 1_000_000L, it * 60_000L) }
         var previous = Int.MAX_VALUE
         for (mins in 0..25) {
-            val count = selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(mins), emptyList()).size
+            val count = select(ghosts, mins).size
             assertTrue("threshold $mins grew the list from $previous to $count", count <= previous)
             previous = count
         }
-        assertEquals("0 shows all 20", 20, selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(0), emptyList()).size)
+        // The largest of the 20 is 20 minutes, so a 1-minute minimum keeps all
+        // and a 25-minute minimum empties the list.
+        assertEquals(20, select(ghosts, 1).size)
+        assertEquals(0, select(ghosts, 25).size)
     }
 
-    // --- acknowledgement still applies at a zero threshold -----------------
+    // --- acknowledgement and package scoping -------------------------------
 
     @Test
-    fun `a zero threshold still honours an acknowledged ghost`() {
-        // Fixing "0 shows nothing" must not turn into "0 shows everything,
-        // including what the user dismissed".
-        val ghosts = listOf(ghost(1_000L, 500L), ghost(10_000L, 500L))
-        val acks = listOf(AcknowledgedGhost(pkg, 1_000L, 1_500L))
-
-        val selected = selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(0), acks)
-
-        assertEquals(1, selected.size)
-        assertEquals(10_000L, selected.single().startMillis)
+    fun `an acknowledged ghost is still suppressed`() {
+        val ghosts = listOf(ghost(1_000L, 3_600_000L), ghost(10_000L, 3_600_000L))
+        val acks = listOf(AcknowledgedGhost(pkg, 1_000L, 3_601_000L))
+        assertEquals(listOf(10_000L), select(ghosts, 60, acks).map { it.startMillis })
     }
 
     @Test
     fun `an acknowledgement for another package does not suppress a ghost`() {
-        val ghosts = listOf(ghost(1_000L, 500L))
-        val acks = listOf(AcknowledgedGhost("com.other", 1_000L, 1_500L))
-        assertEquals(1, selectGhostGapsForPackage(ghosts, pkg, ghostThresholdMillis(0), acks).size)
+        val ghosts = listOf(ghost(1_000L, 3_600_000L))
+        val acks = listOf(AcknowledgedGhost("com.other", 1_000L, 3_601_000L))
+        assertEquals(1, select(ghosts, 60, acks).size)
+    }
+
+    @Test
+    fun `ghosts for other packages are never offered`() {
+        val ghosts = listOf(ghost(1_000L, 3_600_000L, "com.a"), ghost(2_000L, 3_600_000L, "com.b"))
+        assertEquals(
+            1,
+            selectGhostGapsForPackage(ghosts, "com.a", ghostThresholdMillis(60), emptyList()).size
+        )
     }
 
     @Test
     fun `a selected gap carries the exact replayed span`() {
-        // The ack key is an exact three-field match, so the span reported to the
+        // The ack key is an exact three-field match, so the span shown to the
         // user must be the span the replay produced, unaltered.
         val start = 1_234_567L
         val end = 9_876_543L
-        val selected = selectGhostGapsForPackage(listOf(ghost(start, end - start)), pkg, ghostThresholdMillis(0), emptyList())
-        val gap = selected.single()
+        val gap = selectGhostGapsForPackage(
+            listOf(ghost(start, end - start)), pkg, ghostThresholdMillis(1), emptyList()
+        ).single()
 
         assertEquals(start, gap.startMillis)
         assertEquals(end, gap.endMillis)

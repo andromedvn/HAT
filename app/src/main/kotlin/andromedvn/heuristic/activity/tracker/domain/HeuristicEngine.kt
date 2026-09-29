@@ -428,21 +428,29 @@ fun minutesToMillisExact(minutes: Int): Long = minutes.toLong() * 60_000L
 /**
  * The ghost minimum-duration setting, in exact milliseconds.
  *
- * 0 (or a negative value the settings UI cannot produce) means "no minimum",
- * so it must yield 0L — the lowest possible threshold, which every ghost
- * span satisfies.
+ * 0 means the feature is OFF, not "no minimum". `SettingsScreen`'s
+ * "Idle App Detection" selector offers `listOf("Off" to 0, "30m" to 30, "1h"
+ * to 60, "Custom" to -1)`, so 0 is what the user picks to switch idle
+ * detection off — and the custom-value dialog accepts 0 too, which the
+ * selector then displays as "Off". The same convention governs all four
+ * heuristic settings (archive sync, gap minimum, merge tolerance).
  *
- * It used to yield `Long.MAX_VALUE`, which is the one value NO finite duration
- * can reach: `duration >= Long.MAX_VALUE` is false for every real span, so a
- * user who set the minimum to 0 was shown an empty ghost list. Zero is the
- * setting that should show the MOST, and it showed the least.
+ * "Off" is therefore encoded as [Long.MAX_VALUE], the one threshold no finite
+ * duration can satisfy, so `duration >= threshold` is false for every ghost
+ * span and the list is empty. This is deliberate, not a bug: returning 0L
+ * instead would switch the feature ON for every user who turned it off, and
+ * would surface every sub-second idle blip as a "Suspicious Idle Session".
  *
- * A large positive setting is still honoured exactly: [Int.MAX_VALUE] minutes
- * is 128_849_018_820_000 ms, comfortably inside Long and unreachable by any
- * span, so an absurd threshold still returns nothing.
+ * The sentinel is safe only because no real span can reach it. If the feature
+ * ever needs a genuine "no minimum" option, it needs a DISTINCT stored value
+ * (e.g. -1) plus a new selector entry — not a reinterpretation of 0.
+ *
+ * A large positive setting is honoured exactly: [Int.MAX_VALUE] minutes is
+ * 128_849_018_820_000 ms, comfortably inside Long and unreachable by any span,
+ * so an absurd threshold still returns nothing.
  */
 fun ghostThresholdMillis(ghostMins: Int): Long =
-    if (ghostMins <= 0) 0L else minutesToMillisExact(ghostMins)
+    if (ghostMins <= 0) Long.MAX_VALUE else minutesToMillisExact(ghostMins)
 
 /**
  * The ghost spans offered for [packageName] under a [thresholdMillis] minimum,

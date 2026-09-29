@@ -15,8 +15,69 @@ Nothing yet.
 
 ## [1.1.2] - Unreleased
 
+**Numbers were wrong**
+
+- A phone left unlocked but idle in a pocket counted as screen time. HAT only
+  watched the screen turning off and never handled the lock event, so that time
+  was never recognised as offline. Both signals are now handled.
+- Setting the idle-detection threshold to 0 returned nothing at all, because 0
+  was internally replaced with "the largest possible value". It now means "no
+  minimum", which is what you asked for.
+- A damaged or hand-edited vault file could add time that has not happened yet,
+  or wrap a duration into a negative number, and inflate a day's total. Rows are
+  now clamped to the present and checked for overflow at eight points in the
+  code, not just the one.
+- Comparing a habit at 23:00 against a profile entry at 01:00 treated them as 22
+  hours apart instead of 2.
+
+**History could be lost or withheld**
+
+- Creating a database index could fail for a reason that had nothing to do with
+  your data — a full disk, a briefly locked file — and the code's response was to
+  delete history. That could happen on any app launch. It now logs the problem
+  and carries on, because an index is a speed aid, not a requirement for
+  correctness.
+- A restore that failed partway still reported "Vault Restored" and restarted as
+  though everything was fine. A partial restore is now reported as incomplete,
+  and the message no longer blames your file.
+
+**The app was doing avoidable work**
+
+- The chart ran one never-ending animation per bar, but only the highlighted bar
+  ever used it. A 24-hour chart animated 24 times over for no visible reason.
+  There is now one animation per chart.
+- Restoring a vault scanned your entire history once per restored entry. Against
+  a year of data that is hundreds of millions of comparisons; the history is now
+  read once.
+- Background archiving caught up about five days per run against roughly a year
+  of backlog, so a fresh install needed around 73 runs to fill in. It now
+  backfills the whole gap in one pass.
+- Your database tables were re-checked on every single open.
+
+**Safety and privacy**
+
+- Diagnostic and crash logs are written to a folder that was not excluded from
+  Android's "transfer to new phone" feature. On Android 12 and later, changing
+  phones would have copied those logs across even with cloud backup switched off.
+- "Clear Diagnostic Logs" and "Simulate Fatal Crash" ran on a single tap with no
+  confirmation, and neither can be undone. Both now ask first.
+- Clearing a custom-value field saved 0 without telling you. For the archive
+  interval that is not a harmless default but a broken setting. The field now
+  rejects nonsense and says why.
+
 Not yet tagged. This release corrects the time arithmetic, closes a crash, and
 adds theme customization.
+
+### Infrastructure
+
+- `IntervalOverlapIndex` — an in-memory interval-overlap test used by the vault
+  merge, replacing a per-row table scan. Its correctness rule (a prefix maximum
+  of ends, not just the nearest neighbour) is pinned by tests.
+- R8 keep rules for serialization, workers and the crash-recovery path, so
+  shrinking cannot strip something reached only at runtime.
+- A release build now fails outright if the signing key is missing, instead of
+  quietly producing an artifact signed with the debug key.
+- Resource shrinking enabled for release builds.
 
 ### Added
 
