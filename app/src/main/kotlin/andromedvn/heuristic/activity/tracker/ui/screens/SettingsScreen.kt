@@ -28,6 +28,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -37,6 +39,7 @@ import andromedvn.heuristic.activity.tracker.data.*
 import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
 import andromedvn.heuristic.activity.tracker.domain.shouldShowSupportPrompt
 import andromedvn.heuristic.activity.tracker.ui.components.*
+import andromedvn.heuristic.activity.tracker.ui.theme.argbToStoredLong
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
 import andromedvn.heuristic.activity.tracker.utils.SPONSOR_URL
 import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
@@ -231,15 +234,28 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 // GROUP 1: THEME ENGINE
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("THEME ENGINE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    ThemeOptionItem("Dynamic Material", "Extracts colors from system wallpaper.", currentSettings!!.themeType == ThemeType.DYNAMIC) { updateSettings(currentSettings!!.copy(themeType = ThemeType.DYNAMIC)) }
-                    ThemeOptionItem("Custom Material", "Pick any accent color you like.", currentSettings!!.themeType == ThemeType.STATIC) {
-                        val alreadySeen = currentSettings!!.hasSeenSupportPrompt
-                        val shouldPrompt = shouldShowSupportPrompt(alreadySeen, reachedThemeControl = true)
-                        if (shouldPrompt) showSupportPrompt = true
-                        // The "seen" flag is persisted in the SAME write as the theme change.
-                        // Writing it from the dialog's dismiss handler instead would race the
-                        // theme write and can silently revert the user's choice.
-                        updateSettings(currentSettings!!.copy(themeType = ThemeType.STATIC, hasSeenSupportPrompt = alreadySeen || shouldPrompt))
+                    SettingsGroupParentCard {
+                        ThemePreviewBox(MaterialTheme.colorScheme.primary)
+                        ThemeOptionItem("Dynamic Material", "Extracts colors from system wallpaper.", currentSettings!!.themeType == ThemeType.DYNAMIC) { updateSettings(currentSettings!!.copy(themeType = ThemeType.DYNAMIC)) }
+                        ThemeOptionItem("Custom Material", "Pick any accent color you like.", currentSettings!!.themeType == ThemeType.STATIC) {
+                            val alreadySeen = currentSettings!!.hasSeenSupportPrompt
+                            val shouldPrompt = shouldShowSupportPrompt(alreadySeen, reachedThemeControl = true)
+                            if (shouldPrompt) showSupportPrompt = true
+                            // The "seen" flag is persisted in the SAME write as the theme change.
+                            // Writing it from the dialog's dismiss handler instead would race the
+                            // theme write and can silently revert the user's choice.
+                            updateSettings(currentSettings!!.copy(themeType = ThemeType.STATIC, hasSeenSupportPrompt = alreadySeen || shouldPrompt))
+                        }
+
+                        AnimatedVisibility(
+                            visible = currentSettings!!.themeType == ThemeType.STATIC,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            HexColorInput(Color(currentSettings!!.staticColor)) { newColor ->
+                                updateSettings(currentSettings!!.copy(staticColor = argbToStoredLong(newColor.toArgb())))
+                            }
+                        }
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))

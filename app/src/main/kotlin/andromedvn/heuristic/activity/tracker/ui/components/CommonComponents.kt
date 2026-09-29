@@ -66,6 +66,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.AppUsageItem
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
+import andromedvn.heuristic.activity.tracker.ui.theme.argbToStoredLong
+import andromedvn.heuristic.activity.tracker.ui.theme.formatHexColor
+import andromedvn.heuristic.activity.tracker.ui.theme.parseHexColor
 import andromedvn.heuristic.activity.tracker.utils.AppIconLoader
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import kotlinx.coroutines.delay
@@ -472,4 +475,104 @@ fun getDayOffsetString(targetMillis: Long, currentDayStartMillis: Long): String 
 fun getStartOfDay(cal: Calendar): Long { 
     val clone = cal.clone() as Calendar; clone.set(Calendar.HOUR_OF_DAY, 0); clone.set(Calendar.MINUTE, 0); clone.set(Calendar.SECOND, 0); clone.set(Calendar.MILLISECOND, 0)
     return clone.timeInMillis 
+}
+
+// -----------------------------------------------------------------------------
+// THEME COMPONENTS
+// Ported from HAT Pro (CommonComponents.kt) so the two codebases stay
+// diffable. Only deviation: parsing goes through the pure, unit-tested
+// parseHexColor/formatHexColor in ui/theme/ColorParsing.kt rather than
+// re-implementing the parse inline with android.graphics.Color.parseColor.
+// -----------------------------------------------------------------------------
+
+@Composable
+fun SettingsGroupParentCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(24.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.02f)),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+fun HexColorInput(currentColor: Color, onColorChange: (Color) -> Unit) {
+    var textState by remember { mutableStateOf(formatHexColor(argbToStoredLong(currentColor.toArgb()))) }
+    var errorState by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+
+    // Only overwrite the text while the user is not typing, so an in-progress
+    // entry is never yanked out from under them by a recomposition.
+    LaunchedEffect(currentColor) { if (!isFocused) textState = formatHexColor(argbToStoredLong(currentColor.toArgb())) }
+    LaunchedEffect(textState) {
+        delay(300)
+        val parsed = parseHexColor(textState)
+        if (parsed != null) { onColorChange(Color(parsed.toInt())); errorState = false }
+        else errorState = textState.isNotBlank()
+    }
+
+    Card(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(16.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("CUSTOM HEX CODE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = textState,
+                onValueChange = { input -> var newText = input; if (!newText.startsWith("#")) newText = "#" + newText.replace("#", ""); if (newText.length <= 9) textState = newText.uppercase() },
+                label = { Text("e.g. #FF8000") },
+                isError = errorState,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().onFocusChanged { isFocused = it.isFocused },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+            )
+        }
+    }
+}
+
+@Composable
+fun ThemePreviewBox(derivedColor: Color) {
+    Box(
+        modifier = Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(16.dp)).background(derivedColor.copy(alpha = 0.05f)).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.height(40.dp), contentAlignment = Alignment.BottomCenter) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+                        Canvas(modifier = Modifier.width(12.dp).height(40.dp)) {
+                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
+                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
+                        }
+                        Canvas(modifier = Modifier.width(12.dp).height(24.dp)) {
+                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
+                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
+                        }
+                    }
+                }
+                Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(derivedColor.copy(alpha = 0.15f)).border(2.dp, derivedColor, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("28", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = derivedColor)
+                }
+                Box(modifier = Modifier.width(56.dp).height(36.dp).clip(RoundedCornerShape(8.dp)).background(derivedColor.copy(alpha = 0.05f)).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.CenterStart) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp)) {
+                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(derivedColor))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(modifier = Modifier.height(2.dp).weight(1f).clip(RoundedCornerShape(50)).background(derivedColor.copy(alpha = 0.5f)))
+                    }
+                }
+                Box(modifier = Modifier.width(64.dp).height(28.dp).clip(RoundedCornerShape(50)).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(50))) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(50)).background(derivedColor.copy(alpha = 0.15f)).border(1.dp, derivedColor, RoundedCornerShape(50)), contentAlignment = Alignment.Center) { Text("D", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp), color = derivedColor) }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text("W", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, fontSize = 9.sp), color = derivedColor.copy(alpha = 0.5f)) }
+                    }
+                }
+            }
+        }
+    }
 }

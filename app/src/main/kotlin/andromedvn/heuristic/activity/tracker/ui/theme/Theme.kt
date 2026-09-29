@@ -66,10 +66,13 @@ fun ComposeEmptyActivityTheme(settings: UserSettings, content: @Composable () ->
     val context = LocalContext.current
     val dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-    // FOSS PURGE: Hardcoded fallback to Orange (0xFFFF8000)
+    // FALLBACK: derives from the stored accent so a custom colour survives on
+    // devices without dynamic colour. Pre-fix this discarded settings.staticColor
+    // and settings.extractedColor and hardcoded orange, which is also why the
+    // crash-recovery screen (which asks for red) rendered orange.
     val scheme = when (settings.themeType) {
-        ThemeType.DYNAMIC -> if (dynamicAvailable) dynamicDarkColorScheme(context) else generateMonochromaticDark(Color(0xFFFF8000))
-        ThemeType.STATIC -> generateMonochromaticDark(Color(0xFFFF8000))
+        ThemeType.DYNAMIC -> if (dynamicAvailable) dynamicDarkColorScheme(context) else generateMonochromaticDark(Color(settings.extractedColor))
+        ThemeType.STATIC -> generateMonochromaticDark(Color(settings.staticColor))
     }
 
     val view = LocalView.current
