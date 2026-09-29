@@ -22,6 +22,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -322,7 +324,7 @@ fun HatDynamicHeader(title: String, subtitle: String, actions: @Composable RowSc
 fun TimeSelector(currentRange: TimeRangeLabel, onRangeSelected: (TimeRangeLabel) -> Unit) {
     val options = listOf(TimeRangeLabel.DAY, TimeRangeLabel.WEEK, TimeRangeLabel.MONTH)
     val selectedIndex = options.indexOf(currentRange)
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(52.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(50)).padding(4.dp)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(52.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(4.dp).selectableGroup()) {
         val itemWidth = maxWidth / 3
         val indicatorOffset by animateDpAsState(targetValue = itemWidth * selectedIndex, animationSpec = tween(300, easing = FastOutSlowInEasing), label = "indicator")
         Box(modifier = Modifier.offset(x = indicatorOffset).width(itemWidth).fillMaxHeight().clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
@@ -331,7 +333,10 @@ fun TimeSelector(currentRange: TimeRangeLabel, onRangeSelected: (TimeRangeLabel)
                 val isSelected = index == selectedIndex
                 val text = when (range) { TimeRangeLabel.DAY -> "Day"; TimeRangeLabel.WEEK -> "Week"; TimeRangeLabel.MONTH -> "Month" }
                 val textColor by animateColorAsState(targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), animationSpec = tween(300, easing = FastOutSlowInEasing), label = "text")
-                Box(modifier = Modifier.weight(1f).fillMaxHeight().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { onRangeSelected(range) }), contentAlignment = Alignment.Center) { Text(text = text, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium), color = textColor) }
+                // selectable() rather than clickable(): a screen reader otherwise
+                // announces "Day", "Week" and "Month" as three identical options
+                // with no indication of which is active.
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().selectable(selected = isSelected, onClick = { onRangeSelected(range) }), contentAlignment = Alignment.Center) { Text(text = text, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium), color = textColor) }
             }
         }
     }

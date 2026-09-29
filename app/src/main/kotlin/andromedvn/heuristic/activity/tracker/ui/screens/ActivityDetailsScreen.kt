@@ -212,7 +212,15 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                         // Two items precede the sessions: the dynamic header and the
                                         // block holding the chart plus the SESSIONS caption. +1 landed
                                         // on that SESSIONS caption item, one row above the target.
-                                        if (matchIndex != -1) scope.launch { listState.animateScrollToItem(matchIndex + 2 + if(uiState.activity is AppUsageItem && (uiState.activity as AppUsageItem).ghostIntervals.isNotEmpty()) (uiState.activity as AppUsageItem).ghostIntervals.size else 0) } 
+                                        // Exactly two items precede the sessions: the dynamic
+                                        // header and the block carrying the icon row, the chart
+                                        // and the SESSIONS caption. So +2 is the first session row.
+                                        //
+                                        // There is deliberately no term for ghostIntervals.size.
+                                        // A ghost is not a row of its own — it only annotates an
+                                        // existing session (isGhost, below) — so adding its count
+                                        // here overshot the list by however many ghosts there were.
+                                        if (matchIndex != -1) scope.launch { listState.animateScrollToItem(matchIndex + 2) }
                                     } else { dashboardViewModel.setChartHighlight(null); returnScrollIndex = -1 }
                                 }
                             )

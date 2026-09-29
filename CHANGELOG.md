@@ -20,15 +20,8 @@ Nothing yet.
 - A phone left unlocked but idle in a pocket counted as screen time. HAT only
   watched the screen turning off and never handled the lock event, so that time
   was never recognised as offline. Both signals are now handled.
-- Setting the idle-detection threshold to 0 returned nothing at all, because 0
-  was internally replaced with "the largest possible value". It now means "no
-  minimum", which is what you asked for.
-- A damaged or hand-edited vault file could add time that has not happened yet,
-  or wrap a duration into a negative number, and inflate a day's total. Rows are
-  now clamped to the present and checked for overflow at eight points in the
-  code, not just the one.
 - Comparing a habit at 23:00 against a profile entry at 01:00 treated them as 22
-  hours apart instead of 2.
+  hours apart instead of 2. The clock is circular, and the comparison now wraps.
 
 **History could be lost or withheld**
 
@@ -48,7 +41,12 @@ Nothing yet.
   There is now one animation per chart.
 - Restoring a vault scanned your entire history once per restored entry. Against
   a year of data that is hundreds of millions of comparisons; the history is now
-  read once.
+  now reads once.
+- A damaged or hand-edited vault file could add time that has not happened yet,
+  or wrap a duration into a negative number, and inflate a day's total. Rows are
+  now clamped to the present and checked for overflow at eight points in the
+  code, not just the one. A corrupted row could also stretch a label into a
+  block several weeks long, which you were then offered to label.
 - Background archiving caught up about five days per run against roughly a year
   of backlog, so a fresh install needed around 73 runs to fill in. It now
   backfills the whole gap in one pass.

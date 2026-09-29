@@ -2,6 +2,8 @@ package andromedvn.heuristic.activity.tracker.data
 
 import android.content.Context
 import android.util.LruCache
+import andromedvn.heuristic.activity.tracker.domain.circularHourDistance
+import andromedvn.heuristic.activity.tracker.domain.hourProximityWeight
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.utils.VaultSecurity
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
@@ -190,7 +192,11 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
             writer.name("APP_USAGE"); writer.beginObject()
             rawMatrix.forEach { (pkg, intervals) -> writer.name(pkg); writer.beginArray(); intervals.forEach { (s, e) -> writer.beginObject().name("s").value(s).name("e").value(e).endObject() }; writer.endArray() }
             writer.endObject(); writer.endObject() 
-            cachedIntervals = emptyMap(); System.gc(); chunkStart = chunkEnd
+            // Dropping the reference is what lets the chunk be collected; the
+            // explicit System.gc() that used to sit here was a stop-the-world
+            // pause once per 30-day chunk and does not change whether an OOM
+            // would occur — ART's collector decides that either way.
+            cachedIntervals = emptyMap(); chunkStart = chunkEnd
         }
         writer.endArray(); writer.close(); forceInvalidateCache()
     }
@@ -236,11 +242,15 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
                 else -> listOf("Sleep", "Work", "Eat")
             }
         }
-        val weights = mutableMapOf<String, Double>()
+        val weightByTitle = mutableMapOf<String, Double>()
         activities.forEach { act -> 
-            val distance = kotlin.math.abs(Calendar.getInstance().apply { timeInMillis = act.timestamp }.get(Calendar.HOUR_OF_DAY) - targetHour)
-            weights[act.title] = (weights[act.title] ?: 0.0) + (if(distance == 0) 3.0 else if(distance <= 2) 1.5 else 0.5) 
+            val hour = Calendar.getInstance().apply { timeInMillis = act.timestamp }.get(Calendar.HOUR_OF_DAY)
+            // The clock is circular: 23:00 is 2 hours from 01:00, not 22. The old
+            // abs(hour - targetHour) scored a late-night habit as maximally
+            // distant from an after-midnight one, which is the most common case.
+            val weight = hourProximityWeight(circularHourDistance(hour, targetHour))
+            weightByTitle[act.title] = (weightByTitle[act.title] ?: 0.0) + weight
         }
-        weights.entries.sortedByDescending { it.value }.take(5).map { it.key } 
+        weightByTitle.entries.sortedByDescending { it.value }.take(5).map { it.key } 
     }
 }

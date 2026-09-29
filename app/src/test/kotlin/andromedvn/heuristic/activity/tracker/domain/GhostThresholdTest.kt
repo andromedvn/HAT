@@ -170,7 +170,7 @@ class GhostThresholdTest {
 
     @Test
     fun `a positive threshold is exact in milliseconds`() {
-        for (mins in 0..1440 step 7) {
+        for (mins in 1..1440 step 7) {
             assertEquals(mins.toLong() * 60_000L, ghostThresholdMillis(mins))
         }
         assertEquals(86_400_000L, ghostThresholdMillis(1440))
@@ -180,9 +180,11 @@ class GhostThresholdTest {
 
     @Test
     fun `raising the minimum can only ever remove candidates`() {
+        // From 1 minute upwards. 0 is not on this scale at all — it is the off
+        // sentinel, so the count jumps from 0 candidates to all of them there.
         val ghosts = (1..20).map { ghost(it * 1_000_000L, it * 60_000L) }
         var previous = Int.MAX_VALUE
-        for (mins in 0..25) {
+        for (mins in 1..25) {
             val count = select(ghosts, mins).size
             assertTrue("threshold $mins grew the list from $previous to $count", count <= previous)
             previous = count
@@ -191,6 +193,13 @@ class GhostThresholdTest {
         // and a 25-minute minimum empties the list.
         assertEquals(20, select(ghosts, 1).size)
         assertEquals(0, select(ghosts, 25).size)
+    }
+
+    @Test
+    fun `off is the only threshold that behaves discontinuously`() {
+        val ghosts = (1..20).map { ghost(it * 1_000_000L, it * 60_000L) }
+        assertEquals("off shows nothing", 0, select(ghosts, 0).size)
+        assertEquals("one minute shows all 20", 20, select(ghosts, 1).size)
     }
 
     // --- acknowledgement and package scoping -------------------------------
