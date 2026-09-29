@@ -7,14 +7,17 @@
 
 ## The one thing that cannot be fixed later
 
-Google Play binds your app to its signing certificate **forever**. The first
-version you upload locks in that key. If you later lose the key, or sign with a
-different one, every future upload is rejected as a *different app* that happens
-to share a package name. There is no override.
+Android binds an installed app to its signing certificate **forever**. Installing
+an update signed with a different key fails with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, and there is no override. The distribution
+channel does not change this — a GitHub Releases APK behaves exactly the way a
+store upload does, because the check lives in the package manager, not in the
+store.
 
-> On 2026-09-25 the release build was signed with the **debug key**
-> (`app/build.gradle.kts`). That was fixed before first upload. It is now driven
-> by `key.properties`.
+> On 2026-09-25 a release build was produced with the **debug key**. No signed
+> release had been published at that point, so nothing shipped broken. Signing is
+> now driven by `key.properties`, and a release build without it fails outright
+> rather than silently falling back.
 
 ## One-time setup
 
@@ -32,10 +35,9 @@ to share a package name. There is no override.
 one copy on removable media or printed. A cloud-only copy does not protect you
 from a compromised account.
 
-**3. Record the SHA-256 fingerprint.** Google shows it in Play Console under
-*Release → Setup → App signing*. The **app signing key** Google shows is Google's
-own upload key, which differs from this one — that is expected and correct. Keep
-your own fingerprint recorded anyway.
+**3. Record the SHA-256 fingerprint.** Keep it in Proton Pass next to the key.
+`keytool -printcert -jarfile <apk>` prints the fingerprint of any built
+artifact, so it can always be checked against that record before publishing.
 
 ## Building
 
@@ -45,11 +47,13 @@ export JAVA_HOME="/c/Users/dvn/AppData/Local/Programs/jdk17/jdk-17.0.20.1+1"
 export ANDROID_HOME="C:/Users/dvn/AppData/Local/Android/Sdk"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-./gradlew clean bundleRelease        # AAB for Play Console
-./gradlew assembleRelease            # signed APK, for manual sideloading
+./gradlew assembleRelease            # the release artifact: a signed APK
 ```
 
-Output: `app/build/outputs/bundle/release/app-release.aab`
+HAT ships as an APK, not an AAB — there is no store to generate an app bundle
+for. GitHub Releases is the delivery channel.
+
+Output: `app/build/outputs/apk/release/app-release.apk`
 
 ## Verify before uploading — always
 
@@ -70,15 +74,16 @@ output.
 
 ## Release checklist
 
-- [ ] `./gradlew clean bundleRelease` succeeds
+- [ ] `./gradlew assembleRelease` succeeds
 - [ ] `keytool -printcert` shows **your** fingerprint, not the debug one
 - [ ] `versionCode` incremented in `app/build.gradle.kts` (currently 2)
-- [ ] `versionName` set (currently 1.1.1)
+- [ ] `versionName` set, and the `[Unreleased]` section of CHANGELOG.md folded
+      into a version heading (currently 1.1.1)
 - [ ] Privacy Policy and Terms published on GitHub Pages
-- [ ] Fastlane metadata updated: title, short description, full description
-- [ ] Screenshots are 1080p or higher
 - [ ] CHANGELOG.md updated
-- [ ] APK/AAB tested on a real device from the release build, not debug
+- [ ] APK tested on a real device **from the release build**, not debug — this is
+      the only step that proves the R8 keep rules are correct
+- [ ] Release tag pushed, APK attached to the GitHub Release
 
 ## Distribution
 

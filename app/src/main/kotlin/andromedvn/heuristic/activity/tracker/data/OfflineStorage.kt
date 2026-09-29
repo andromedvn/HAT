@@ -434,7 +434,21 @@ class OfflineStorage private constructor(private val context: Context) {
         dbHelper.writableDatabase.insertWithOnConflict(HatDatabaseHelper.TABLE_IGNORED, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
-    fun removeIgnoredSessionExact(startMillis: Long, endMillis: Long) {
+    /**
+     * Clears the idle-suppression records for a whole labelled window, for every
+     * package in it.
+     *
+     * The package name is deliberately NOT part of the predicate. An
+     * [IgnoredSession] suppresses app time that ghost detection decided was idle;
+     * if that time sat inside a window the user has now unlabelled, the window is
+     * no longer known to be offline and every app's suppressed time in it should
+     * come back — not just the one the label happened to be attributed to. Scoping
+     * this to a single package would strand the rest.
+     *
+     * Do not "fix" this by adding package_name to the WHERE clause. The name is
+     * "InWindow" rather than "Exact" for the same reason.
+     */
+    fun removeIgnoredSessionsInWindow(startMillis: Long, endMillis: Long) {
         dbHelper.writableDatabase.delete(HatDatabaseHelper.TABLE_IGNORED, "start_millis = ? AND end_millis = ?", arrayOf(startMillis.toString(), endMillis.toString()))
     }
 

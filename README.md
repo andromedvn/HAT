@@ -337,7 +337,8 @@ The privacy-critical result is that `INTERNET` and `ACCESS_NETWORK_STATE` are bo
 
 HAT was built entirely on-device using **[ACS (Android Code Studio)](https://github.com/AndroidCSOfficial/android-code-studio)**. However, it compiles perfectly using standard desktop environments:
 
-- Android Studio Hedgehog (2023.1.1) or later
+- A recent Android Studio (Narwhal / Meerkat or newer) — AGP 8.13 needs a
+  current IDE, not Hedgehog (2023.1.1)
 - JDK 17
 - Android SDK Platform 36 (`compileSdk` / `targetSdk` are 36, `minSdk` is 26)
 - A device or emulator running Android 8.0 (API 26) or higher

@@ -208,7 +208,15 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     }
 
     suspend fun clearCrashLogs() = withContext(Dispatchers.IO) { HatLogger.clearLogs(context) }
-    suspend fun deleteOfflineActivitiesByTitle(title: String, start: Long, end: Long) = withContext(Dispatchers.IO) { val acts = storage.getOfflineActivitiesByTitleBetween(title, start, end); storage.deleteOfflineActivitiesByTitle(title, start, end); acts.forEach { storage.removeIgnoredSessionExact(it.timestamp, it.timestamp + it.durationInMillis) } }
+    // Deleting a label makes its window unknown-offline again, so the idle
+    // suppression for that window has to go with it — see
+    // OfflineStorage.removeIgnoredSessionsInWindow. Windows are de-duplicated
+    // because two activities can share one, and the delete is window-wide.
+    suspend fun deleteOfflineActivitiesByTitle(title: String, start: Long, end: Long) = withContext(Dispatchers.IO) {
+        val acts = storage.getOfflineActivitiesByTitleBetween(title, start, end)
+        storage.deleteOfflineActivitiesByTitle(title, start, end)
+        acts.map { it.timestamp to (it.timestamp + it.durationInMillis) }.distinct().forEach { (from, to) -> storage.removeIgnoredSessionsInWindow(from, to) }
+    }
     suspend fun updateOfflineActivitiesByTitle(oldTitle: String, newTitle: String, newIconName: String, start: Long, end: Long) = withContext(Dispatchers.IO) { storage.updateOfflineActivitiesByTitle(oldTitle, newTitle, newIconName, start, end) }
     suspend fun saveOfflineActivity(title: String, duration: Long, timestamp: Long, iconName: String) = withContext(Dispatchers.IO) { if (duration > 0L) storage.addActivityAtomic(OfflineActivityEntity(title = title, durationInMillis = duration, timestamp = timestamp, iconName = iconName)) }
     suspend fun hideApp(packageName: String) { storage.saveHiddenPackages(storage.getHiddenPackagesFlow().first() + packageName) }
