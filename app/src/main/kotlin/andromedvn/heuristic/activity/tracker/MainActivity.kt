@@ -1,6 +1,7 @@
 package andromedvn.heuristic.activity.tracker
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -148,7 +149,9 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(navArgument("type") { type = NavType.StringType }, navArgument("id") { type = NavType.StringType })
                         ) { backStackEntry ->
                             val type = backStackEntry.arguments?.getString("type") ?: "app"
-                            val id = backStackEntry.arguments?.getString("id") ?: ""
+                            // Nav path segments are URI-encoded on the way in; labels are free user
+                            // text, so decode before using the value as a lookup key.
+                            val id = Uri.decode(backStackEntry.arguments?.getString("id") ?: "")
                             ActivityDetailsScreen(navController, type, id, dashboardViewModel, repository)
                         }
                         

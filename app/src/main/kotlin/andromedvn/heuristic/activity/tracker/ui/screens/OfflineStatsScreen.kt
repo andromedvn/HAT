@@ -1,5 +1,6 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -190,7 +191,7 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                             } else false
                             
                             Box(modifier = Modifier.padding(horizontal = 20.dp)) {
-                                MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = primaryColor, progress = item.durationInMillis / maxUsage.coerceAtLeast(1f), isSelectedForAction = isSelected, isHighlighted = isHighlighted, onClick = { if (selectedTitles.isNotEmpty()) { if (isSelected) selectedTitles.remove(item.title) else selectedTitles.add(item.title) } else { navController.navigate("details/offline/${item.title}") } }, onLongClick = { if (selectedTitles.isEmpty()) selectedTitles.add(item.title) }) 
+                                MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = primaryColor, progress = item.durationInMillis / maxUsage.coerceAtLeast(1f), isSelectedForAction = isSelected, isHighlighted = isHighlighted, onClick = { if (selectedTitles.isNotEmpty()) { if (isSelected) selectedTitles.remove(item.title) else selectedTitles.add(item.title) } else { navController.navigate("details/offline/${Uri.encode(item.title)}") } }, onLongClick = { if (selectedTitles.isEmpty()) selectedTitles.add(item.title) }) 
                             }
                         }
                     }
@@ -217,7 +218,7 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                     }
                     Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                         if (selectedTitles.size == 1) {
-                            TextButton(onClick = { navController.navigate("details/offline/${selectedTitles.first()}") }) {
+                            TextButton(onClick = { navController.navigate("details/offline/${Uri.encode(selectedTitles.first())}") }) {
                                 Text("Edit Label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(modifier = Modifier.width(8.dp))
