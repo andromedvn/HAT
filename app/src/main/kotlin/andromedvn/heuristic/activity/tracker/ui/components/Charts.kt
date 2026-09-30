@@ -73,6 +73,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.round
 import kotlin.math.sin
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextOverflow
 
 private val BarWidth = 16.dp 
 private val ChartHeight = 180.dp 
@@ -171,7 +173,7 @@ fun HatChart(
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).widthIn(min = 100.dp)) {
                     val currentTitle = if (selectedPoint != null) selectedPoint!!.fullDateLabel else title
                     val currentSub = when {
                         selectedPoint != null && selectedStackIndex == -1 && (selectedPoint?.values?.count { it > 0f } ?: 0) > 1 -> "Combined Segment"
@@ -197,9 +199,18 @@ fun HatChart(
                     val isZero = displayTime == "0m" || displayTime == "0h 0m" || displayTime == ""
                     val timeAlpha by animateFloatAsState(targetValue = if (isZero) 0f else 1f, animationSpec = tween(400), label = "timeAlpha")
                     
-                    Column(horizontalAlignment = Alignment.End, modifier = Modifier.alpha(timeAlpha)) {
-                        Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(displayTime, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = fallbackPrimary)
+                    Column(horizontalAlignment = Alignment.End, modifier = Modifier.alpha(timeAlpha).widthIn(max = 150.dp)) {
+                        // The right-hand block used to take whatever width it
+                        // wanted, which starved the heading column beside it. At
+                        // 200% font scale (WCAG 2.2 SC 1.4.4) that broke the
+                        // card headings mid-word -- "Activ" + "ity", "Usag" +
+                        // "e +". Capping the width leaves the heading the rest of
+                        // the row. The Texts stay intrinsically sized: an earlier
+                        // attempt at fillMaxWidth here collapsed the Row to one
+                        // character wide, because the weighted heading column
+                        // then had nothing to divide.
+                        Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                        Text(displayTime, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = fallbackPrimary, maxLines = 1, softWrap = false, textAlign = TextAlign.End)
                     }
                 }
             }
@@ -305,7 +316,13 @@ fun GridLinesOverlay(color: Color) {
 @Composable
 fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelected: Boolean, isDimmed: Boolean, selectedStackIndex: Int, textAlpha: Float, animationSalt: String, pulseAlpha: Float, onBarClick: (Int, Boolean) -> Unit) {
     val primaryColor = MaterialTheme.colorScheme.primary
-    val trackColor = primaryColor.copy(alpha = 0.1f)
+    // The empty track behind each bar. At 0.1 alpha it measured 2.10:1 against
+    // the card background, failing WCAG 2.2 SC 1.4.11 (Non-text Contrast, AA),
+    // which covers "parts of graphics required to understand the content" --
+    // an empty hour is still an hour the user is reading. 0.22 clears 3:1 while
+    // staying recessive enough not to compete with the filled portion, which is
+    // the only part carrying a value.
+    val trackColor = primaryColor.copy(alpha = 0.22f)
     
     val targetGap = if (isSelected) 4.dp else 0.dp
     val gapSize by animateDpAsState(targetValue = targetGap, animationSpec = tween(400), label = "gap")
