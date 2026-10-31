@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -37,6 +38,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -75,12 +78,25 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
     // The spotlight tour (2026-10-31): -1 means off. It starts only when the
     // onboarding's "See your dashboard" (or Settings > Replay) asks for it,
-    // and ends by walking the user into Label Gaps.
+    // and ends by walking the user into Label Gaps. tourLaunched guards the
+    // auto-start: the startTour argument lives in the back stack entry's
+    // saved state, so returning from Label Gaps recomposes with startTour
+    // still true - without the guard the whole tour restarted on return
+    // (owner report, 2026-11-01).
     val tourRegistry = remember { andromedvn.heuristic.activity.tracker.ui.components.TourRegistry() }
     var tourStep by remember { mutableIntStateOf(-1) }
+    var tourLaunched by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(startTour) {
-        if (startTour) tourStep = 0
+        if (startTour && !tourLaunched) {
+            tourLaunched = true
+            tourStep = 0
+        }
     }
+    // Bring the current step's target into view before the spotlight lands on
+    // it: the stat cards, app rows and the Label Gaps button all sit below the
+    // fold on a fresh screen (owner report, 2026-11-01). Declared after
+    // listState below, so the scroll call has its receiver.
+    val tourAutoScrollPx = with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     fun endTour() {
         tourStep = -1
         viewModel.markTourSeen()
@@ -102,6 +118,18 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     val listState = rememberLazyListState()
     val chartScrollState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+
+    // Auto-scroll the tour: bring each step's target to ~38% of the screen
+    // height so the spotlight never lands on something below the fold.
+    androidx.compose.runtime.LaunchedEffect(tourStep) {
+        if (tourStep < 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(250)
+        val id = DashboardTourSteps.steps.getOrNull(tourStep)?.id ?: return@LaunchedEffect
+        val rect = tourRegistry.bounds[id] ?: return@LaunchedEffect
+        val anchor = tourAutoScrollPx * 0.38f
+        val delta = rect.center.y - anchor
+        if (kotlin.math.abs(delta) > 80f) listState.scrollBy(delta)
+    }
 
     var headerTapCount by remember { mutableIntStateOf(0) }
     var lastHeaderTap by remember { mutableLongStateOf(0L) }

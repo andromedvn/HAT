@@ -14,22 +14,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.composed
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -37,6 +33,10 @@ import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.R
 import andromedvn.heuristic.activity.tracker.data.OfflineStorage
 import andromedvn.heuristic.activity.tracker.data.ActivityRepository
+import andromedvn.heuristic.activity.tracker.ui.components.HatDynamicHeader
+import andromedvn.heuristic.activity.tracker.ui.components.PromptHighlightButton
+import andromedvn.heuristic.activity.tracker.ui.components.PromptOutlineButton
+import andromedvn.heuristic.activity.tracker.ui.components.hatSwitchColors
 import andromedvn.heuristic.activity.tracker.utils.hasUsageStatsPermission
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -44,17 +44,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * First-launch onboarding, back to basics (2026-10-31, arena III verdict):
- * two screens and the real app icon, then the dashboard tour teaches the rest
- * by doing.
+ * First-launch onboarding (2026-11-01, native rebuild): two screens built from
+ * the app's own components so they read as HAT, not as a web page. Every
+ * screen opens with the same HatDynamicHeader as the dashboard; actions are
+ * the real PromptHighlightButton / PromptOutlineButton pills; the permission
+ * switch is a real Material3 Switch in hatSwitchColors(); the icon card uses
+ * the SummaryStatCard border anatomy.
  *
- *   0. "Welcome to HAT"            - the v1.1.1 launcher icon (the adaptive
- *                                    icon's own background + foreground
- *                                    drawables), one honest paragraph.
- *   1. "One permission, read only" - the Usage access switch with its live
- *                                    state; after the grant the pill becomes
- *                                    "See your dashboard", which launches the
- *                                    spotlight tour (startTour=true).
+ *   0. Welcome - the v1.1.1 launcher icon (the adaptive icon's own layers),
+ *      one honest paragraph, Restore vault footnote.
+ *   1. One permission, read only - the live Usage access switch. After the
+ *      grant the pill becomes "See your dashboard", which launches the
+ *      spotlight tour (startTour=true).
  *
  * System back reviews the previous page; the flow replays from
  * Settings > How HAT Works (reviewMode exits with Done, no tour launch).
@@ -144,124 +145,114 @@ fun PermissionsScreen(
             modifier = Modifier.fillMaxSize()
         ) { position ->
             Column(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(top = 24.dp, bottom = 28.dp),
-                horizontalAlignment = Alignment.Start
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp)
             ) {
-                // Masthead: kicker left; Skip right on the welcome screen only.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Kicker("HAT 0${position + 1} / 0$pageCount")
-                    if (position == 0 && !reviewMode) {
-                        Text(
-                            "Skip",
-                            fontSize = 16.sp,
-                            color = onSurface.copy(alpha = 0.6f),
-                            modifier = Modifier.clickableNoRipple { completeSetup(false) }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
+                HatDynamicHeader(
+                    title = if (position == 0) "Welcome to HAT" else "One permission",
+                    subtitle = if (position == 0) "First run" else "Read only"
+                )
 
                 when (position) {
                     0 -> {
+                        Spacer(modifier = Modifier.height(24.dp))
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // The v1.1.1 launcher icon, exactly: the adaptive
-                            // icon's own background and foreground layers.
+                            // The launcher icon inside the app's card anatomy
+                            // (1dp 50% border, 24dp radius, transparent fill).
                             Box(
                                 modifier = Modifier
-                                    .size(96.dp)
-                                    .clip(RoundedCornerShape(22.dp))
+                                    .size(148.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .border(1.dp, primary.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                                    .background(MaterialTheme.colorScheme.background),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Image(
-                                    painter = painterResource(R.drawable.ic_launcher_background),
-                                    contentDescription = null,
-                                    modifier = Modifier.matchParentSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Image(
-                                    painter = painterResource(R.drawable.ic_launcher_foreground),
-                                    contentDescription = "HAT",
-                                    modifier = Modifier.matchParentSize(),
-                                    contentScale = ContentScale.Fit
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(112.dp)
+                                        .clip(RoundedCornerShape(18.dp))
+                                ) {
+                                    Image(
+                                        painter = painterResource(R.drawable.ic_launcher_background),
+                                        contentDescription = null,
+                                        modifier = Modifier.matchParentSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Image(
+                                        painter = painterResource(R.drawable.ic_launcher_foreground),
+                                        contentDescription = "HAT",
+                                        modifier = Modifier.matchParentSize(),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
                             }
-                            Spacer(modifier = Modifier.height(32.dp))
-                            Title("Welcome to HAT")
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Body(
-                                "HAT counts your screen time. Everything stays on this phone. No account. No internet. No one reads it but you.",
-                                onSurface
-                            )
                         }
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            "HAT counts your screen time. Everything stays on this phone. No account. No internet. No one reads it but you.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = onSurface.copy(alpha = 0.85f)
+                        )
                     }
                     1 -> {
-                        Caption("READ ONLY. YOUR CALL.")
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Title("One permission, read only")
                         Spacer(modifier = Modifier.height(16.dp))
-                        Body(
+                        Text(
                             "HAT reads the usage records Android already keeps. It cannot change settings, read your files, or send anything anywhere. You can turn it off any time in Android settings. Tap Allow access, then come back.",
-                            onSurface
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = onSurface.copy(alpha = 0.85f)
                         )
-                        Spacer(modifier = Modifier.height(32.dp))
-                        UsageSwitchCard(usageGranted, primary, onSurface)
+                        Spacer(modifier = Modifier.height(24.dp))
+                        // The real switch, in the app's own colors, inside the
+                        // HatOutlinedDialog card anatomy (2dp primary border,
+                        // 24dp radius).
+                        Card(
+                            modifier = Modifier.fillMaxWidth().border(2.dp, primary, RoundedCornerShape(24.dp)),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Usage access", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = onSurface)
+                                    Text("Android setting", style = MaterialTheme.typography.bodyMedium, color = onSurface.copy(alpha = 0.55f))
+                                }
+                                Switch(checked = usageGranted, onCheckedChange = null, colors = hatSwitchColors())
+                            }
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Bottom rail: exit left, outlined pill right.
+                // Bottom rail: the app's real button pair, end-aligned.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    when {
-                        position == 0 -> {
-                            if (reviewMode) Spacer(modifier = Modifier.width(8.dp))
-                            else Text(
-                                "Skip",
-                                fontSize = 16.sp,
-                                color = onSurface.copy(alpha = 0.6f),
-                                modifier = Modifier.clickableNoRipple { completeSetup(false) }
-                            )
-                        }
-                        else -> {
-                            if (reviewMode || usageGranted) {
-                                Text(
-                                    "Done",
-                                    fontSize = 16.sp,
-                                    color = onSurface.copy(alpha = 0.6f),
-                                    modifier = Modifier.clickableNoRipple { completeSetup(false) }
-                                )
-                            } else {
-                                Text(
-                                    "Not now",
-                                    fontSize = 16.sp,
-                                    color = onSurface.copy(alpha = 0.6f),
-                                    modifier = Modifier.clickableNoRipple { completeSetup(false) }
-                                )
-                            }
-                        }
-                    }
                     when (position) {
-                        0 -> OnboardingPill(if (reviewMode) "Next" else "Next") { goNext() }
+                        0 -> {
+                            if (!reviewMode) {
+                                PromptOutlineButton("Skip") { completeSetup(false) }
+                                Spacer(modifier = Modifier.width(12.dp))
+                            }
+                            PromptHighlightButton("Next") { goNext() }
+                        }
                         else -> {
                             if (usageGranted) {
-                                // The grant is real: the tour teaches the
-                                // dashboard next (first launch) or Done exits.
-                                OnboardingPill(if (reviewMode) "Done" else "See your dashboard") {
-                                    completeSetup(!reviewMode)
-                                }
+                                PromptHighlightButton(if (reviewMode) "Done" else "See your dashboard") { completeSetup(!reviewMode) }
                             } else {
-                                OnboardingPill("Allow access") {
+                                PromptOutlineButton("Not now") { completeSetup(false) }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                PromptHighlightButton("Allow access") {
                                     try { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply { data = android.net.Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
                                 }
                             }
@@ -269,24 +260,21 @@ fun PermissionsScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
                 if (position == 0 && !reviewMode) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                        Text("Have a backup?  ", fontSize = 13.sp, color = onSurface.copy(alpha = 0.6f))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        Text("Have a backup?  ", style = MaterialTheme.typography.labelSmall, color = onSurface.copy(alpha = 0.6f))
                         Text(
                             "Restore vault",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = primary,
                             modifier = Modifier.clickableNoRipple { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
                         )
                     }
-                }
-                if (position == 1) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                } else if (position == 1) {
                     Text(
                         "Read these screens anytime: Settings > How HAT Works.",
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.labelSmall,
                         color = onSurface.copy(alpha = 0.6f)
                     )
                 }
@@ -295,111 +283,7 @@ fun PermissionsScreen(
     }
 }
 
-/** Mono kicker, the progress signpost: HAT 01 / 02. */
-@Composable
-private fun Kicker(text: String) {
-    Text(
-        text,
-        fontFamily = FontFamily.Monospace,
-        fontSize = 12.sp,
-        letterSpacing = 1.sp,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-    )
-}
-
-/** Mono caps caption. */
-@Composable
-private fun Caption(text: String) {
-    Text(
-        text,
-        fontFamily = FontFamily.Monospace,
-        fontSize = 12.sp,
-        letterSpacing = 1.sp,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-    )
-}
-
-@Composable
-private fun Title(text: String) {
-    Text(
-        text,
-        fontFamily = FontFamily.Monospace,
-        fontSize = 26.sp,
-        lineHeight = 32.sp,
-        fontWeight = FontWeight.Medium,
-        color = MaterialTheme.colorScheme.onSurface
-    )
-}
-
-@Composable
-private fun Body(text: String, onSurface: Color) {
-    Text(text, fontSize = 16.sp, lineHeight = 24.sp, color = onSurface.copy(alpha = 0.85f))
-}
-
-/** HAT's outlined pill action: 1dp border, 15% tint, content-sized, never solid. */
-@Composable
-private fun OnboardingPill(label: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-            .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
-            .clickableNoRipple(onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-    }
-}
-
-/** The Usage access switch card; the toggle mirrors the live grant state. */
-@Composable
-private fun UsageSwitchCard(usageGranted: Boolean, primary: Color, onSurface: Color) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .border(2.dp, primary, RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.background)
-            .padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(primary.copy(alpha = 0.15f))
-                .border(2.dp, primary, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("H", fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = primary)
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text("Usage access", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
-            Text("Android setting", fontSize = 12.sp, color = onSurface.copy(alpha = 0.55f))
-        }
-        Box(
-            modifier = Modifier
-                .size(width = 44.dp, height = 24.dp)
-                .clip(RoundedCornerShape(50))
-                .border(2.dp, if (usageGranted) primary else primary.copy(alpha = 0.6f), RoundedCornerShape(50))
-                .background(primary.copy(alpha = if (usageGranted) 0.15f else 0.05f))
-        ) {
-            Box(
-                modifier = Modifier
-                    .align(if (usageGranted) Alignment.CenterEnd else Alignment.CenterStart)
-                    .padding(3.dp)
-                    .size(16.dp)
-                    .clip(CircleShape)
-                    .background(primary.copy(alpha = if (usageGranted) 0.9f else 0.35f))
-                    .border(2.dp, primary, CircleShape)
-            )
-        }
-    }
-}
-
-/** Click without the ripple overhead for quiet text exits. */
+/** Quiet text exit without the ripple (links only; actions use the real pills). */
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
     clickable(
         interactionSource = remember { MutableInteractionSource() },

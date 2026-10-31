@@ -1,14 +1,16 @@
 package andromedvn.heuristic.activity.tracker.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -29,26 +31,22 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import andromedvn.heuristic.activity.tracker.domain.TourStep
 import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
+import andromedvn.heuristic.activity.tracker.domain.TourStep
 
 /**
- * The spotlight tour (2026-10-31, ratified against the three-prototype arena):
- * a dim scrim with a transparent rounded cutout around one real dashboard
- * element, and a step card docked at the bottom. The classic coach-mark
- * pattern from the research (TutorialView / VSpot school): the cutout is
- * punched with BlendMode.Clear inside an Offscreen graphics layer so the real
- * UI shows through the hole; taps inside the cutout advance (and the step
- * card's own controls always work); taps elsewhere do nothing.
+ * The spotlight tour (2026-11-01, native rebuild): the cutout spotlight the
+ * owner picked, with the step card rebuilt from the app's own dialog anatomy
+ * (HatOutlinedDialog: 2dp primary border, 24dp radius, background fill) and
+ * the app's real button pair (DialogHighlightButton / PromptOutlineButton).
  *
- * Targets register their root bounds with [tutorialTarget]; if a step's
- * target never registered (an empty list, a collapsed card) the scrim covers
- * the whole screen and the step card still shows - the user can Next past it,
- * exactly as TutorialView handles missing targets.
+ * Touch model: a tap inside the cutout advances the tour; taps and DRAGS
+ * anywhere else are deliberately NOT consumed, so the dashboard below stays
+ * scrollable while the tour is up (the owner's "I can't scroll" report).
+ * Targets register their root bounds with [tutorialTarget]; a step whose
+ * target never registered shows the full scrim and its card anyway.
  */
 @Stable
 class TourRegistry {
@@ -90,101 +88,70 @@ fun DashboardTourOverlay(
     val cutoutInset = with(density) { 12.dp.toPx() }
     val cutoutRadius = with(density) { 16.dp.toPx() }
     val targetRect = registry.bounds[step.id]
-    val cardAlpha by animateFloatAsState(targetValue = 1f, animationSpec = tween(200), label = "tourCard")
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawBehind { drawScrimWithCutout(targetRect, cutoutInset, cutoutRadius) }
-            .pointerInput(stepIndex) {
-                detectTapGestures { offset ->
-                    val hit = targetRect?.inflate(cutoutInset)?.contains(offset) == true
-                    if (hit) onNext()
-                    // Taps on the dimmed area intentionally do nothing: the
-                    // tour is DismissType.none per the research best practice,
-                    // so an accidental tap cannot throw the user out of it.
+            .pointerInput(stepIndex, targetRect) {
+                // Tap inside the cutout = advance. Everything else passes
+                // through untouched so the dashboard keeps scrolling.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val inCutout = targetRect?.inflate(cutoutInset)?.contains(down.position) == true
+                    if (inCutout) {
+                        val up = waitForUpOrCancellation()
+                        if (up != null) onNext()
+                    }
+                    // Outside the cutout: consume nothing, let it scroll.
                 }
             }
     ) {
-        Column(
+        // The step card: the app's dialog anatomy, docked at the bottom.
+        Card(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 20.dp)
-                .graphicsLayer { alpha = cardAlpha }
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.background)
-                .border(1.dp, primary, RoundedCornerShape(20.dp))
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 16.dp)
+                .border(2.dp, primary, RoundedCornerShape(24.dp)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            shape = RoundedCornerShape(24.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "TOUR 0${stepIndex + 1} / 0${steps.size}",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    letterSpacing = 1.sp,
-                    color = onSurface.copy(alpha = 0.55f)
-                )
-                Text(
-                    "Skip tour",
-                    fontSize = 14.sp,
-                    color = onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onSkip
-                    )
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(step.copy, fontSize = 16.sp, lineHeight = 22.sp, color = onSurface.copy(alpha = 0.85f))
-            Spacer(modifier = Modifier.height(14.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (stepIndex > 0) {
-                    Text(
-                        "Back",
-                        fontSize = 16.sp,
-                        color = onSurface.copy(alpha = 0.6f),
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onBack
-                        )
-                    )
-                } else {
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(primary.copy(alpha = 0.15f))
-                        .border(1.dp, primary, RoundedCornerShape(50))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onNext
-                        )
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        when {
+                        "TOUR 0${stepIndex + 1} / 0${steps.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = primary
+                    )
+                    Text(
+                        "Skip tour",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.clickableNoRipple(onSkip)
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(step.copy, style = MaterialTheme.typography.bodyLarge, color = onSurface.copy(alpha = 0.85f))
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (stepIndex > 0) {
+                        PromptOutlineButton("Back") { onBack() }
+                    }
+                    DialogHighlightButton(
+                        text = when {
                             step.completesTour && step.opensLabelGaps -> "Open it"
                             stepIndex == steps.lastIndex -> "Done"
                             else -> "Next"
                         },
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = primary
-                    )
+                        color = primary,
+                        modifier = Modifier.weight(1f)
+                    ) { onNext() }
                 }
             }
         }
@@ -203,5 +170,14 @@ private fun DrawScope.drawScrimWithCutout(targetRect: Rect?, insetPx: Float, rad
         size = size,
         cornerRadius = CornerRadius(radiusPx),
         blendMode = androidx.compose.ui.graphics.BlendMode.Clear
+    )
+}
+
+/** Quiet text exit without the ripple (links only; actions use the real pills). */
+private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
+    clickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null,
+        onClick = onClick
     )
 }
