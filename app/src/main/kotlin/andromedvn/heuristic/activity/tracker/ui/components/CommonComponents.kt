@@ -388,10 +388,10 @@ fun HatDynamicHeader(title: String, subtitle: String, actions: @Composable RowSc
 }
 
 @Composable
-fun TimeSelector(currentRange: TimeRangeLabel, onRangeSelected: (TimeRangeLabel) -> Unit) {
+fun TimeSelector(currentRange: TimeRangeLabel, modifier: Modifier = Modifier, onRangeSelected: (TimeRangeLabel) -> Unit) {
     val options = listOf(TimeRangeLabel.DAY, TimeRangeLabel.WEEK, TimeRangeLabel.MONTH)
     val selectedIndex = options.indexOf(currentRange)
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(52.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(4.dp).selectableGroup()) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().height(52.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(4.dp).selectableGroup()) {
         val itemWidth = maxWidth / 3
         val indicatorOffset by animateDpAsState(targetValue = itemWidth * selectedIndex, animationSpec = tween(300, easing = FastOutSlowInEasing), label = "indicator")
         Box(modifier = Modifier.offset(x = indicatorOffset).width(itemWidth).fillMaxHeight().clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))

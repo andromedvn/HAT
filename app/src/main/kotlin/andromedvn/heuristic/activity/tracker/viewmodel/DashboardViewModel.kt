@@ -97,6 +97,12 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         repository.storage.saveSettings(currentSettings.copy(hasSeenHistoryLimitWarning = true))
     }
 
+    /** The spotlight tour ended (completed or skipped): never auto-run again. */
+    fun markTourSeen() = viewModelScope.launch {
+        val currentSettings = repository.settings.first()
+        repository.storage.saveSettings(currentSettings.copy(hasSeenTour = true))
+    }
+
     fun setTimeRange(range: TimeRangeLabel) { 
         if (_uiState.value.timeRange == range) return
         HatLogger.log("DashboardViewModel: Time range changed to $range")

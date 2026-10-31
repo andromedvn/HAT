@@ -298,6 +298,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     SettingsItem("Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
                     SettingsItem("How HAT Works", "Review the three kinds of time and what HAT needs from Android.") { navController.navigate("permissions?review=true") }
+                    SettingsItem("Replay the dashboard tour", "Walk the dashboard again with the spotlight tour, ending at Label Gaps.") { navController.navigate("dashboard?startTour=true") }
                     SettingsItem("Keep My History Safe", "Exempt HAT from battery optimization so aggressive battery managers cannot stop the archiver that saves your history before Android deletes it.") {
                         try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     }

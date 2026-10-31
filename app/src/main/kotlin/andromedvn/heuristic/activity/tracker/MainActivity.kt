@@ -154,10 +154,12 @@ class MainActivity : ComponentActivity() {
                         }
 
                         composable(
-                            route = "dashboard",
+                            route = "dashboard?startTour={startTour}",
+                            arguments = listOf(navArgument("startTour") { defaultValue = "false" }),
                             deepLinks = listOf(navDeepLink { uriPattern = "hat://dashboard" })
-                        ) { 
-                            DashboardScreen(navController, dashboardViewModel) 
+                        ) { backStackEntry ->
+                            val startTour = backStackEntry.arguments?.getString("startTour")?.toBoolean() ?: false
+                            DashboardScreen(navController, dashboardViewModel, startTour = startTour)
                         }
                         
                         composable(

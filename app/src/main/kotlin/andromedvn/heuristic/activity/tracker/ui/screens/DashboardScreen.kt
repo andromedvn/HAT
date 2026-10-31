@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,17 +58,33 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import andromedvn.heuristic.activity.tracker.ui.components.TourRegistry
+import andromedvn.heuristic.activity.tracker.ui.components.DashboardTourOverlay
+import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel) {
+fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel, startTour: Boolean = false) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val chartHighlight = uiState.chartHighlight
     var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
+    // The spotlight tour (2026-10-31): -1 means off. It starts only when the
+    // onboarding's "See your dashboard" (or Settings > Replay) asks for it,
+    // and ends by walking the user into Label Gaps.
+    val tourRegistry = remember { andromedvn.heuristic.activity.tracker.ui.components.TourRegistry() }
+    var tourStep by remember { mutableIntStateOf(-1) }
+    androidx.compose.runtime.LaunchedEffect(startTour) {
+        if (startTour) tourStep = 0
+    }
+    fun endTour() {
+        tourStep = -1
+        viewModel.markTourSeen()
+    }
     // Re-check on every ON_RESUME: the user grants Usage Access in system
     // settings and comes back, and the card must disappear the moment the
     // grant is real. A stale flag made the card look permanently broken -
@@ -137,10 +154,10 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
                             }
                         }
                         
-                        TimeSelector(currentRange = uiState.timeRange, onRangeSelected = { viewModel.setTimeRange(it) })
+                        TimeSelector(currentRange = uiState.timeRange, onRangeSelected = { viewModel.setTimeRange(it) }, modifier = Modifier.tutorialTarget("timeSelector", tourRegistry))
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(400, easing = FastOutSlowInEasing))) {
+                        Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(400, easing = FastOutSlowInEasing)).tutorialTarget("chart", tourRegistry)) {
                             HatChart(
                                 chartScrollState = chartScrollState, animationSalt = uiState.animationSalt,
                                 title = "Activity Overview", subTitle = "Apps Usage + Offline Time", totalTime = if (uiState.totalCombinedTimeFormatted.isNotEmpty()) uiState.totalCombinedTimeFormatted else "0m", 
@@ -207,7 +224,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
                             Text(text = uiState.lastUpdatedTimeStr, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                         }
                         
-                        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max).tutorialTarget("statCards", tourRegistry), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Apps Usage", value = uiState.totalScreenTimeFormatted, badgeText = null, onClick = { navController.navigate("app_usage_stats") })
                             SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Offline Time", value = uiState.totalOfflineTimeFormatted, badgeText = null, onClick = { navController.navigate("offline_stats") })
                         }
@@ -215,8 +232,8 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
                         Spacer(modifier = Modifier.height(24.dp))
                         val isDayView = uiState.timeRange == TimeRangeLabel.DAY
                         OutlinedButton(
-                            onClick = { if (isDayView) navController.navigate("label_gaps") else viewModel.setTimeRange(TimeRangeLabel.DAY) }, 
-                            modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(50), colors = ButtonDefaults.outlinedButtonColors(containerColor = if (isDayView) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent), border = BorderStroke(if (isDayView) 2.dp else 1.dp, if (isDayView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                            onClick = { if (isDayView) navController.navigate("label_gaps") else viewModel.setTimeRange(TimeRangeLabel.DAY) },
+                            modifier = Modifier.fillMaxWidth().height(48.dp).tutorialTarget("labelGaps", tourRegistry), shape = RoundedCornerShape(50), colors = ButtonDefaults.outlinedButtonColors(containerColor = if (isDayView) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent), border = BorderStroke(if (isDayView) 2.dp else 1.dp, if (isDayView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                         ) { Text(if (isDayView) "View Unlabeled Gaps" else "Switch to Day View for Gaps", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isDayView) FontWeight.Bold else FontWeight.Medium), color = MaterialTheme.colorScheme.primary) }
                         
                         Spacer(modifier = Modifier.height(24.dp))
@@ -229,7 +246,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
                     item { Box(modifier = Modifier.padding(horizontal = 20.dp)) { EmptyStateCard(Icons.Default.Bedtime, "No Activity", "No sessions or offline logs found for this period.") } }
                 } else {
                     val maxUsage = uiState.activityList.maxOfOrNull { it.durationInMillis }?.toFloat() ?: 1f
-                    items(uiState.activityList, key = { it.uniqueKey }) { item ->
+                    itemsIndexed(uiState.activityList, key = { _, it -> it.uniqueKey }) { itemIndex, item ->
                         val progress = item.durationInMillis / maxUsage.coerceAtLeast(1f)
                         val stackIndex = if (item is AppUsageItem) 0 else 1
                         val isHighlighted = if (chartHighlight != null) { if (chartHighlight.isFromChart) { val pointTag = chartHighlight.point?.syncTag ?: ""; (pointTag in item.activeTimeTags) && (chartHighlight.stackIndex == -1 || chartHighlight.stackIndex == stackIndex) } else chartHighlight.sourceKey == item.uniqueKey } else false
@@ -244,7 +261,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
                             }
                         }
 
-                        Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        Box(modifier = Modifier.padding(horizontal = 20.dp).let { if (itemIndex == 0) it.tutorialTarget("appRows", tourRegistry) else it }) {
                             when (item) {
                                 is AppUsageItem -> RealActivityListItem(navController = navController, app = item, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onLongClick = { onLongPress(0) })
                                 is OfflineActivityItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { navController.navigate(NavRouteCodec.offlineDetailsRoute(item.id)) }, onLongClick = { onLongPress(1) })
@@ -263,6 +280,32 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
             AnimatedVisibility(visible = uiState.isLoading, enter = fadeIn(tween(200)), exit = fadeOut(tween(400)), modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.65f)).pointerInput(Unit) { detectTapGestures {  } }, contentAlignment = Alignment.Center) { HatLoadingSpinner(MaterialTheme.colorScheme.primary) }
             }
+
+            // System back walks the tour backward while it is active. This
+            // handler is composed after the one above, so it wins while enabled.
+            androidx.activity.compose.BackHandler(enabled = tourStep >= 0) {
+                if (tourStep == 0) endTour() else tourStep--
+            }
+            DashboardTourOverlay(
+                registry = tourRegistry,
+                stepIndex = tourStep,
+                onNext = {
+                    val step = DashboardTourSteps.steps.getOrNull(tourStep)
+                    if (step?.opensLabelGaps == true) {
+                        // The finale: the tour hands the user to Label Gaps,
+                        // where they label their first real span. Merging is
+                        // explained in the step copy, done on the real screen.
+                        endTour()
+                        navController.navigate("label_gaps")
+                    } else if (tourStep >= DashboardTourSteps.steps.lastIndex) {
+                        endTour()
+                    } else {
+                        tourStep++
+                    }
+                },
+                onBack = { if (tourStep > 0) tourStep-- },
+                onSkip = { endTour() }
+            )
         }
     }
 }
