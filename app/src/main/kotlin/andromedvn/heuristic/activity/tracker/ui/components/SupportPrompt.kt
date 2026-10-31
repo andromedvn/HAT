@@ -22,7 +22,7 @@ import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
 /**
  * One-time, non-blocking support ask. Shown the first time the user reaches
  * theme customization, never again, with no nag surfaces anywhere else.
- * Any exit — button, back gesture, outside tap — dismisses it permanently
+ * Any exit - button, back gesture, outside tap - dismisses it permanently
  * because the caller persists "seen" in every path.
  */
 @Composable
@@ -41,9 +41,9 @@ fun SupportPromptDialog(onDismissed: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                "I'm moving to work on HAT full time, so if it has earned its place " +
-                    "on your phone, a one-off tip goes a long way. It stays optional — " +
-                    "every feature works exactly the same either way.",
+                "I'm going full-time building apps like this. If HAT has earned " +
+                    "its place on your phone, your support makes that possible. " +
+                    "It stays optional. Every feature works exactly the same either way.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

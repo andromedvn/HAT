@@ -7,7 +7,7 @@ import java.util.Locale
  * Accepts 6 digits (RRGGBB, alpha forced opaque) or 8 digits (AARRGGBB),
  * with an optional leading '#', any case, and surrounding whitespace.
  *
- * Pure — no Android — so it is unit-testable on the JVM. See ColorParsingTest.
+ * Pure - no Android - so it is unit-testable on the JVM. See ColorParsingTest.
  */
 fun parseHexColor(input: String): Long? {
     val cleaned = input.trim().removePrefix("#")

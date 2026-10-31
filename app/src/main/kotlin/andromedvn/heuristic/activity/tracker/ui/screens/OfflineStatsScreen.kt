@@ -1,6 +1,6 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
-import android.net.Uri
+import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -38,6 +38,8 @@ import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
+import andromedvn.heuristic.activity.tracker.utils.TimeUtils
+import andromedvn.heuristic.activity.tracker.data.SortType
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -69,8 +71,13 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
         chartScrollState.scrollToItem(0)
     }
     
-    val offlineList = remember(uiState.activityList) {
-        uiState.activityList.filterIsInstance<OfflineActivityItem>().sortedByDescending { it.durationInMillis }
+    val sortType = viewModel.currentSortTypeValue
+    val offlineList = remember(uiState.activityList, sortType) {
+        when (sortType) {
+            SortType.DURATION -> uiState.activityList.filterIsInstance<OfflineActivityItem>().sortedByDescending { it.durationInMillis }
+            SortType.CHRONOLOGICAL -> uiState.activityList.filterIsInstance<OfflineActivityItem>().sortedBy { it.timestamp }
+            else -> uiState.activityList.filterIsInstance<OfflineActivityItem>().sortedByDescending { it.timestamp }
+        }
     }
     
     LaunchedEffect(offlineList) {
@@ -92,8 +99,34 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
     BackHandler(enabled = (returnScrollIndex != -1 || selectedTitles.isNotEmpty() || showDatePicker) && isResumed) { handleBack() }
 
     if (showDeleteDialog) {
-        HatOutlinedDialog(onDismissRequest = { showDeleteDialog = false }, title = "Delete Selected?") {
-            Text("Permanently remove ${selectedTitles.size} activity logs from this period?", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // HONESTY FIX (2026-10-01): this dialog used to say "Permanently remove
+            // ${selectedTitles.size} activity logs" - counting TITLES. Deleting a title
+            // deletes every stored row sharing it, so a dialog promising "1 activity log"
+            // actually destroyed 12 rows. The count must be the number of records that
+            // will really be erased, and it must name what is lost, not just how many.
+            val rowsAtRisk = selectedTitles.sumOf { title ->
+                offlineList.firstOrNull { it.title == title }?.storedRowCount ?: 1
+            }
+            val timeAtRisk = selectedTitles.sumOf { title ->
+                offlineList.firstOrNull { it.title == title }?.durationInMillis ?: 0L
+            }
+            val titlesWord = if (selectedTitles.size == 1) "activity" else "activities"
+            HatOutlinedDialog(onDismissRequest = { showDeleteDialog = false }, title = "Delete Selected?") {
+                Text(
+                    "This will erase ${rowsAtRisk} stored $titlesWord" +
+                        if (rowsAtRisk != selectedTitles.size) " (${selectedTitles.size} of them saved more than once)" else "" +
+                        ", totalling ${TimeUtils.formatDuration(timeAtRisk)}, from this period." +
+                        " This cannot be undone.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (rowsAtRisk != selectedTitles.size) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        selectedTitles.joinToString(", ") { "${it} (${offlineList.firstOrNull { i -> i.title == it }?.storedRowCount ?: 1} copies)" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -191,7 +224,7 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                             } else false
                             
                             Box(modifier = Modifier.padding(horizontal = 20.dp)) {
-                                MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = primaryColor, progress = item.durationInMillis / maxUsage.coerceAtLeast(1f), isSelectedForAction = isSelected, isHighlighted = isHighlighted, onClick = { if (selectedTitles.isNotEmpty()) { if (isSelected) selectedTitles.remove(item.title) else selectedTitles.add(item.title) } else { navController.navigate("details/offline/${Uri.encode(item.title)}") } }, onLongClick = { if (selectedTitles.isEmpty()) selectedTitles.add(item.title) }) 
+                                MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = primaryColor, progress = item.durationInMillis / maxUsage.coerceAtLeast(1f), isSelectedForAction = isSelected, isHighlighted = isHighlighted, storedRowCount = item.storedRowCount, onClick = { if (selectedTitles.isNotEmpty()) { if (isSelected) selectedTitles.remove(item.title) else selectedTitles.add(item.title) } else { navController.navigate(NavRouteCodec.offlineDetailsRoute(item.title)) } }, onLongClick = { if (selectedTitles.isEmpty()) selectedTitles.add(item.title) }) 
                             }
                         }
                     }
@@ -218,7 +251,7 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                     }
                     Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                         if (selectedTitles.size == 1) {
-                            TextButton(onClick = { navController.navigate("details/offline/${Uri.encode(selectedTitles.first())}") }) {
+                            TextButton(onClick = { navController.navigate(NavRouteCodec.offlineDetailsRoute(selectedTitles.first())) }) {
                                 Text("Edit Label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(modifier = Modifier.width(8.dp))

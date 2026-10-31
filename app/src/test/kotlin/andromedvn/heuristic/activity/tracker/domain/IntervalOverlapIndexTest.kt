@@ -29,7 +29,7 @@ class IntervalOverlapIndexTest {
     @Test
     fun `touching intervals do not overlap`() {
         // The load-bearing one: `existingEnd > start` is 100 > 100, which is
-        // false. Half-open intervals — [0,100) and [100,200) are disjoint, and
+        // false. Half-open intervals, [0,100) and [100,200) are disjoint, and
         // a restore must be able to place both.
         val index = IntervalOverlapIndex.build(listOf(0L to 100L))
         assertFalse(index.overlapsAny(100L, 200L))
@@ -82,7 +82,7 @@ class IntervalOverlapIndexTest {
         // [50,50) inside [0,100): 0 < 50 and 100 > 50. Durations are not
         // guaranteed non-zero, so this is reachable from a real vault.
         assertTrue(IntervalOverlapIndex.build(listOf(0L to 100L)).overlapsAny(50L, 50L))
-        // [100,100) merely touches the end of [0,100) — 100 > 100 is false.
+        // [100,100) merely touches the end of [0,100), 100 > 100 is false.
         assertFalse(IntervalOverlapIndex.build(listOf(0L to 100L)).overlapsAny(100L, 100L))
         // [0,0) before everything.
         assertFalse(IntervalOverlapIndex.build(listOf(100L to 200L)).overlapsAny(0L, 0L))

@@ -140,7 +140,11 @@ fun HatChart(
     val pulseAlpha by infiniteTransition.animateFloat(initialValue = 0.4f, targetValue = 1.0f, animationSpec = infiniteRepeatable(animation = tween(1500, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse), label = "pulseAlpha")
     
     val rawMaxDataSum = remember(dataPoints) { dataPoints.maxOfOrNull { it.values.fold(0f) { acc, fl -> acc + fl } } ?: 1f }
-    val isHourly = dataPoints.size == 24
+    // A day view is 24 buckets on a normal day, 23 on a spring-forward day and
+    // 25 on a fall-back one (see hourBucketsOfDay) - the hour buckets are
+    // walked by the local calendar, not hardcoded. Week charts are 7 bars and
+    // month charts 28-31, so 23..25 identifies an hourly chart unambiguously.
+    val isHourly = dataPoints.size in 23..25
     val isWeek = dataPoints.size == 7
     val maxDataSum = max(rawMaxDataSum, 1.0f)
     val maxMins = (maxDataSum * if (isHourly) 60 else 24 * 60).toInt()

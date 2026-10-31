@@ -60,6 +60,18 @@ class MainActivity : ComponentActivity() {
         val storage = OfflineStorage.getInstance(applicationContext)
         val repository = ActivityRepository(applicationContext, storage)
 
+        // REMOVED 2026-09-30: the automatic startup dedupe.
+        //
+        // It deleted rows before the user saw anything, with no prompt, no undo, and no
+        // record of what was removed. An earlier version of it grouped by time window
+        // only and destroyed genuinely distinct labels. The user's decision (2026-10-01)
+        // is that duplicates are SHOWN inside Total Offline Time and the user chooses.
+        //
+        // Detection now lives in OfflineStorage.findDuplicateOfflineLabels(), which
+        // deletes nothing. Removal is deleteOfflineActivityById(id), called only from an
+        // explicit tap on a visible row.
+        HatLogger.log("MainActivity: duplicate labels are reported, never auto-deleted")
+
         setContent {
             var settings by remember { mutableStateOf<UserSettings?>(null) }
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -133,8 +145,12 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         
-                        composable("permissions") { 
-                            PermissionsScreen(navController, storage, repository) 
+                        composable(
+                            "permissions?review={review}",
+                            arguments = listOf(navArgument("review") { defaultValue = "false" })
+                        ) { backStackEntry ->
+                            val review = backStackEntry.arguments?.getString("review")?.toBoolean() ?: false
+                            PermissionsScreen(navController, storage, repository, reviewMode = review)
                         }
 
                         composable(

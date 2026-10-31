@@ -9,7 +9,7 @@ import org.junit.Test
  *
  * Before this, `SESSION_TERMINATORS` was `{SCREEN_NON_INTERACTIVE,
  * DEVICE_SHUTDOWN}`. The lock screen is itself interactive, so Android does
- * NOT emit SCREEN_NON_INTERACTIVE when a device merely locks — the screen-off
+ * NOT emit SCREEN_NON_INTERACTIVE when a device merely locks, the screen-off
  * event may be tens of minutes away (long timeout, always-on display) or may
  * never arrive at all. Everything between the lock and the screen-off was
  * therefore replayed as foreground app time.
@@ -24,25 +24,25 @@ import org.junit.Test
  *
  * State transition introduced, in two places:
  *
- *  1. [replayUsageIntervals] — KEYGUARD_SHOWN joins SESSION_TERMINATORS, so it
+ *  1. [replayUsageIntervals], KEYGUARD_SHOWN joins SESSION_TERMINATORS, so it
  *     closes every in-flight resumed interval at its own timestamp and clears
  *     the in-flight map, exactly as a screen-off does. Every locked
  *     millisecond after that point is no longer attributed to an app.
- *  2. [replayGhostIntervals] — KEYGUARD_SHOWN sets `isHuman = false` (a locked
+ *  2. [replayGhostIntervals], KEYGUARD_SHOWN sets `isHuman = false` (a locked
  *     device is not being touched) and discards a pending ghost only when an
  *     unlock happened after that ghost started, which would otherwise make it
  *     re-arm over proven human use.
  *
  * No double counting: a terminator is idempotent. It closes the open sessions
- * and clears the map, so a second terminator in the same millisecond — the
+ * and clears the map, so a second terminator in the same millisecond, the
  * usual shape, since Android emits ACTIVITY_PAUSED and KEYGUARD_SHOWN together
- * when a device locks — finds nothing left to close. Whichever of the two is
+ * when a device locks, finds nothing left to close. Whichever of the two is
  * ordered first emits the single interval and the other is a no-op, so the
  * interval length is identical either way.
  *
  * No gap in the sense that matters: the interval is cut at the lock instant,
  * not left open. The locked stretch afterwards is classified as NEITHER app
- * time nor a ghost until something resumes while locked — i.e. it becomes
+ * time nor a ghost until something resumes while locked, i.e. it becomes
  * unlabelled gap time the user can label, rather than invented screen time.
  * That direction is the safe one for the day invariant: the change can only
  * move a total DOWN, never past the length of the day.
@@ -106,7 +106,7 @@ class KeyguardLockScreenReplayTest {
     @Test
     fun `a pause and a lock in the same millisecond produce exactly one interval`() {
         // Android emits both when a device locks. Order is not guaranteed, so
-        // both orders must give the same single interval — this is the
+        // both orders must give the same single interval, this is the
         // no-double-count property.
         val pauseFirst = listOf(resumed(1_000L), paused(5_000L), lock(5_000L))
         val lockFirst = listOf(resumed(1_000L), lock(5_000L), paused(5_000L))
@@ -195,8 +195,17 @@ class KeyguardLockScreenReplayTest {
     fun `a ghost running across a lock with no intervening unlock stays valid idle time`() {
         // The device was already untouched when it locked, so the lock carries
         // no new information and the ghost must NOT be discarded. Losing it
-        // would under-report idle time — the safe direction, but a real loss.
-        val events = listOf(screenOff(0L), resumed(1_000L), lock(2_000L), paused(5_000L))
+        // would under-report idle time. The candidate must also survive a
+        // SECOND lock event while the screen is still on.
+        // (2026-10-16) The fixture now opens with a lock instead of a
+        // screen-off: a dark-screen resume belongs to Screen-Off Activity, so
+        // keeping the screen lit keeps this the ambiguous ghost case.
+        val events = listOf(
+            lock(0L),
+            resumed(1_000L),
+            lock(2_000L),
+            paused(5_000L)
+        )
         assertEquals(
             listOf(GhostSpan("com.a", 1_000L, 5_000L)),
             replayGhostIntervals(events, 0L, 10_000L)

@@ -43,7 +43,7 @@ class GapScanTest {
         val unclamped = computeGaps(app + listOf(0L to 4_000L), start, end)
         val clamped = computeGaps(app + listOf(1_000L to 4_000L), start, end)
 
-        assertEquals("both forms must agree — this is the F2 false positive", clamped, unclamped)
+        assertEquals("both forms must agree, this is the F2 false positive", clamped, unclamped)
         assertEquals("no gap is emitted for the leading region", emptyList<Interval>(), unclamped)
     }
 

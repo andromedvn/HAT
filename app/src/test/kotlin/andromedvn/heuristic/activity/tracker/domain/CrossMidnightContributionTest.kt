@@ -6,7 +6,7 @@ import org.junit.Test
 
 /**
  * A label that crosses midnight must contribute to BOTH days, and the two
- * contributions must sum to exactly the label's real duration — no lost
+ * contributions must sum to exactly the label's real duration, no lost
  * millisecond, no doubled one.
  *
  * The read side is what used to break this. OfflineStorage filtered rows with
@@ -23,7 +23,7 @@ class CrossMidnightContributionTest {
 
     private val day = 86_400_000L
 
-    /** 2024-01-01 00:00:00 UTC — a Monday, so the maths is easy to check. */
+    /** 2024-01-01 00:00:00 UTC, a Monday, so the maths is easy to check. */
     private val day1 = 1_704_067_200_000L
     private val day2 = day1 + day
     private val day1End = day1 + day - 1

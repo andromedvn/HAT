@@ -10,7 +10,7 @@ import org.junit.Test
  * The dedupe statement is the only DELETE in HAT's schema code. It is guarded
  * by MIN($idCol) so that it removes duplicate copies while always keeping one
  * row per group. If that guard is ever dropped or weakened, this statement
- * deletes a user's entire history — which is exactly what happened before
+ * deletes a user's entire history, which is exactly what happened before
  * (see HatDatabaseHelper.createUniqueIndexSafely).
  */
 class DatabaseSchemaTest {

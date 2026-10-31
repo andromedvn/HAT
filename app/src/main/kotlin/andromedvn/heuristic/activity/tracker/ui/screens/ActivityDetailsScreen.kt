@@ -47,6 +47,9 @@ import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.viewmodel.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.util.Date
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -75,6 +78,18 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     var ghostAppName by rememberSaveable { mutableStateOf("") }
     var showGhostDialog by rememberSaveable { mutableStateOf(false) }
     var showIdleActionDialog by rememberSaveable { mutableStateOf(false) }
+    // Which evidence the idle dialog is presenting (2026-10-23): true for an
+    // untouched-app Idle Session, false for Lock Screen Activity. The details
+    // screen previously knew only lock ghosts, which made every new idle span
+    // invisible to long-press and the maintainer's conversion dead-ended
+    // (functional sweep Finding 1).
+    var ghostIsUnattended by rememberSaveable { mutableStateOf(false) }
+    // The SESSION the long-pressed span lives in (2026-10-23). The session
+    // row shows the app's whole foreground stretch while the dialog asks
+    // about the untouched tail; naming both ended the "2h 16m card says
+    // 42m 19s" contradiction the maintainer hit on CloudStream.
+    var sessionStart by rememberSaveable { mutableLongStateOf(-1L) }
+    var sessionEnd by rememberSaveable { mutableLongStateOf(-1L) }
     
     val selectedSessions = remember { mutableStateListOf<SessionItem>() }
     var showSessionDialog by rememberSaveable { mutableStateOf(false) }
@@ -129,7 +144,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     
     if (showEditDialog && uiState.activity is OfflineActivityItem) {
         val offItem = uiState.activity as OfflineActivityItem
-        ActivityEditorDialog(initialTitle = offItem.title, initialIconName = offItem.iconName, suggestions = emptyList(), ledgerContext = null, onDismiss = { showEditDialog = false }, onSave = { newTitle, newIcon -> detailsViewModel.updateActivity(offItem.title, newTitle, newIcon, dashState.startTime, dashState.endTime) { showEditDialog = false; dashboardViewModel.loadDashboardData(force = true); navController.popBackStack() } })
+        ActivityEditorDialog(initialTitle = offItem.title, initialIconName = offItem.iconName, suggestions = emptyList(), ledgerContext = null, onDismiss = { showEditDialog = false }, onSave = { newTitle, newIcon, _ -> detailsViewModel.updateActivity(offItem.title, newTitle, newIcon, dashState.startTime, dashState.endTime) { showEditDialog = false; dashboardViewModel.loadDashboardData(force = true); navController.popBackStack() } })
     }
     
     if (showHideDialog) {
@@ -145,19 +160,89 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     }
 
     if (showIdleActionDialog) {
-        HatOutlinedDialog(onDismissRequest = { showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }, title = "Idle Session") {
-            Text("$ghostAppName was on screen for a long stretch with no real interaction — possibly left open, playing audio, or idle.\n\nDid you actually use it? Dismiss if yes. Label if you were doing something else.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        HatOutlinedDialog(
+            onDismissRequest = { showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L; sessionStart = -1L; sessionEnd = -1L },
+            title = if (ghostIsUnattended) "Idle Session" else "Lock Screen Activity"
+        ) {
+            val durationStr = TimeUtils.formatDuration(ghostEnd - ghostStart)
+            val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+            if (ghostIsUnattended) {
+                // Both ranges, named (2026-10-23): the row shows the session,
+                // the question is about the untouched tail. Saying only one
+                // duration made a 2h 16m session look like a 42m 19s
+                // contradiction.
+                val sessionLine = if (sessionStart != -1L) "$ghostAppName was open from ${fmt.format(Date(sessionStart))} to ${fmt.format(Date(sessionEnd))}. " else ""
+                Text("${sessionLine}You hadn't touched it since ${fmt.format(Date(ghostStart))} ($durationStr). Were you still using it after that?", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text("$ghostAppName was active behind the lock screen for $durationStr. The phone never unlocked. Was anyone using it?", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Spacer(modifier = Modifier.height(24.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { dashboardViewModel.dismissGhost(ghostPkg, ghostStart, ghostEnd); showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }) { Text("Dismiss", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                Spacer(modifier = Modifier.width(16.dp))
-                TextButton(onClick = { showIdleActionDialog = false; showGhostDialog = true }) { Text("Label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
+            // Stacked full-width buttons, same as the Gaps screen dialogs:
+            // side-by-side wraps on 720px screens.
+            Column(modifier = Modifier.fillMaxWidth()) {
+                TextButton(modifier = Modifier.fillMaxWidth(), onClick = { dashboardViewModel.dismissGhost(ghostPkg, ghostStart, ghostEnd); showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L; sessionStart = -1L; sessionEnd = -1L }) { Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Yes, I was using it", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+                TextButton(modifier = Modifier.fillMaxWidth(), onClick = {
+                    // Suggestions for the hour of the span, not the wall clock
+                    // (functional sweep Finding 15b: the dialog used whatever
+                    // the last load left behind).
+                    dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = ghostStart }.get(Calendar.HOUR_OF_DAY))
+                    showIdleActionDialog = false; showGhostDialog = true
+                }) { Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No, name what it was", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) } }
             }
         }
     }
-    
+
     if (showGhostDialog && ghostPkg.isNotEmpty() && ghostStart != -1L) {
-        ActivityEditorDialog(initialTitle = "Sleep", initialIconName = "Sleep", suggestions = dashState.recentSuggestions, ledgerContext = LedgerContext.IdleSession(ghostStart, ghostEnd, ghostAppName, ghostPkg), onDismiss = { showGhostDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }, onSave = { outTitle, outIcon -> dashboardViewModel.convertGhostTime(ghostPkg, ghostStart, ghostEnd, outTitle, outIcon); showGhostDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L; navController.popBackStack() })
+        ActivityEditorDialog(
+            initialTitle = "Sleep", initialIconName = "Sleep",
+            suggestions = dashState.recentSuggestions,
+            ledgerContext = LedgerContext.IdleSession(ghostStart, ghostEnd, ghostAppName, ghostPkg, ghostIsUnattended),
+            onDismiss = { showGhostDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L },
+            onSave = { outTitle, outIcon, outStart ->
+                // Suppress the ORIGINAL span (2026-10-23): conversion alone
+                // never cleared the card (Finding 4). The label uses the
+                // user-adjusted start; the suppression uses the detected
+                // span, so the card cannot resurface either way.
+                dashboardViewModel.acknowledgeIdleSpan(ghostPkg, ghostStart, ghostEnd)
+                dashboardViewModel.convertGhostTime(ghostPkg, outStart, ghostEnd, outTitle, outIcon)
+                showGhostDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L; navController.popBackStack()
+            }
+        )
+    }
+
+    // Batch conversion dialog (2026-10-23): the Convert button has been a
+    // silent dead end since v1.0.0 (Finding 2), setting a flag nothing
+    // rendered while the convert function sat uncalled. It exists now.
+    if (showSessionDialog && selectedSessions.isNotEmpty()) {
+        val pkgForBatch = (uiState.activity as? AppUsageItem)?.packageName
+        if (pkgForBatch != null) {
+            ActivityEditorDialog(
+                initialTitle = "Sleep", initialIconName = "Sleep",
+                suggestions = dashState.recentSuggestions,
+                ledgerContext = LedgerContext.BatchMerge(selectedSessions.size, selectedSessions.sumOf { it.displayedDuration }),
+                onDismiss = { showSessionDialog = false },
+                onSave = { outTitle, outIcon, _ ->
+                    // Convert with the contained SPAN bounds where a session
+                    // holds one (Finding 5: session cluster bounds never
+                    // match re-detected spans exactly), suppress the same
+                    // spans (Finding 4), and fall back to session bounds
+                    // for ordinary sessions like the published build did.
+                    val act = uiState.activity as? AppUsageItem
+                    val spans = selectedSessions.map { s ->
+                        val contained = act?.ghostIntervals?.firstOrNull { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis }
+                            ?: act?.unattendedIntervals?.firstOrNull { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis }
+                        if (contained != null) {
+                            dashboardViewModel.acknowledgeIdleSpan(pkgForBatch, contained.startMillis, contained.endMillis)
+                            contained
+                        } else UsageGap(s.startTime, s.endTime)
+                    }
+                    dashboardViewModel.convertMultipleGhostTimes(pkgForBatch, spans, outTitle, outIcon)
+                    selectedSessions.clear()
+                    showSessionDialog = false
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -217,8 +302,8 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                         // and the SESSIONS caption. So +2 is the first session row.
                                         //
                                         // There is deliberately no term for ghostIntervals.size.
-                                        // A ghost is not a row of its own — it only annotates an
-                                        // existing session (isGhost, below) — so adding its count
+                                        // A ghost is not a row of its own - it only annotates an
+                                        // existing session (isGhost, below) - so adding its count
                                         // here overshot the list by however many ghosts there were.
                                         if (matchIndex != -1) scope.launch { listState.animateScrollToItem(matchIndex + 2) }
                                     } else { dashboardViewModel.setChartHighlight(null); returnScrollIndex = -1 }
@@ -243,32 +328,35 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                         } else {
                             itemsIndexed(renderList, key = { _, session -> "${session.startTime}_${session.endTime}" }) { index, session ->
                                 val isLast = index == renderList.lastIndex
-                                val pinOffset = 16.dp + with(LocalDensity.current) { 8.sp.toDp() } 
+                                val pinOffset = 16.dp + with(LocalDensity.current) { 8.sp.toDp() }
                                 val isSessionSelected = selectedSessions.contains(session)
-                                val isGhost = appActivity?.ghostIntervals?.any { ghost -> session.startTime <= ghost.startMillis && session.endTime >= ghost.endMillis } == true
+                                // Containment against the SPAN, not just the flag (2026-10-23):
+                                // the sweep found the marker checked only lock ghosts, which
+                                // made the maintainer's own idle sessions invisible here and
+                                // their long-press dead-ended in a selection mode whose
+                                // Convert button did nothing.
+                                val lockSpan = appActivity?.ghostIntervals?.firstOrNull { ghost -> session.startTime <= ghost.startMillis && session.endTime >= ghost.endMillis }
+                                val idleSpan = appActivity?.unattendedIntervals?.firstOrNull { span -> session.startTime <= span.startMillis && session.endTime >= span.endMillis }
+                                val containedSpan = lockSpan ?: idleSpan
+                                val isGhost = containedSpan != null
 
-                                // Extracted from an inline lambda so the body is a named
-                                // function; this also let the redundant null check be
-                                // replaced with an explicit requireNotNull (see below).
                                 fun handleLongPress(s: SessionItem) {
                                     if (type == "app" && selectedSessions.isEmpty()) {
-                                        // isGhost is defined as
-                                        //   appActivity?.ghostIntervals?.any { ... } == true
-                                        // so isGhost == true already implies appActivity is
-                                        // non-null. The old `appActivity != null` check was
-                                        // therefore provably redundant, which is why the
-                                        // compiler warned "condition is always true".
-                                        // requireNotNull states that invariant explicitly and
-                                        // fails loudly if a future edit breaks it, instead of
-                                        // silently NPE-ing on the next dereference.
-                                        if (isGhost) {
+                                        if (containedSpan != null) {
+                                            // SPAN bounds, not session cluster bounds (Finding 5):
+                                            // suppression and conversion write exact triples,
+                                            // and session bounds only matched re-detection by
+                                            // luck. The span is what the engine will find again.
                                             val act = requireNotNull(appActivity) {
                                                 "isGhost == true implies appActivity is non-null"
                                             }
                                             ghostPkg = act.packageName
                                             ghostAppName = act.title
-                                            ghostStart = s.startTime
-                                            ghostEnd = s.endTime
+                                            ghostStart = containedSpan.startMillis
+                                            ghostEnd = containedSpan.endMillis
+                                            ghostIsUnattended = idleSpan != null
+                                            sessionStart = s.startTime
+                                            sessionEnd = s.endTime
                                             showIdleActionDialog = true
                                         } else {
                                             selectedSessions.add(s)
@@ -300,7 +388,10 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                                                         Icon(Icons.Default.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
                                                         Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Idle Session Detected", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                                        Text(
+                                                            if (idleSpan != null) "Possible idle session" else "Active behind the lock screen, nobody unlocked it",
+                                                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary
+                                                        )
                                                     }
                                                 }
                                             }
@@ -340,12 +431,25 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                             Text(TimeUtils.formatDuration(selectedSessions.sumOf { it.displayedDuration }), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                            val isOnlyGhosts = selectedSessions.all { s -> (uiState.activity as? AppUsageItem)?.ghostIntervals?.any { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis } == true }
+                            // Ghosts OR idle spans count for the Dismiss door (2026-10-23):
+                            // the sweep found the check read only lock ghosts.
+                            val isOnlyGhosts = selectedSessions.all { s ->
+                                val act = uiState.activity as? AppUsageItem
+                                act?.ghostIntervals?.any { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis } == true ||
+                                    act?.unattendedIntervals?.any { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis } == true
+                            }
                             if (isOnlyGhosts) {
                                 PromptOutlineButton("Dismiss") {
                                     val pkg = (uiState.activity as? AppUsageItem)?.packageName
+                                    val act = uiState.activity as? AppUsageItem
                                     if (pkg != null) {
-                                        selectedSessions.forEach { dashboardViewModel.dismissGhost(pkg, it.startTime, it.endTime) }
+                                        // SPAN bounds per session (Finding 5): session cluster
+                                        // bounds only matched re-detection by luck.
+                                        selectedSessions.forEach { s ->
+                                            val contained = act?.ghostIntervals?.firstOrNull { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis }
+                                                ?: act?.unattendedIntervals?.firstOrNull { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis }
+                                            if (contained != null) dashboardViewModel.dismissGhost(pkg, contained.startMillis, contained.endMillis)
+                                        }
                                         selectedSessions.clear()
                                     }
                                 }

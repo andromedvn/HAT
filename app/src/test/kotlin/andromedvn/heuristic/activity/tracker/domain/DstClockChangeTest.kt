@@ -12,28 +12,27 @@ import java.util.TimeZone
 /**
  * Clock and timezone transitions.
  *
- * The dev device is Asia/Manila, which has had no DST since 1978, so no
- * developer has ever seen a 23-hour or 25-hour day in this app. Every other
- * user does, twice a year. The suite had no timezone coverage at all — not one
+ * The reference timezone for these tests is Asia/Manila, which has had no DST
+ * since 1978, so no developer has ever seen a 23-hour or 25-hour day in this
+ * app's default test environment. Every other user does, twice a year. The suite had no timezone coverage at all, not one
  * test changed `TimeZone.getDefault()`.
  *
- * Three separate places in production assume a day is exactly 86_400_000 ms:
+ * Three separate places in production used to assume a day is exactly
+ * 86_400_000 ms, with three different arithmetics:
  *
  *  1. `UsageStatsEngine.sliceIntervals` builds hour buckets with
  *     `current - ((current + offset) % 3600000L)`.
- *  2. `HeuristicEngine.buildChartPoints` walks 24 buckets with
- *     `tempCal.add(Calendar.HOUR_OF_DAY, 1)`.
- *  3. `ActivityRepository.syncArchive` seeds `currentDay` with
- *     `lastArchived + 86400000L` (line 59) while advancing with
- *     `driftCal.add(Calendar.DAY_OF_YEAR, 1)` (line 78).
+ *  2. `HeuristicEngine.buildChartPoints` and the dashboard's gap chart walked
+ *     a hardcoded 24 buckets.
+ *  3. `ActivityRepository.syncArchive` seeded `currentDay` with
+ *     `lastArchived + 86400000L` while advancing with calendar arithmetic.
  *
- * On a DST boundary the first is a fixed 24-hour offset and the second two are
- * calendar arithmetic, so they disagree — and only one of the three is right.
- * The tests below pin the *observed* behaviour with the real numbers, so the
- * next person to touch this code knows which case they are in.
- *
- * These are characterisation tests, not assertions of intent. Several of them
- * document behaviour that is wrong; that is stated explicitly in each.
+ * (2) and (3) are FIXED: both now use the pure helpers in LocalDay.kt
+ * (`hourBucketsOfDay`, `nextLocalMidnight`), and the tests below pin the
+ * fixed behaviour directly against those helpers, 23 buckets on a
+ * spring-forward day, 25 on a fall-back day, no skipped hour, and a seed that
+ * never drifts off local midnight. (1) was already correct: it re-reads the
+ * offset at every chunk boundary, and the slice tests below document that.
  */
 class DstClockChangeTest {
 
@@ -67,7 +66,7 @@ class DstClockChangeTest {
 
     /**
      * A local wall-clock time, resolved in whatever zone is default at the time
-     * of the call. Always set the zone BEFORE calling this — the timestamp it
+     * of the call. Always set the zone BEFORE calling this, the timestamp it
      * returns is zone-dependent, and every assertion below compares two
      * timestamps that must have been built in the SAME zone.
      */
@@ -96,23 +95,6 @@ class DstClockChangeTest {
         return buckets
     }
 
-    /**
-     * Mirrors the DAY branch of `HeuristicEngine.buildChartPoints`
-     * (lines 310-345): walk `count` buckets, each one hour wider than the last
-     * via `add(HOUR_OF_DAY, 1)`, keyed by `cal.get(HOUR_OF_DAY)`.
-     */
-    private fun chartDayBucketHours(dayStart: Long, count: Int = 24): List<Int> {
-        val cal = Calendar.getInstance().apply { timeInMillis = dayStart }
-        val hours = mutableListOf<Int>()
-        repeat(count) {
-            hours.add(cal.get(Calendar.HOUR_OF_DAY))
-            val temp = cal.clone() as Calendar
-            temp.add(Calendar.HOUR_OF_DAY, 1)
-            cal.timeInMillis = temp.timeInMillis
-        }
-        return hours
-    }
-
     // --- the day window itself --------------------------------------------
 
     @Test
@@ -137,7 +119,7 @@ class DstClockChangeTest {
         //
         // A user who labels their entire 2024-11-03 as offline records
         // 89_999_999 ms of sharded offline against a day the rest of the app
-        // believes is 86_400_000 ms long. Invariant 1 is not merely violated —
+        // believes is 86_400_000 ms long. Invariant 1 is not merely violated, 
         // the clamp cannot restore it, because the clamp IS the larger number.
         TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
         val day = Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.NOVEMBER, 3) }
@@ -215,7 +197,7 @@ class DstClockChangeTest {
     fun `hour buckets are correct in a half-hour offset zone`() {
         // Asia/Kolkata is UTC+05:30. The `(current + offset) % 3600000L` form
         // must still land on the local hour, which requires the offset to be
-        // added BEFORE the modulo — the opposite order from the merge sort.
+        // added BEFORE the modulo, the opposite order from the merge sort.
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kolkata"))
         val start = local(2024, Calendar.MARCH, 10, 10, 7)
         val end = local(2024, Calendar.MARCH, 10, 12, 30)
@@ -233,7 +215,7 @@ class DstClockChangeTest {
 
     @Test
     fun `hour buckets are correct in a quarter-hour offset zone`() {
-        // Asia/Kathmandu is UTC+05:45 — the worst case for hour alignment.
+        // Asia/Kathmandu is UTC+05:45, the worst case for hour alignment.
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kathmandu"))
         val start = local(2024, Calendar.MARCH, 10, 10, 7)
         val end = local(2024, Calendar.MARCH, 10, 11, 59)
@@ -251,89 +233,134 @@ class DstClockChangeTest {
         assertEquals("and equals the real elapsed time", end - start, buckets.values.sum())
     }
 
-    // --- buildChartPoints' 24-bucket walk ---------------------------------
+    // --- the fixed hour-bucket walk (LocalDay.hourBucketsOfDay) ------------
 
     @Test
-    fun `the 24-bucket chart walk emits a duplicate hour and drops one on a spring-forward day`() {
-        // PINNED DEFECT. `add(HOUR_OF_DAY, 1)` is calendar arithmetic, so on
-        // 2024-03-10 the walk steps 00 -> 01 -> 03 (02:00 does not exist) and
-        // by the 24th step it has run past local midnight into the next day.
-        // Result: 24 ChartPoints but only 23 distinct syncTags, hour 2 is never
-        // labelled, and hour 0 is labelled twice. A chart highlight lookup
-        // (`dataPoints.indexOfFirst { it.syncTag == targetTag }` in Charts.kt)
-        // resolves to whichever of the two hour-0 points comes first.
+    fun `a spring-forward day has 23 buckets, none duplicated and none dropped`() {
+        // America/New_York, 2024-03-10. Local 02:00 never happens. The old
+        // hardcoded 24-bucket walk emitted a duplicate hour 0, never labelled
+        // hour 2, and ran past midnight into the next day. The calendar walk
+        // emits exactly the hours the wall clock really has.
         TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
         val dayStart = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.MARCH, 10) })
+        val nextDay = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.MARCH, 11) })
 
-        val hours = chartDayBucketHours(dayStart)
+        val buckets = hourBucketsOfDay(dayStart)
 
-        assertEquals("the walk still produces 24 points", 24, hours.size)
-        assertEquals("but only 23 distinct labels", 23, hours.toSet().size)
-        assertTrue("the non-existent 02:00 is never labelled", 2 !in hours)
-        assertEquals("00 AM is labelled twice", 2, hours.count { it == 0 })
+        assertEquals("a 23-hour day has 23 buckets", 23, buckets.size)
+        assertEquals("the walk covers exactly the local day", nextDay, buckets.last().endMillis)
+        assertTrue("the non-existent 02:00 is never charted", buckets.none { it.startHour == 2 })
+        assertEquals(
+            "the transition bucket is labelled with its REAL end hour",
+            3, buckets.first { it.startHour == 1 }.endHour
+        )
+        assertTrue(
+            "every bucket is one real hour",
+            buckets.all { it.endMillis - it.startMillis == 3_600_000L }
+        )
+        // Buckets tile the day exactly: each starts where the previous ended.
+        (1 until buckets.size).forEach { i ->
+            assertEquals("buckets must tile without gaps or overlaps", buckets[i - 1].endMillis, buckets[i].startMillis)
+        }
+        assertEquals("the first bucket starts at local midnight", dayStart, buckets.first().startMillis)
     }
 
     @Test
-    fun `the 24-bucket chart walk loses the last hour on a fall-back day`() {
-        // PINNED DEFECT. On the 25-hour 2024-11-03 the walk visits 23 distinct
-        // hours and never reaches hour 23, so the final hour of the user's day
-        // is simply not charted.
+    fun `a fall-back day has 25 buckets and charts hour 23`() {
+        // America/New_York, 2024-11-03. Local 01:00 happens twice. The old
+        // 24-bucket walk never reached hour 23, silently dropping the last
+        // hour of the user's day from the chart.
         TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
         val dayStart = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.NOVEMBER, 3) })
+        val nextDay = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.NOVEMBER, 4) })
 
-        val hours = chartDayBucketHours(dayStart)
+        val buckets = hourBucketsOfDay(dayStart)
 
-        assertEquals(24, hours.size)
-        assertEquals(23, hours.toSet().size)
-        assertTrue("hour 23 is never charted on a 25-hour day", 23 !in hours)
+        assertEquals("a 25-hour day has 25 buckets", 25, buckets.size)
+        assertEquals("the walk covers exactly the local day", nextDay, buckets.last().endMillis)
+        assertTrue("hour 23 IS charted on a fall-back day", buckets.any { it.startHour == 23 })
+        assertEquals(
+            "the ambiguous wall hour appears twice, as it does in real life",
+            2, buckets.count { it.startHour == 1 }
+        )
+        // The first 01:00 bucket ends at the SECOND 01:00, one real hour later.
+        assertEquals(
+            "the first 1 AM bucket ends at the second 1 AM",
+            1, buckets.first { it.startHour == 1 }.endHour
+        )
+        assertTrue("every bucket is one real hour", buckets.all { it.endMillis - it.startMillis == 3_600_000L })
+        (1 until buckets.size).forEach { i ->
+            assertEquals("buckets must tile without gaps or overlaps", buckets[i - 1].endMillis, buckets[i].startMillis)
+        }
     }
 
     @Test
-    fun `the 24-bucket chart walk is correct on a day with no transition`() {
+    fun `a normal day has the usual 24 buckets in order`() {
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Manila"))
         val dayStart = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.MARCH, 10) })
 
-        val hours = chartDayBucketHours(dayStart)
+        val buckets = hourBucketsOfDay(dayStart)
 
-        assertEquals(24, hours.toSet().size)
-        assertEquals((0..23).toList(), hours)
+        assertEquals(24, buckets.size)
+        assertEquals((0..23).toList(), buckets.map { it.startHour })
+        assertTrue("on a normal day every bucket ends at the next hour", buckets.all { it.endHour == (it.startHour + 1) % 24 })
     }
 
-    // --- syncArchive's mixed arithmetic ------------------------------------
+    // --- syncArchive's day arithmetic (LocalDay.nextLocalMidnight) ----------
 
     @Test
-    fun `syncArchive seeds the next day with a fixed 24 h offset and drifts an hour across DST`() {
-        // PINNED DEFECT. ActivityRepository.kt:59 computes
-        //   currentDay = lastArchived + 86400000L
-        // but line 78 advances with
-        //   driftCal.add(Calendar.DAY_OF_YEAR, 1)
-        // The seed assumes every day is 86_400_000 ms; the loop does not. On the
-        // day after a spring-forward the seed lands at 01:00 local, an hour
-        // into the day, so the archiver re-reads (and re-archives) the first
-        // hour of 2024-03-11. The drift is one hour, once, at the seed.
+    fun `nextLocalMidnight never drifts off local midnight across a spring-forward boundary`() {
+        // America/New_York, 2024-03-10 (23-hour day). The OLD seed was
+        //   lastArchived + 86400000L
+        // which landed at 01:00 local the next morning, an hour PAST the true
+        // next midnight, so the archive re-read (and re-archived) the first
+        // hour of the following day and every window after the boundary
+        // inherited the wrong anchor. The calendar form lands exactly on
+        // midnight.
         TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
         val lastArchived = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.MARCH, 10) })
 
-        val seeded = lastArchived + 86400000L
-        val viaCalendar = (Calendar.getInstance().apply { timeInMillis = lastArchived }).apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-        }.timeInMillis
+        val seeded = nextLocalMidnight(lastArchived)
+        val trueMidnight = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.MARCH, 11) })
 
-        assertEquals("the seed is an hour past the true next midnight", 3_600_000L, seeded - viaCalendar)
-        assertNotEquals("the two forms of 'next day' disagree across a DST boundary", seeded, viaCalendar)
+        assertEquals("the seed is the true next local midnight", trueMidnight, seeded)
+        assertEquals(
+            "the fixed +24h form is a full hour late here; production must not use it",
+            3_600_000L, (lastArchived + 86400000L) - seeded
+        )
     }
 
     @Test
-    fun `syncArchive's seed and loop agree when there is no transition`() {
+    fun `nextLocalMidnight covers the full 25 hours of a fall-back day`() {
+        // America/New_York, 2024-11-03 (25-hour day). The fixed +24h form
+        // lands at 23:00 the SAME evening, an hour short of the next midnight:
+        // with the old window end `currentDay + 86400000L`, the local
+        // 23:00-24:00 hour of every fall-back day was skipped and never
+        // archived by any later pass either, because the next window began at
+        // the next midnight.
+        TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
+        val day = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.NOVEMBER, 3) })
+
+        val dayEnd = nextLocalMidnight(day)
+        val trueNextMidnight = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.NOVEMBER, 4) })
+
+        assertEquals("the day window ends at the true next local midnight", trueNextMidnight, dayEnd)
+        assertEquals("a fall-back day really is 25 hours long", 25 * 3_600_000L, dayEnd - day)
+        assertTrue(
+            "the fixed +24h form cuts off the last local hour; production must not use it",
+            (day + 86400000L) < dayEnd
+        )
+    }
+
+    @Test
+    fun `nextLocalMidnight and the fixed offset agree when there is no transition`() {
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Manila"))
         val lastArchived = startOfDay(Calendar.getInstance().apply { timeInMillis = local(2024, Calendar.MARCH, 10) })
 
-        val seeded = lastArchived + 86400000L
-        val viaCalendar = (Calendar.getInstance().apply { timeInMillis = lastArchived }).apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-        }.timeInMillis
-
-        assertEquals("Manila agrees, which is why this has never been noticed", seeded, viaCalendar)
+        assertEquals(
+            "Manila agrees, which is why this has never been noticed",
+            lastArchived + 86400000L, nextLocalMidnight(lastArchived)
+        )
     }
 
     // --- a user changing the clock mid-day --------------------------------

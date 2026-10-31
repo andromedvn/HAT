@@ -1,5 +1,6 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
+import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -44,12 +45,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.AppUsageItem
 import andromedvn.heuristic.activity.tracker.data.OfflineActivityItem
+import andromedvn.heuristic.activity.tracker.data.ScreenOffItem
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
+import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.utils.hasUsageStatsPermission
+import androidx.compose.ui.text.style.TextOverflow
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -61,6 +68,19 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
     val uiState by viewModel.uiState.collectAsState()
     val chartHighlight = uiState.chartHighlight
     var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
+    // Re-check on every ON_RESUME: the user grants Usage Access in system
+    // settings and comes back, and the card must disappear the moment the
+    // grant is real. A stale flag made the card look permanently broken -
+    // tap, grant, return, same card - a same-day uninstall trigger.
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasPermission = hasUsageStatsPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val chartScrollState = rememberLazyListState()
@@ -172,8 +192,8 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
                                         Box(modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))) {
                                             Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("System OS Unresponsive", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-                                                    Spacer(modifier = Modifier.height(8.dp)); Text("Android's Usage API is failing to return data.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("Still Reading Your History", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
+                                                    Spacer(modifier = Modifier.height(8.dp)); Text("This range is large, so the first read can take a moment. Give it a second, or force a refresh.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                                                 }
                                                 Text("Force Refresh", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.background, modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary).clickable { viewModel.loadDashboardData(force = true, isBackgroundTick = false) }.padding(horizontal = 16.dp, vertical = 12.dp))
                                             }
@@ -227,7 +247,13 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel)
                         Box(modifier = Modifier.padding(horizontal = 20.dp)) {
                             when (item) {
                                 is AppUsageItem -> RealActivityListItem(navController = navController, app = item, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onLongClick = { onLongPress(0) })
-                                is OfflineActivityItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { navController.navigate("details/offline/${item.id}") }, onLongClick = { onLongPress(1) })
+                                is OfflineActivityItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { navController.navigate(NavRouteCodec.offlineDetailsRoute(item.id)) }, onLongClick = { onLongPress(1) })
+                                // Unreachable today: the unified list carries only apps and
+                                // offline items, and screen-off spans surface in the Gaps
+                                // screen's unaccounted timeline (2026-10-22), not here. The
+                                // branch exists so the sealed interface stays exhaustive if
+                                // that ever changes (functional sweep Finding 19).
+                                is ScreenOffItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = "Sleep", color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { }, onLongClick = { onLongPress(1) })
                             }
                         }
                     }

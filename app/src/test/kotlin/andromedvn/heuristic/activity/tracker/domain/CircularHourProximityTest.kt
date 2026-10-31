@@ -18,7 +18,7 @@ import java.util.TimeZone
  *
  * and scored 3.0 at distance 0, 1.5 within 2, else 0.5. A day is a circle, not
  * a line: 23:00 and 01:00 are two hours apart, but `abs(23 - 1)` is 22, so a
- * user labelling a 01:00 gap was shown as LEAST likely to have been asleep —
+ * user labelling a 01:00 gap was shown as LEAST likely to have been asleep, 
  * when a 23:00-to-01:00 stretch is precisely the habit that produced it. The
  * late-night band (22:00-05:00) was scored as maximally distant from itself
  * across the boundary.

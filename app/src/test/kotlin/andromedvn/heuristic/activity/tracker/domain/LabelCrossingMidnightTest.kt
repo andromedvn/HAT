@@ -12,12 +12,12 @@ import java.util.TimeZone
  * A label that crosses midnight.
  *
  * Finding: the day-bucketing DOES split such a label and DOES give each day its
- * own share — the second day is not skipped. But the two shares do not sum to
+ * own share, the second day is not skipped. But the two shares do not sum to
  * the label's duration: they are short by exactly 1 ms per midnight crossed,
  * and the cause is a convention shared by the writer and the reader, not a
  * missing split.
  *
- * Writer — `DashboardViewModel.saveGap` (and the same loop in
+ * Writer, `DashboardViewModel.saveGap` (and the same loop in
  * `saveMultipleGaps`, `convertGhostTime`, `convertMultipleGhostTimes`):
  *
  *     while (curr < end) {
@@ -31,18 +31,18 @@ import java.util.TimeZone
  * `getEndOfDay` is INCLUSIVE (23:59:59.999) while each stored row is a duration
  * from `curr`, so row N covers up to and including 23:59:59.999 and `curr =
  * chunkEnd + 1` then resumes at the next 00:00:00.000. The millisecond
- * 23:59:59.999 is counted once, not lost — but the row's stored duration is
+ * 23:59:59.999 is counted once, not lost, but the row's stored duration is
  * `chunkEnd - curr` over a half-open range, so the last millisecond of every
  * day after the first is never persisted. Already pinned by
  * DayBoundaryInvariantTest ("labelling across one midnight loses exactly one
  * millisecond").
  *
- * Reader — `HeuristicEngine` clamps each row into the queried day with
+ * Reader, `HeuristicEngine` clamps each row into the queried day with
  * `sanitizeOfflineRow`, which is exact given the window it is given. The
  * 1 ms is in the window, not the function: with the inclusive `getEndOfDay`,
  * day N's slice stops at 23:59:59.999 and day N+1's starts at 00:00:00.000, so
  * the day N slice is 1 ms shorter than the writer stored. No millisecond is
- * DUPLICATED by this — day N ends 1 ms before day N+1 begins. Only lost.
+ * DUPLICATED by this, day N ends 1 ms before day N+1 begins. Only lost.
  *
  * A second, larger finding, in a file outside the domain: the read path cannot
  * see the second day's share at all.
@@ -50,7 +50,7 @@ import java.util.TimeZone
  * `timestamp >= start AND timestamp <= end`, so a row that BEGAN on the
  * previous day is never returned when the next day is queried. For a label
  * split by the writer this is harmless (each stored row lies inside one day),
- * which is why the split exists — but for a row that crossed midnight intact
+ * which is why the split exists, but for a row that crossed midnight intact
  * (an older schema, or a vault import) the next day receives nothing. That
  * query is `OfflineStorage.kt:381`, not a file this change may touch, so it is
  * reported rather than fixed.
@@ -110,7 +110,7 @@ class LabelCrossingMidnightTest {
         return rows
     }
 
-    /** The same loop with a half-open day boundary — the shape that is exact. */
+    /** The same loop with a half-open day boundary, the shape that is exact. */
     private fun chunkHalfOpen(start: Long, end: Long): List<Interval> {
         val rows = mutableListOf<Interval>()
         var curr = start
@@ -216,7 +216,7 @@ class LabelCrossingMidnightTest {
         assertEquals("the second day's slice starts at its own midnight", d11Start to labelEnd, onDay11)
         assertEquals(1_799_999L, totalDuration(listOf(onDay10!!)))
         assertEquals(1_800_000L, totalDuration(listOf(onDay11!!)))
-        assertEquals("the two slices do not overlap", true, onDay10!!.second < onDay11!!.first)
+        assertEquals("the two slices do not overlap", true, onDay10.second < onDay11.first)
     }
 
     @Test
@@ -252,7 +252,7 @@ class LabelCrossingMidnightTest {
 
     @Test
     fun `a row that began on the previous day is invisible to the next day's query`() {
-        // PINNED, NOT FIXED — the WHERE clause lives in OfflineStorage.kt:381.
+        // PINNED, NOT FIXED, the WHERE clause lives in OfflineStorage.kt:381.
         val d10Start = startOfDay(day10); val d10End = endOfDay(day10)
         val d11Start = startOfDay(day11); val d11End = endOfDay(day11)
 

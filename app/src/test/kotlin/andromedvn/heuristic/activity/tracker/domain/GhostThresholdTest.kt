@@ -8,35 +8,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The ghost minimum-duration setting.
+ * The ghost minimum-duration threshold and the ghost selection filter.
  *
- * An audit claimed: "`ghostMins <= 0` yields `Long.MAX_VALUE`, so a user who
- * sets the minimum to 0 gets an empty list — zero should mean 'no minimum',
- * return everything." That reading is wrong, and the settings UI is the
- * evidence:
+ * The minute count comes from the Minimum Duration setting (DetailLevel:
+ * 1/5/15 minute presets plus Custom 1 to 1440), the same number that
+ * governs gaps and screen-off spans. The UI can no longer produce 0 or a
+ * negative value.
  *
- *     HatSlidingSelector<Int>("Idle App Detection",
- *         "Flag an app as a 'Suspicious Idle Session' if it stays on screen
- *          without interaction.",
- *         listOf("Off" to 0, "30m" to 30, "1h" to 60, "Custom" to -1), ...)
+ * The non-positive guard still matters, for two reasons: a restored vault
+ * can carry any integer the old selector era ever wrote (including the old
+ * "Off" sentinel 0), and this function is pure and has no opinion about
+ * where its argument came from. Returning a "no minimum" 0L for such a
+ * value would surface every sub-second idle blip as a session, so
+ * non-positive maps to [Long.MAX_VALUE], the one threshold no finite
+ * duration can satisfy, and the ghost list comes back empty.
  *
- * (SettingsScreen.kt:296.) 0 is the option the user picks to switch idle
- * detection OFF, and the custom-value dialog accepts 0, which the selector then
- * renders as "Off". The same convention governs all four heuristic settings:
- * archive sync, gap minimum and merge tolerance are each `listOf("Off" to 0,
- * ...)`.
- *
- * So the empty list at 0 is the FEATURE WORKING, not a defect. Reinterpreting 0
- * as "no minimum" would switch the feature back on for every user who turned it
- * off, and would surface every sub-second idle blip as a "Suspicious Idle
- * Session". This class therefore pins the existing behaviour, and pins the
- * reasoning, so the sentinel is not "fixed" later by someone who has not read
- * the selector.
- *
- * The one genuine fragility is worth stating: "off" is encoded as
- * `Long.MAX_VALUE` rather than as an explicit branch, so it is correct only
- * while no duration can reach `Long.MAX_VALUE`. A real "no minimum" option
- * would need a distinct stored value (e.g. -1) and a new selector entry.
+ * The sentinel is safe only because no real span can reach it. A genuine
+ * "no minimum" option would need a distinct stored value plus a new
+ * selector entry.
  */
 class GhostThresholdTest {
 
@@ -101,9 +90,9 @@ class GhostThresholdTest {
     @Test
     fun `a small positive threshold drops the shorter ghosts and keeps the longer`() {
         val ghosts = listOf(
-            ghost(1_000L, 59_000L),        // 59 s  — below a 1-minute minimum
-            ghost(100_000L, 60_000L),      // 60 s  — exactly the minimum
-            ghost(200_000L, 3_600_000L)    // 60 min — well above it
+            ghost(1_000L, 59_000L),        // 59 s, below a 1-minute minimum
+            ghost(100_000L, 60_000L),      // 60 s, exactly the minimum
+            ghost(200_000L, 3_600_000L)    // 60 min, well above it
         )
         val selected = select(ghosts, 1)
 
@@ -180,7 +169,7 @@ class GhostThresholdTest {
 
     @Test
     fun `raising the minimum can only ever remove candidates`() {
-        // From 1 minute upwards. 0 is not on this scale at all — it is the off
+        // From 1 minute upwards. 0 is not on this scale at all, it is the off
         // sentinel, so the count jumps from 0 candidates to all of them there.
         val ghosts = (1..20).map { ghost(it * 1_000_000L, it * 60_000L) }
         var previous = Int.MAX_VALUE
@@ -212,6 +201,31 @@ class GhostThresholdTest {
     }
 
     @Test
+    fun `an acknowledgement covers a span that kept growing after the answer`() {
+        // The growing-span fix (2026-10-23): pocket music checked at 2:10 PM
+        // and answered, still playing at 2:15 PM. The re-detected span's end
+        // moved past the answer's end; matching (package, start) only means
+        // one answer settles the whole stretch. Exact end matching here
+        // re-asked the tail after every check.
+        val ghosts = listOf(ghost(1_000L, 750_000L))  // grew from 3_601_000... but same start
+        val acks = listOf(AcknowledgedGhost(pkg, 1_000L, 3_601_000L))
+        assertEquals(
+            "same start means same span: the answer covers its growth",
+            emptyList<UsageGap>(),
+            select(ghosts, 1, acks)
+        )
+    }
+
+    @Test
+    fun `an acknowledgement does not suppress a different span with a different start`() {
+        // A touch after the answer re-anchors the next span at a new start:
+        // that is a new question, honestly asked again.
+        val ghosts = listOf(ghost(1_000L, 3_600_000L), ghost(20_000L, 3_600_000L))
+        val acks = listOf(AcknowledgedGhost(pkg, 1_000L, 3_601_000L))
+        assertEquals(listOf(20_000L), select(ghosts, 60, acks).map { it.startMillis })
+    }
+
+    @Test
     fun `an acknowledgement for another package does not suppress a ghost`() {
         val ghosts = listOf(ghost(1_000L, 3_600_000L))
         val acks = listOf(AcknowledgedGhost("com.other", 1_000L, 3_601_000L))
@@ -229,8 +243,8 @@ class GhostThresholdTest {
 
     @Test
     fun `a selected gap carries the exact replayed span`() {
-        // The ack key is an exact three-field match, so the span shown to the
-        // user must be the span the replay produced, unaltered.
+        // The ack key is a (package, start) prefix, and the span shown to the
+        // user must still be the span the replay produced, unaltered.
         val start = 1_234_567L
         val end = 9_876_543L
         val gap = selectGhostGapsForPackage(

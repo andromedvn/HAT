@@ -19,7 +19,7 @@
 [![No Tracking](https://img.shields.io/badge/Tracking-ZERO-brightgreen.svg?style=flat-square)](#privacy--security)
 [![No Cloud](https://img.shields.io/badge/Cloud-NONE-brightgreen.svg?style=flat-square)](#privacy--security)
 [![Releases](https://img.shields.io/badge/Releases-GitHub-brightgreen.svg?style=flat-square)](https://github.com/andromedvn/HAT/releases)
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-Pending-ea4aaa.svg?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/andromedvn)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support_Development-FF5E5B.svg?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/andromedvn)
 
 <br/>
 
@@ -31,11 +31,11 @@
 
 ## What is HAT?
 
-HAT is an Android app that answers a question most people dismiss asking: *where did my day actually go?*
+HAT is an Android app that answers a question most people never think to ask: *where did my day actually go?*
 
-It does this by watching your app usage — something Android already tracks in the background — and inverting it. Every minute you weren't on your phone becomes a labeled block of time called a **gap**. You can leave those gaps empty, or fill them in: `Sleeping`, `Working`, `Reading`, `At the gym`. Over time, you end up with a complete picture of how you spend both your screen time and your offline time.
+It does this by watching your app usage, something Android already tracks in the background, and inverting it. Every minute you weren't on your phone becomes an unlabeled block of time called a **gap**. You can leave those gaps empty, or fill them in: `Sleeping`, `Working`, `Reading`, `At the gym`. Over time, you end up with a complete picture of how you spend both your screen time and your offline time.
 
-There are no accounts. No servers. No cloud sync. HAT has no internet permission at all — it can't send your data anywhere even if it wanted to. Everything lives in a local SQLite database on your device. You own it completely.
+There are no accounts. No servers. No cloud sync. HAT has no internet permission at all, it can't send your data anywhere even if it wanted to. Everything lives in a local SQLite database on your device. You own it completely.
 
 This is the full source code.
 
@@ -63,22 +63,23 @@ This is the full source code.
 
 Most screen-time trackers just count how long you used each app. HAT does that too, but it also asks a harder question: what were you doing when you *weren't* on your phone?
 
-Android's `UsageStatsManager` gives every app access to a log of when apps were opened, paused, resumed, and closed. HAT reads this log to build a complete minute-by-minute timeline for any day. When there's a continuous block of time with no app activity, that becomes a **gap** — an unaccounted period waiting to be labeled.
+Android's `UsageStatsManager` gives any app holding the Usage Access permission access to a log of when apps were opened, paused, resumed, and closed. HAT reads this log to build a complete minute-by-minute timeline for any day. When there's a continuous block of time with no app activity, that becomes a **gap**, an unaccounted period waiting to be labeled. And when an app keeps running while the screen is off, a playlist in your pocket, a lock-screen app, that span is split out as **Screen-Off Activity** instead of silently counting as screen time.
 
 The flow looks like this:
 
 ```text
 Android OS Events → UsageStatsEngine → HeuristicEngine → UI Timeline
                      (Interval Math)           │
+                                               ├─> Screen-Off Isolation (Screen-Off Bracket)
                                                ├─> Ghost Isolation (Keyguard Bracket)
-                                               ├─> Gap Detection (Subtractive Matrix)
-                                               ├─> Session Clustering (Tolerance Merge)
+                                               ├─> Gap Detection (Subtractive Scan)
+                                               ├─> Session Clustering (1-Minute Merge)
                                                └─> Chart Bucketing (Hourly/Daily)
 ```
 
-When you label a gap (say, "Sleeping" from 11 PM to 7 AM), that label gets stored in the local database alongside its timestamp and duration. It shows up in the offline timeline alongside your app usage. The two streams — digital and physical — are rendered together on the dashboard.
+When you label a gap (say, "Sleeping" from 11 PM to 7 AM), that label gets stored in the local database alongside its timestamp and duration. It shows up in the offline timeline alongside your app usage. The two streams, digital and physical, are rendered together on the dashboard.
 
-Nothing runs in the background unless you explicitly enable the archive worker. The app queries the OS fresh every time you open it.
+The archive worker runs by default, every 12 hours, and a catch-up sync runs when you open the app. Its interval is configurable in Settings (12h, 6h, 2h, or custom); there is no Off, because the worker is what copies your history out of Android's short-retention log before the system deletes it. The timeline itself is always queried fresh from the OS when you open the app.
 
 ---
 
@@ -86,38 +87,57 @@ Nothing runs in the background unless you explicitly enable the archive worker. 
 
 ### Core Tracking
 
-**App Usage Timeline** — See exactly which apps you used and for how long, down to the session level. Each app entry can be drilled into to view individual session clusters: when you opened it, when you closed it, and how long each session lasted.
+**App Usage Timeline**. See exactly which apps you used and for how long, down to the session level. Each app entry can be drilled into to view individual session clusters: when you opened it, when you closed it, and how long each session lasted.
 
-**Stacked Bars:** Some bars in the chart can be tapped, while doing so it will instantly split the visual graph and isolate the exact ratio of screen time to offline gaps for that hour.
+**Stacked Bars:** Tap a bar in the chart to see the split of screen time to offline gaps for that hour.
 
 **Bi-Directional Highlighting:** Long-pressing a gap or app card automatically scrolls the chart to that exact block of time and highlights it. Long-pressing a bar in the chart auto-scrolls to the timeline below it and highlights the cards in that timeframe.
 
 **In App Calendar:** Tap the date navigator below the chart to leap across months of data instantly.
 
-**Offline Gap Labeling** — When you weren't on your phone, HAT shows you that gap and lets you label it. You can name it anything, pick an icon, and the entry is permanently stored in your timeline.
+**Offline Gap Labeling**. When you weren't on your phone, HAT shows you that gap and lets you label it. You can name it anything, pick an icon, and the entry is permanently stored in your timeline. Every gap card also explains itself: it names what was recorded on either side of the gap ("Nothing recorded between Chrome and Sleep"), so you know where the time sat before naming it. The same context appears in the labeling dialog. A gap at a day boundary says so honestly instead of inventing a neighbor.
 
-**Day / Week / Month Views** — Switch between granularities without losing your place. The interactive chart at the top of each screen adjusts to show hourly buckets (day view) or daily buckets (week and month views). Tapping a bar on the chart scrolls the list to the matching sessions.
+**Day / Week / Month Views**. Switch between granularities without losing your place. The interactive chart at the top of each screen adjusts to show hourly buckets (day view) or daily buckets (week and month views). Tapping a bar on the chart scrolls the list to the matching sessions.
 
-**Batch Gap Operations** — Long-press multiple gaps to select them, then label the entire batch at once. Useful for recurring activities like "Commute" that appear across dozens of short blocks throughout the week.
+**Batch Gap Operations**. Long-press multiple gaps to select them, then label the entire batch at once. Useful for recurring activities like "Commute" that appear across dozens of short blocks throughout the week.
 
-**Smart Suggestions:** When you tap to label a gap, HAT probabilistically suggests your most likely habits based on the current hour of the day.
+**Smart Suggestions:** When you tap to label a gap, HAT probabilistically suggests your most likely habits based on the hour of the gap you are labeling.
 
 ### Export & Integrations
 
-**Daily Text Summary** — Copies a plain-text summary of a single day's app usage, labelled offline activities, and totals to your clipboard. The section headers are written as `[Offline Activities]`, `[App Usage]`, and `[Totals]` — bracketed labels, not Markdown headings, so they paste cleanly into a note or an LLM prompt without rendering as literal `##` syntax. (An earlier version of this README described it as a "Markdown Summary" and recommended Obsidian/Notion; the output has never been Markdown.)
+**Daily Text Summary**. Copies a plain-text summary of a single day's app usage, labelled offline activities, and totals to your clipboard. The section headers are written as `[Offline Activities]`, `[App Usage]`, and `[Totals]`, bracketed labels, not Markdown headings, so they paste cleanly into a note or an LLM prompt without rendering as literal `##` syntax. (An earlier version of this README described it as a "Markdown Summary" and recommended Obsidian/Notion; the output has never been Markdown.)
 
-**Master Vault (Backup & Restore)** — Your entire local database — app usage history, offline logs, hidden apps, dismissed sessions — can be exported as a single integrity-signed `.zip` file called the Master Vault. There is no encryption: the zip entries are plain files. What the export gives you is tamper detection — an HMAC-SHA256 signature over the contents, so a file that was modified or corrupted after export is rejected on import instead of being silently loaded.
+**Master Vault (Backup & Restore)**. Your entire local database, app usage history, offline logs, hidden apps, dismissed sessions, dismissed screen-off spans, can be exported as a single integrity-signed `.zip` file called the Master Vault. There is no encryption: the zip entries are plain files. What the export gives you is tamper detection, an HMAC-SHA256 signature over the contents, so a file that was modified or corrupted after export is rejected on import instead of being silently loaded.
 
-### Ghost Session Detection
+### Screen-Off Activity
 
-Sometimes your screen stays on for hours in a single app — your phone was playing music, running a background process, or simply left idle with a map open. HAT detects these "ghost sessions" by looking for app activity that happened while the screen was not interactively engaged (no keyguard unlock, no user-facing events).
+Sometimes an app keeps running for hours while the screen is off: a playlist in your pocket, a lock-screen utility, background music mode. No one is using the phone, so counting those hours as screen time would make every total wrong. HAT splits them out into their own category, Screen-Off Activity.
 
-When a ghost session is detected, HAT surfaces it and asks you what happened:
+Each span gets its own card with the app, the exact hours, and two exits:
 
-- **Dismiss** — Mark it as legitimate app usage and remove it from the gap list
-- **Label** — Convert it into an offline activity (e.g., the screen was on in Spotify while you were `Running`)
+- **Name it**. The span becomes an offline label, like any other
+- **Count it as usage**. The span is merged back into that app's totals
 
-Dismissed ghost sessions are stored and can be restored later from the Dismissed Sessions panel.
+Nothing is auto-decided. A span only lands here when the events show the app resumed while the screen was off, and spans shorter than your Idle Minimum never surface at all.
+
+### Idle Sessions
+
+Idle Sessions are the feature HAT was originally built around: you fall asleep while browsing, autoplay keeps the screen awake for hours, and without evidence the whole stretch looks like normal usage. Android's usage log records every touch attributed to the app you are touching (`USER_INTERACTION` events), so HAT reads them and asks one honest question about every still stretch: an app is in front, the screen is on, the phone is unlocked, and no touch has landed for at least your Idle Minimum.
+
+The span starts at your **last touch**, so when the card says "You hadn't touched TikTok since 1:47 AM" and you label it `Sleep`, the label names the exact minute you dropped off, and the part of the session you were really scrolling stays usage.
+
+One honest limit, said plainly: a long movie watched without touching triggers the same card, because the phone cannot tell watching from sleeping. The card asks and never judges; one tap settles it.
+
+### Lock Screen Activity
+
+Sometimes an app stays active behind a locked phone: a lock screen glows, a pocket wakes the screen, a media notification renders behind the glass. HAT surfaces those stretches as Lock Screen Activity: app activity that began after the device was proven untouched, locked or screen off, and saw no unlock while the app was on screen.
+
+Both card kinds ask the same two questions:
+
+- **Yes, I was using it**. The time keeps counting as usage and HAT stops asking
+- **No, name what it was**. The stretch becomes an offline label, like any other
+
+Dismissed spans of both kinds are stored and can be restored later from the Dismissed Sessions panel, alongside dismissed Screen-Off Activity.
 
 ### History Archiving
 
@@ -125,48 +145,50 @@ Android only retains usage event data for a limited window (typically a few week
 
 The archive sync:
 - Runs only when battery is not low
-- Processes up to 5 days per execution to stay lightweight
+- Backfills the whole backlog in one run, processing 5 days per pass
 - Merges with live OS data so the timeline is always continuous
 
 ### Dynamic Theme Engine
 
-HAT supports two theme modes:
+HAT supports three theme modes:
 
-- **Dynamic Material (Material You)** — On Android 12+, the theme derives its colors from your wallpaper using Android's system dynamic color. The entire app — backgrounds, borders, icons, text — adapts to your phone's accent color.
-- **Static Default** — A classic deep orange palette (`#FFB878`) if you prefer a consistent look or are on Android 11 or earlier.
+- **Dynamic Material (Material You)**. On Android 12+, the theme derives its colors from your wallpaper using Android's system dynamic color. The entire app, backgrounds, borders, icons, text, adapts to your phone's accent color.
+- **Custom Material**. You type a hex color and the whole app, including the launcher-styled preview of every element, derives its monochromatic palette from it. The preview updates as you type.
+- **Static Default**. The classic deep orange palette (`#FF8000`) if you prefer the shipped look or are on Android 11 or earlier.
 
-On devices below Android 12, the dynamic mode falls back to a monochromatic palette generated from the wallpaper's dominant color via a custom HSL extraction routine.
+On devices below Android 12, the dynamic mode falls back to a monochromatic palette generated from the wallpaper's dominant color, a downsampled average the extractor computes with AndroidX color utilities.
 
 ### Heuristic Engine Configuration
 
-The Settings screen exposes several tunable parameters that control how the heuristic engine processes your data:
+The Settings screen exposes four settings, in two dials and two utilities. An earlier version exposed three separate engine thresholds (Idle App Detection, Actionable Gap Minimum, Session Merge Tolerance) that all asked the same question in different words; they were merged in 1.1.2, and a week of real use then split them again, honestly: gap cards and question cards multiply at different rates, so they get different dials (2026-10-23).
 
 | Setting | What it does |
 |---|---|
-| **Global Timeline Sort** | Order items by total duration, most recent activity, or chronological first-use |
-| **Idle App Detection** | Flag an app as a "Suspicious Idle Session" if it stays on screen without interaction for N minutes |
-| **Background History Sync** | How often the archive worker runs (Off / 2h / 6h / custom) |
-| **Actionable Gap Minimum** | Minimum gap duration to show in the labeling list (filters out bathroom breaks, quick transitions) |
-| **Session Merge Tolerance** | If you switch apps and come back within N minutes, HAT merges those into one session |
+| **Global Timeline Sort** | Order items by recent activity, total duration, or chronological first-use |
+| **Gap Minimum** | Stretches of recorded silence shorter than this don't appear. A gap is time where nothing ran at all. Presets: 1 min, 5 min, 15 min, or any custom value from 1 to 1440 minutes |
+| **Idle Minimum** | Idle, lock-screen, and screen-off cards shorter than this don't ask. Question cards are born every time you set the phone down with something on screen; gaps are rare, these are not. Presets: 15 min (the default), 30 min, 1 hour, or any custom value from 1 to 1440 minutes |
+| **Background History Sync** | How often the archive worker runs: 12 hours (the default), 6 hours, 2 hours, or custom. There is no Off: the worker is what keeps your history alive before Android deletes it |
+
+Session merging is deliberately not a setting. If you leave an app and come back within a minute, that is one session; the tolerance is fixed at one minute, correct for everyone, and never surfaced.
 
 ### Developer Diagnostics (Easter Egg)
 
 Power users can unlock a hidden Developer Mode directly from the UI:
-**Tap the "HAT Dashboard" header text 5 times.** 
+**Tap the "HAT" header (subtitle "Dashboard") 5 times in quick succession.**
 
-This unlocks the hidden `DiagnosticsScreen`, allowing you to bypass the OS history retention limit flag, export raw calculated JSON event matrices, dump local crash logs, and manually clear all telemetry.
+This unlocks the hidden `DiagnosticsScreen`, allowing you to bypass the OS history retention limit flag, export raw calculated JSON event matrices, dump local crash logs, and manually clear all diagnostic logs.
 
 ### Hidden Apps
 
-Any app can be hidden from the dashboard. Hidden apps are excluded from usage calculations entirely — they won't appear in the timeline, won't count toward total screen time, and won't generate gaps. You can restore them from the Hidden Apps screen under Settings.
+Any app can be hidden from the dashboard. Hidden apps are excluded from usage calculations entirely, they won't appear in the timeline and won't count toward total screen time; their time shows as gap time, marked as containing a hidden app. You can restore them from the Hidden Apps screen under Settings.
 
 This is useful for system apps, launchers, and anything else that shows up in usage stats but isn't meaningful to your day.
 
 ### Crash Recovery
 
-HAT has a custom crash handler. If the app encounters an unhandled exception, it writes a detailed crash log — including device information, a breadcrumb trail of the last 50 logged events, and a full stack trace — then launches a `CrashRecoveryActivity` instead of showing the generic Android crash dialog.
+HAT has a custom crash handler. If the app encounters an unhandled exception, it writes a detailed crash log, including device information, a breadcrumb trail of the last 50 logged events, and a full stack trace, then launches a `CrashRecoveryActivity` instead of showing the generic Android crash dialog.
 
-From the recovery screen you can export crash logs and diagnostic events, initiate a catastrophic "Factory Reset Engine" data nuke, or simply safely restart the app.
+From the recovery screen you can export crash logs and diagnostic events, erase all data with "Factory Reset Engine", or simply safely restart the app.
 
 ---
 
@@ -210,11 +232,11 @@ HAT uses MVVM with Jetpack Compose. A few of the design decisions are non-obviou
 
 **No background service.** HAT never runs a foreground service or long-lived background process. Querying `UsageStatsManager` at app-open time is fast enough (milliseconds for most date ranges), and the archive worker handles the rare case where historical data would otherwise be lost.
 
-**Interval-based computation.** Rather than storing pre-computed totals, HAT stores raw time intervals (start ms → end ms) and computes everything — durations, totals, chart data, gap detection — at query time. This makes retrospective recalculation free. If you change settings (like session clustering tolerance), your entire history is immediately recalculated without any migration.
+**Interval-based computation.** Rather than storing pre-computed totals, HAT stores raw time intervals (start ms → end ms) and computes everything, durations, totals, chart data, gap detection, at query time. This makes retrospective recalculation free. If you change settings (like either minimum dial), your entire history is immediately recalculated without any migration.
 
 **Layered cache.** `ActivityRepository` maintains an in-memory interval cache keyed on the queried time window. Cache hits skip both the SQLite query and the OS query. The cache is invalidated on a 5-minute TTL or when data-mutating operations are performed (vault restore, hiding apps, etc.).
 
-**Coroutine-aware interval math.** All interval set operations — merging, subtracting, slicing into time buckets — yield periodically using `kotlinx.coroutines.yield()`. This prevents UI jank on large date ranges without requiring explicit threading annotations throughout the computation code.
+**Coroutine-aware interval math.** All interval set operations, merging, subtracting, slicing into time buckets, yield periodically using `kotlinx.coroutines.yield()`. This prevents UI jank on large date ranges without requiring explicit threading annotations throughout the computation code.
 
 **Semaphore-gated icon loading.** App icons are loaded concurrently but capped at 4 simultaneous loads via a Semaphore, with results cached in an LruCache. Preventing unbounded parallelism matters on mid-range devices that struggle with icon loading spikes during list renders.
 
@@ -230,23 +252,26 @@ HAT uses MVVM with Jetpack Compose. A few of the design decisions are non-obviou
 Total day window [00:00 → 24:00]
   minus  app usage intervals
   minus  offline activity intervals
-  minus  hidden app intervals
-  minus  filtered ghost intervals
+  minus  screen-off spans
   ──────────────────────────────
 = Unlabeled gaps
 ```
 
-The subtraction is done with `subtractIntervals()` in `UsageStatsEngine`, which handles partial overlaps correctly — a gap that partially overlaps with an app session gets trimmed, not removed entirely.
+Hidden app time is NOT subtracted: it stays inside gaps, and any gap that overlaps a hidden app is marked as containing a hidden app. Idle sessions are not subtracted either; they stay counted as usage and surface separately, per app, as cards asking you to confirm or label them.
 
-### Ghost Session Detection
+The subtraction is done with `subtractIntervals()` in `UsageStatsEngine`, which handles partial overlaps correctly, a gap that partially overlaps with an app session gets trimmed, not removed entirely.
 
-Ghost detection works by correlating screen-interactive events (`SCREEN_INTERACTIVE`, `KEYGUARD_HIDDEN`) with app activity events (`ACTIVITY_RESUMED`, `ACTIVITY_PAUSED`). An interval of app activity that occurred entirely without a preceding `KEYGUARD_HIDDEN` event is mathematically isolated as a ghost candidate — the app was "on" but no human was actually present to unlock the glass.
+### Idle Sessions and Lock Screen Activity
 
-The `ghostTimeTriggerMins` setting controls the minimum duration a ghost interval must reach before HAT surfaces it. Short ghost intervals — like a 45-second screen-on while playing music or receiving a notification in your pocket — are cleanly discarded by the math.
+The engine replays the event stream into four projections: usage, screen-off spans, lock-screen spans, and unattended spans. The unattended replay reads `USER_INTERACTION` events (the phone's own record of touches) and measures stillness per app: a candidate opens at the last touch, or at the resume when the app was never touched, and closes at the first of a pause, a lock, a screen-off, a package switch, or the end of the window. A resume behind a lock or a dark screen never opens a stillness candidate: those minutes belong to the lock-screen and screen-off projections, and no minute is ever claimed twice.
+
+The lock-screen replay works by correlating screen-interactive events (`SCREEN_INTERACTIVE`, `KEYGUARD_HIDDEN`) with app activity events (`ACTIVITY_RESUMED`, `ACTIVITY_PAUSED`). A candidate is app activity that began after the device was proven untouched, locked or screen off, and saw no unlock while the app was on screen: the app was on, but nobody unlocked the phone.
+
+The **Idle Minimum** dial controls the minimum length both question kinds must reach before HAT surfaces them: idle spans, lock-screen spans, and screen-off spans, one dial for all three. The **Gap Minimum** dial separately controls stretches of silence. Short stretches, like a 45-second screen-on while a notification arrives in your pocket, are cleanly discarded by the math.
 
 ### Session Clustering
 
-Raw OS events produce many tiny intervals for apps with frequent pause/resume cycles (especially social media, messaging apps). The `sessionClusteringMins` setting merges adjacent intervals that are separated by less than the threshold. A 1-minute gap between Instagram sessions becomes one continuous session instead of two.
+Raw OS events produce many tiny intervals for apps with frequent pause/resume cycles (especially social media, messaging apps). Adjacent intervals separated by a minute or less are merged into one continuous session. The tolerance is fixed at one minute and deliberately not exposed as a setting: it is a grouping rule, not a visibility filter, and one minute is correct for everyone. A 1-minute gap between Instagram sessions becomes one session instead of two.
 
 This cuts the session list noise significantly and produces more meaningful duration numbers.
 
@@ -254,7 +279,7 @@ This cuts the session list noise significantly and produces more meaningful dura
 
 When you label a gap, HAT suggests activity names based on your history. The suggestion ranking is distance-weighted: activities you labeled at similar times of day in the past 30 days get higher scores. A 3am gap will suggest "Sleep" and "Reading". A 9am gap might suggest "Commute" and "Work".
 
-If your database is completely fresh, the engine falls back to a time-aware array, automatically suggesting highly probable activities based on the current hour of the day until it gathers enough data to map your personal routine.
+If your database is completely fresh, the engine falls back to a time-aware array, automatically suggesting highly probable activities based on the hour of the gap you are labeling until it gathers enough data to map your personal routine.
 
 ---
 
@@ -264,7 +289,7 @@ If your database is completely fresh, the engine falls back to a time-aware arra
 
 HAT uses a single `hat_heuristic.db` database with Write-Ahead Logging enabled.
 
-**`offline_activities`** — Stores user-created offline log entries.
+**`offline_activities`**. Stores user-created offline log entries.
 
 | Column | Type | Description |
 |---|---|---|
@@ -274,7 +299,7 @@ HAT uses a single `hat_heuristic.db` database with Write-Ahead Logging enabled.
 | `timestamp` | INTEGER | Start time in Unix ms |
 | `icon_name` | TEXT | Icon key (e.g., "Sleep", "Walk", "Work") |
 
-**`archived_app_usage`** — Stores historical app usage intervals saved by the archive worker before the OS purges them.
+**`archived_app_usage`**. Stores historical app usage intervals saved by the archive worker before the OS purges them.
 
 | Column | Type | Description |
 |---|---|---|
@@ -285,23 +310,25 @@ HAT uses a single `hat_heuristic.db` database with Write-Ahead Logging enabled.
 
 A unique index on `(package_name, start_millis, end_millis)` prevents duplicate archive entries.
 
-**`ignored_sessions`** — Records dismissed ghost sessions so they don't resurface.
+**`ignored_sessions`**. Records dismissed ghost sessions so they don't resurface.
 
-**`ack_ghosts`** — Records acknowledged ghost sessions (same schema as `ignored_sessions`, different semantic: these were actively confirmed as intentional app usage).
+**`ack_ghosts`**. Records acknowledged ghost sessions (same schema as `ignored_sessions`, different semantic: these were actively confirmed as intentional app usage).
+
+**`screen_off_dismissed`** (schema version 3, 2026-10-16). Screen-Off Activity spans the user sent back to usage. Same shape as `archived_app_usage` (`package_name`, `start_millis`, `end_millis`, with a unique index on the triple). The engine merges these back into the app's totals so the same span never resurfaces as screen-off again.
 
 ### DataStore (Preferences)
 
 Settings and hidden app lists are stored in Jetpack DataStore as JSON-serialized Kotlin data classes:
 
-- `UserSettings` — All tunable engine parameters and theme preferences
+- `UserSettings`. All tunable engine parameters and theme preferences
 - `Set<String>` of hidden package names
 
 ### Vault Format
 
 The exported `.zip` contains three entries:
-- `preferences.json` — Serialized `CombinedPreferences` (settings + hidden apps + ignored sessions + acknowledged ghosts)
-- `database.db` — Raw SQLite file
-- `signature.txt` — Base64-encoded HMAC-SHA256 of the concatenated bytes of the above two files
+- `preferences.json`. Serialized `CombinedPreferences` (settings + hidden apps + ignored sessions + acknowledged ghosts)
+- `database.db`. Raw SQLite file
+- `signature.txt`. Base64-encoded HMAC-SHA256 of the concatenated bytes of the above two files
 
 ---
 
@@ -309,25 +336,47 @@ The exported `.zip` contains three entries:
 
 HAT's privacy posture is structural, not policy-based.
 
-**No internet permission.** `AndroidManifest.xml` does not declare `INTERNET` or `ACCESS_NETWORK_STATE`. The OS enforces this — the app cannot make network requests regardless of what any code tries to do.
+**No internet permission.** `AndroidManifest.xml` does not declare `INTERNET` or `ACCESS_NETWORK_STATE`. The OS enforces this, the app cannot make network requests regardless of what any code tries to do.
 
 **No analytics, no crash reporting service.** Crashes are logged to a local file. Diagnostic events are written to a local file. Nothing is transmitted.
 
 **Usage Access is the only sensitive permission.** `PACKAGE_USAGE_STATS` is required to read app activity from `UsageStatsManager`. HAT does not request contacts, location, camera, microphone, notifications, or any other sensitive Android permission.
 
-The full merged manifest also contains `READ_EXTERNAL_STORAGE` (capped at `maxSdkVersion 28`, for vault import/export on older Android), plus `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, and `FOREGROUND_SERVICE`, which `androidx.work` contributes so that `ArchiveSyncWorker` can be scheduled. You can confirm the shipped set yourself with `aapt dump permissions`:
+The full merged manifest also contains `READ_EXTERNAL_STORAGE` (capped at `maxSdkVersion 28`). Its only consumer is `WallpaperColorExtractor`, which reads the wallpaper's dominant colour for the pre-Android-12 dynamic-theme fallback; on those versions Android requires the permission for wallpaper access, and the extractor degrades gracefully to the static palette when it is not granted. `WAKE_LOCK` is contributed by `androidx.work` so `ArchiveSyncWorker` can be scheduled. `FOREGROUND_SERVICE` and `RECEIVE_BOOT_COMPLETED` are declared by `androidx.work` too, but HAT strips both from the merged manifest (`tools:node="remove"`) because it never runs a foreground worker and its alarm-path boot receiver is disabled at minSdk 26, the shipped binary declares neither. You can confirm the shipped set yourself with `aapt dump permissions`:
 
 ```bash
 aapt dump permissions app/build/outputs/apk/release/app-release.apk
 ```
 
-The privacy-critical result is that `INTERNET` and `ACCESS_NETWORK_STATE` are both absent — the former is never declared, and the latter is explicitly stripped from the `androidx.work` manifest. That is enforced in CI, which fails the build if `INTERNET` ever appears in a release manifest.
+The privacy-critical result is that `INTERNET` and `ACCESS_NETWORK_STATE` are both absent, the former is never declared, and the latter is explicitly stripped from the `androidx.work` manifest, as are the unused `FOREGROUND_SERVICE` and `RECEIVE_BOOT_COMPLETED` entries. That is enforced in CI, which fails the build if `INTERNET` ever appears in a release manifest.
 
 **All data is local.** The SQLite database lives in the app's private internal storage (`context.getDatabasePath()`). The DataStore preferences live in `context.dataStore`. Neither is accessible to other apps without root.
 
 **Vault integrity checking.** Exported vaults are HMAC-signed. A modified or corrupted vault file will fail verification on import with an explicit error, rather than silently importing bad data.
 
 **History limit transparency.** When querying historical data that predates Android's retention window, HAT explicitly tells you that the data is unavailable rather than silently showing zeros or missing time. The `bypassHistoryLimit` flag lets you opt into querying beyond the estimated retention boundary if you're curious.
+
+**Don't take our word for it.** Every privacy claim above is checkable on the shipped binary, no trust required. Download the release APK, then:
+
+```bash
+# 1. The permission list, expect exactly this set and nothing else:
+aapt dump permissions app-release.apk
+#   android.permission.PACKAGE_USAGE_STATS
+#   android.permission.READ_EXTERNAL_STORAGE   (maxSdkVersion 28, wallpaper theming)
+#   android.permission.WAKE_LOCK               (schedule the archive worker)
+# No INTERNET. No ACCESS_NETWORK_STATE. No location, contacts, camera, or notifications.
+
+# 2. Who signed the APK, must match this fingerprint on every release from 1.1.2 onward.
+#    Releases before 1.1.2 were debug-signed and cannot be verified; uninstall
+#    them (after exporting a Master Vault) before installing 1.1.2+.
+keytool -printcert -jarfile app-release.apk
+#   SHA-256: F6:55:2D:DB:2E:CD:02:47:C8:6A:EC:00:A4:0F:1C:97:41:6D:5D:F8:7C:CF:10:FA:00:52:00:97:61:96:42:44
+
+# 3. The file itself, compare against the SHA-256 in the release notes:
+sha256sum app-release.apk
+```
+
+Feel free to go further. Decompile the APK with any Android tool, jadx, apktool, whatever you like, and look around. There is nothing to find, because there is nothing there: no network code, no analytics, no third-party SDK that could phone home. That's the whole point of publishing the source.
 
 ---
 
@@ -337,7 +386,7 @@ The privacy-critical result is that `INTERNET` and `ACCESS_NETWORK_STATE` are bo
 
 HAT was built entirely on-device using **[ACS (Android Code Studio)](https://github.com/AndroidCSOfficial/android-code-studio)**. However, it compiles perfectly using standard desktop environments:
 
-- A recent Android Studio (Narwhal / Meerkat or newer) — AGP 8.13 needs a
+- A recent Android Studio (Narwhal / Meerkat or newer). AGP 8.13 needs a
   current IDE, not Hedgehog (2023.1.1)
 - JDK 17
 - Android SDK Platform 36 (`compileSdk` / `targetSdk` are 36, `minSdk` is 26)
@@ -358,7 +407,7 @@ For a release build, you'll need to configure signing. See the [Android document
 
 ### Granting Usage Access
 
-After installing, the app will prompt you to grant Usage Access permission. This can't be granted via `adb` — you have to navigate to **Settings → Digital Wellbeing & parental controls → Usage Access** (the exact path varies by manufacturer) and enable it for HAT manually.
+After installing, the app will prompt you to grant Usage Access permission. This can't be granted via `adb`, you have to navigate to **Settings → Digital Wellbeing & parental controls → Usage Access** (the exact path varies by manufacturer) and enable it for HAT manually.
 
 If you're setting up an emulator or test device via script, you can simulate granting this permission with:
 
@@ -402,12 +451,21 @@ app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
 │   └── WorkerScheduler.kt           # WorkManager setup and cancellation
 │
 ├── domain/
-│   └── HeuristicEngine.kt           # Core computation: gaps, sessions, charts, ghosts
+│   ├── HeuristicEngine.kt           # Core computation: gaps, sessions, charts, ghosts, screen-off
+│   ├── DetailLevel.kt               # The Minimum Duration mapping: presets, custom, merge tolerance
+│   ├── UsageEventReplay.kt          # Replays raw OS events into usage / screen-off / ghost intervals
+│   ├── IntervalMath.kt              # Interval set operations (merge, subtract, slice)
+│   ├── IntervalOverlapIndex.kt      # Sorted sweep index for overlap queries
+│   ├── LocalDay.kt                  # Timezone-local day boundary math
+│   ├── NavRouteCodec.kt             # Crash-safe navigation route encoding
+│   └── SupportPromptPolicy.kt       # One-time support prompt timing
 │
 ├── data/
 │   ├── ActivityModels.kt            # Data classes and sealed interfaces for the whole app
 │   ├── ActivityRepository.kt        # Coordinates OS, archive, and offline data sources
-│   ├── HatDatabaseHelper.kt         # SQLiteOpenHelper, schema, index management
+│   ├── DatabaseSchema.kt            # Table and index DDL
+│   ├── HatDatabaseHelper.kt         # SQLiteOpenHelper, schema versioning, migrations
+│   ├── OfflineOverlapSql.kt         # By-title overlap queries against archived usage
 │   └── OfflineStorage.kt            # DataStore + SQLite CRUD, vault merge logic
 │
 ├── viewmodel/
@@ -418,19 +476,23 @@ app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
 │   ├── screens/
 │   │   ├── DashboardScreen.kt       # Main timeline + app + offline activity lists
 │   │   ├── ActivityDetailsScreen.kt # Drill-down session view for apps or offline items
-│   │   ├── LabelGapsScreen.kt       # Unaccounted gap labeling interface
-│   │   ├── PermissionScreen.kt      # System capability & access gating
+│   │   ├── LabelGapsScreen.kt       # Gaps, idle sessions, and screen-off resolution
+│   │   ├── PermissionScreen.kt      # Onboarding, "How HAT Works", vault restore
 │   │   ├── OfflineStatsScreen.kt    # Dedicated analytics for offline logs
-│   │   ├── SettingsScreen.kt        # Engine config, vault, hidden apps, about
+│   │   ├── AppUsageStatsScreen.kt   # Dedicated analytics for app usage
+│   │   ├── SettingsScreen.kt       # Engine config, vault, hidden apps, support, about
 │   │   ├── HatSplashScreen.kt       # Animated splash with custom HAT logo drawing
 │   │   ├── HiddenAppsScreen.kt      # Manage hidden package list
-│   │   └── DiagnosticsScreen.kt     # Developer Easter Egg UI
+│   │   ├── DiagnosticsScreen.kt     # Developer Easter Egg UI
+│   │   └── LicensesScreen.kt        # Third-party license texts
 │   ├── components/
 │   │   ├── Charts.kt                # Interactive scrollable bar chart component
-│   │   └── CommonComponents.kt      # Shared UI blocks
+│   │   ├── CommonComponents.kt      # Shared UI blocks (stat cards, dialogs, theme preview)
+│   │   └── SupportPrompt.kt         # The one-time support dialog
 │   └── theme/
 │       ├── Theme.kt                 # MaterialTheme setup, dynamic color generation
 │       ├── Color.kt                 # Static color palette (light + dark)
+│       ├── ColorParsing.kt          # Hex color input parsing and validation
 │       └── Type.kt                  # Typography scale (sans-serif + monospace pairing)
 │
 └── utils/
@@ -438,6 +500,7 @@ app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
     ├── HeuristicQuotes.kt           # Context-aware tip text for the chart tooltip
     ├── VaultSecurity.kt             # HMAC-signed zip export/import
     ├── AppIconLoader.kt             # Semaphore-gated icon loading with LruCache
+    ├── AppLinks.kt                  # External links (support, licenses)
     ├── HatLogger.kt                 # Breadcrumb logger + crash handler + file logging
     ├── WallpaperColorExtractor.kt   # Dominant color extraction for dynamic theming
     ├── TimeUtils.kt                 # Duration formatting (ms → "2h 14m", etc.)
@@ -448,7 +511,7 @@ app/src/main/kotlin/andromedvn/heuristic/activity/tracker/
 
 ## Acknowledgments
 
-Special thanks to **[Atharok's Screen Time](https://gitlab.com/Atharok/ScreenTime)** for pioneering the open-source offline gap-tracking concept. Their initial architecture heavily inspired the Subtractive Reality Matrix used within the HAT engine.
+Special thanks to **[Atharok's Screen Time](https://gitlab.com/Atharok/ScreenTime)** for pioneering the open-source offline gap-tracking concept. Their initial architecture heavily inspired the subtractive gap scan used within the HAT engine.
 
 ---
 
@@ -462,14 +525,14 @@ Open an issue with:
 - Android version and device model
 - Steps to reproduce
 - What you expected to happen vs. what actually happened
-- A crash log if available (Settings → Diagnostics → Export Crash Logs)
+- A crash log if available (Dashboard → tap the header 5 times → Diagnostics → Export Crash Logs)
 
 ### Pull Requests
 
 Before submitting a PR:
 - Check that the new code doesn't add any new internet permissions or third-party SDKs
 - Make sure it compiles against API 36 with minSdk 26
-- If you're adding a new setting, remember it is serialized as JSON by `kotlinx.serialization` into a Preferences DataStore entry. The field must be `@Serializable` and have a sensible default so that existing installs — whose stored JSON lacks the key — still load. There is no separate schema file to update.
+- If you're adding a new setting, remember it is serialized as JSON by `kotlinx.serialization` into a Preferences DataStore entry. The field must be `@Serializable` and have a sensible default so that existing installs, whose stored JSON lacks the key, still load. There is no separate schema file to update.
 
 ---
 
@@ -477,11 +540,11 @@ Before submitting a PR:
 
 **Does this drain my battery?**
 
-No. HAT has no background service. It queries `UsageStatsManager` when you open the app, which takes a few hundred milliseconds at most. The optional archive worker runs on a configurable schedule (default: every 12 hours) and is constrained to only run when the battery is not low.
+No. HAT has no background service. It queries `UsageStatsManager` when you open the app, which takes a few hundred milliseconds at most. The archive worker runs on a configurable schedule (default: every 12 hours, no Off: it is what keeps your history alive before Android deletes it) and is constrained to only run when the battery is not low.
 
 **Why can't I see data from before I installed HAT?**
 
-Android's `UsageStatsManager` only retains event data for a limited period — typically between 2 weeks and a few months, depending on your device and OS version. Data older than that is permanently deleted by the OS. HAT's archive worker saves usage data before this window closes, but it can only save data that was still available when it first ran. If you installed HAT recently, older history is unrecoverable.
+Android's `UsageStatsManager` only retains event data for a limited period, typically between 2 weeks and a few months, depending on your device and OS version. Data older than that is permanently deleted by the OS. HAT's archive worker saves usage data before this window closes, but it can only save data that was still available when it first ran. If you installed HAT recently, older history is unrecoverable.
 
 **Can I use this on a custom ROM or degoogled phone?**
 
@@ -489,11 +552,11 @@ Yes, with a caveat. The `UsageStatsManager` is part of AOSP, so it works on most
 
 **Why SQLite instead of Room?**
 
-SQLite directly via `SQLiteOpenHelper` gives explicit control over transaction batching, which matters for the vault merge operation (merging thousands of archived intervals in a single transaction with periodic yielding). Room adds abstraction that would complicate this. The schema is simple enough that Room's benefits don't outweigh the added indirection.
+SQLite directly via `SQLiteOpenHelper` gives explicit control over transaction batching, which matters for the vault merge operation (merging thousands of archived intervals in a single transaction with periodic yielding). Room adds abstraction that would complicate this. The schema is simple enough that Room's benefits don't outweigh the added indirection. (HAT's own schema is plain SQLite, but the shipped APK does contain Room classes: `androidx.work` uses Room internally to store its own bookkeeping. HAT never touches that database, and Room's `MultiInstanceInvalidationService` is inert in a single-process app.)
 
 **Can I export my data to CSV or JSON?**
 
-Yes. HAT contains a hidden Developer Diagnostics screen. By tapping the "HAT Dashboard" header on the main screen 5 times, you can unlock Developer Mode and export a "Total Unbounded Matrix" — a complete JSON dump of your computed intervals. You can also export diagnostic logs and crash stack traces from here.
+Yes. HAT contains a hidden Developer Diagnostics screen. By tapping the "HAT" header (subtitle "Dashboard") 5 times in quick succession, you can unlock Developer Mode and export a "Total Unbounded Matrix", a complete JSON dump of your computed intervals. You can also export diagnostic logs and crash stack traces from here.
 
 **Is this available on F-Droid or Google Play?**
 
@@ -501,7 +564,7 @@ No, and that is a decision rather than a pending step. HAT is distributed throug
 
 **Who built this?**
 
-[andromedvn](https://github.com/andromedvn) — built entirely on-device using [ACS (Android Code Studio)](https://github.com/AndroidCSOfficial/android-code-studio).
+[andromedvn](https://github.com/andromedvn), built entirely on-device using [ACS (Android Code Studio)](https://github.com/AndroidCSOfficial/android-code-studio). One person, no company, no budget, currently going full-time on this. HAT will always be free with no ads and no locked features. If it's been useful to you, your support is what keeps the updates coming: **[ko-fi.com/andromedvn](https://ko-fi.com/andromedvn)**, and if it hasn't, that's fine too.
 
 ---
 
@@ -529,7 +592,7 @@ See [LICENSE](LICENSE) for the full text.
 
 ### Licensing for organisations
 
-The AGPL is not an obstacle for most people — if you modify HAT for yourself,
+The AGPL is not an obstacle for most people, if you modify HAT for yourself,
 or run it for yourself, you are fine. It becomes a problem when an organisation
 wants to build on HAT without releasing its own source, or wants to run a
 modified version as a network service: the AGPL then obliges them to publish
@@ -540,7 +603,7 @@ use in closed-source products and internal network deployments without a
 disclosure obligation, and includes support from the maintainer.
 
 Commercial licensing is negotiated directly. There is no store, no in-app
-purchase, and no listing — HAT is distributed through GitHub Releases only.
+purchase, and no listing. HAT is distributed through GitHub Releases only.
 Open an issue on this repository describing your use case, or use the contact
 method on my [GitHub profile](https://github.com/andromedvn).
 

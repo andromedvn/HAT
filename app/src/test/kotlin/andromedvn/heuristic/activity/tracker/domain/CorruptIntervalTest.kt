@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Hostile interval inputs — the class of data that reaches the domain from
+ * Hostile interval inputs, the class of data that reaches the domain from
  * OUTSIDE the code that is supposed to guarantee it is well-formed.
  *
  * Nothing on the write path validates ordering. `UsageStatsManager` timestamps
@@ -13,7 +13,7 @@ import org.junit.Test
  * SQLite by `OfflineStorage.getArchivedIntervals` and handed straight to
  * `mergeIntervals`; and `OfflineStorage.mergeDatabase` imports rows from a
  * user-supplied vault file, row by row, with only a *temporal overlap* check
- * (lines 113-119) — never an ordering check. So a zero-length row, a reversed
+ * (lines 113-119), never an ordering check. So a zero-length row, a reversed
  * row, or a row written by a future schema version all flow directly into the
  * interval algebra.
  *
@@ -58,7 +58,7 @@ class CorruptIntervalTest {
         //   `src.second <= rem.first || src.first >= rem.second`
         // For source [0,1000] and a reversed remove [800,600] both comparisons
         // are false, so it takes the trim branch on both edges and emits
-        // [0,800] + [600,1000] — two OVERLAPPING intervals, 1200 ms of
+        // [0,800] + [600,1000], two OVERLAPPING intervals, 1200 ms of
         // "sharded offline" carved out of a 1000 ms source.
         //
         // This is the only way found in the domain for invariant 1 (app +
@@ -70,7 +70,7 @@ class CorruptIntervalTest {
 
         assertEquals(listOf(0L to 800L, 600L to 1_000L), sharded)
         assertTrue(
-            "the output is internally overlapping — it is not a valid interval set",
+            "the output is internally overlapping, it is not a valid interval set",
             sharded != mergeIntervals(sharded)
         )
         assertEquals(
@@ -119,7 +119,7 @@ class CorruptIntervalTest {
     fun `a zero-width REMOVE interval splits a source interval in two`() {
         // The disjointness test uses non-strict comparisons, so a zero-width
         // removal is treated as overlapping and splits the source. The total is
-        // unchanged, but the interval COUNT doubles — which is what drives
+        // unchanged, but the interval COUNT doubles, which is what drives
         // bucket iteration in the chart code.
         val sharded = subtractIntervals(listOf(0L to 1_000L), listOf(500L to 500L))
         assertEquals(listOf(0L to 500L, 500L to 1_000L), sharded)

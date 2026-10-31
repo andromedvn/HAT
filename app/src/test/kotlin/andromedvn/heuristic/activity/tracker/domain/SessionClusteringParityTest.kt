@@ -13,8 +13,8 @@ import org.junit.Test
  * identical, including the unused `gapStart`/`gapEnd` locals, the `<=`
  * comparison, the `cDur > 0L` emit guard and the `currentRaw` bookkeeping. The
  * only difference between the two functions was the SOURCE of the interval set
- * — `getAllIntervalsCached(...)[packageName]` versus
- * `getShardedOfflineIntervalsForTitle(...)` — plus an emptiness guard that
+ *, `getAllIntervalsCached(...)[packageName]` versus
+ * `getShardedOfflineIntervalsForTitle(...)`, plus an emptiness guard that
  * differed only in what it tested (the raw list before merging, in both cases
  * equivalent to testing the merged list, since `mergeIntervals(emptyList())` is
  * `emptyList()`).

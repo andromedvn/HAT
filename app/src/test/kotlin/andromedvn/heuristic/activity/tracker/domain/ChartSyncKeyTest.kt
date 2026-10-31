@@ -32,7 +32,7 @@ class ChartSyncKeyTest {
 
     private val locales = listOf(
         Locale.ENGLISH, Locale.US, Locale.GERMANY, Locale.JAPAN,
-        Locale("tr", "TR"), Locale("ar", "EG"), Locale("hi", "IN")
+        Locale.forLanguageTag("tr-TR"), Locale.forLanguageTag("ar-EG"), Locale.forLanguageTag("hi-IN")
     )
 
     @Before

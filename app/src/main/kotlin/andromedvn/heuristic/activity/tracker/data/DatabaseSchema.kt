@@ -5,7 +5,7 @@ package andromedvn.heuristic.activity.tracker.data
  *
  * HAT deliberately does not use Robolectric (see app/build.gradle.kts), which
  * means the statements themselves cannot be executed by the test suite. What can
- * be pinned is their text — and the text is where the danger lives. The dedupe
+ * be pinned is their text - and the text is where the danger lives. The dedupe
  * statement is the only DELETE in HAT's schema code; its MIN($idCol) guard is
  * what makes it non-destructive, so a test asserts that guard is still there.
  * See DatabaseSchemaTest.
@@ -17,7 +17,7 @@ fun uniqueIndexDdl(indexName: String, tableName: String, cols: List<String>): St
 
 /**
  * Removes duplicate rows while keeping exactly one per distinct combination of
- * [cols] — the row with the smallest [idCol].
+ * [cols] - the row with the smallest [idCol].
  *
  * This is a data-destroying statement. It is only ever run from onUpgrade, as a
  * deliberate repair of rows written before a unique index existed. It must never

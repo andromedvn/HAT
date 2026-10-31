@@ -6,7 +6,7 @@ import android.net.Uri
 
 /**
  * Voluntary sponsorship link. Opened via Intent.ACTION_VIEW so HAT itself makes
- * no network request — this app declares no INTERNET permission, and that claim
+ * no network request - this app declares no INTERNET permission, and that claim
  * must stay literally true. Swapping platforms (Ko-fi / GitHub Sponsors) means
  * changing only this constant.
  */

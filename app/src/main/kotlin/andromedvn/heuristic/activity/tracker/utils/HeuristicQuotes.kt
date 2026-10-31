@@ -44,7 +44,7 @@ object HeuristicQuotes {
         // 4. The Past (Day View)
         return when (chartMode) {
             ChartMode.GAPS -> "No gaps here.\nScreen time and offline logs account for this entire period."
-            ChartMode.APP_USAGE -> "No app usage here.\nOffline time won't show in this view — check the Gaps chart for the full picture."
+            ChartMode.APP_USAGE -> "No app usage here.\nOffline time won't show in this view. Check the Gaps chart for the full picture."
             ChartMode.OFFLINE -> "Nothing logged here yet.\nHead to Gaps to label this time."
             else -> "No screen activity or manual logs were detected here.\nIf you were away from the device, categorize this time by tapping 'View Unlabeled Gaps' below."
         }

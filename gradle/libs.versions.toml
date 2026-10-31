@@ -1,7 +1,7 @@
 [versions]
 # Upgraded 2026-09-25: AGP 8.1.3 could not compile against API 36. HAT targets
 # SDK 36 because that is what current AndroidX / Compose libraries are built
-# and tested against, not because any store requires it — HAT is distributed
+# and tested against, not because any store requires it. HAT is distributed
 # through GitHub Releases only.
 #
 # AGP 8.13.2 is the last 8.x line and supports max API 36.1 on Gradle 8.13 /

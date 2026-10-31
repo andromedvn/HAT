@@ -68,21 +68,30 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
     suspend fun getAppUsage(start: Long, end: Long, range: TimeRangeLabel, ghostMins: Int, hiddenPkgs: Set<String>, ackGhosts: List<AcknowledgedGhost>): Triple<Long, Long, List<AppUsageItem>> = withContext(Dispatchers.Default) {
         val ghostMillis = ghostThresholdMillis(ghostMins)
         val intervalsMap = repository.getFilteredIntervals(start, end, hiddenPkgs)
-        val rawGhosts = engine.getGhostCandidateIntervals(start, end)
+        // One drain, two idle projections: locked-screen spans and
+        // untouched-app spans. Both are filtered by the same Minimum
+        // Duration and the same acknowledgement table downstream.
+        val (rawGhosts, rawUnattended) = engine.getIdleProjections(start, end)
         var totalAppExecution = 0L
+
+        // Spans the user dismissed back into usage ("this really was usage")
+        // merge into the per-app totals here, with millisecond precision.
+        val dismissed = repository.storage.getDismissedScreenOffSpans(start, end)
 
         val apps = mutableListOf<AppUsageItem>()
         for ((pkg, intervals) in intervalsMap) {
             yield()
-            val merged = engine.mergeIntervals(intervals)
+            val withDismissed = intervals + dismissed.filter { it.first == pkg }.map { it.second to it.third }
+            val merged = engine.mergeIntervals(withDismissed)
             val total = merged.sumOf { it.second - it.first }
 
             val pkgGhosts = selectGhostGapsForPackage(rawGhosts, pkg, ghostMillis, ackGhosts)
+            val pkgUnattended = selectGhostGapsForPackage(rawUnattended, pkg, ghostMillis, ackGhosts)
 
             totalAppExecution += total
 
             val latest = merged.maxOfOrNull { it.second } ?: start
-            apps.add(AppUsageItem(pkg, repository.getAppName(pkg), total, latest, getSyncTagsForIntervals(merged, range), ghostIntervals = pkgGhosts))
+            apps.add(AppUsageItem(pkg, repository.getAppName(pkg), total, latest, getSyncTagsForIntervals(merged, range), ghostIntervals = pkgGhosts, unattendedIntervals = pkgUnattended))
         }
         
         val validApps = apps.filter { it.durationInMillis > 0L || it.ghostIntervals.isNotEmpty() }.sortedByDescending { it.durationInMillis }
@@ -91,18 +100,79 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         Triple(maxOf(trueDeviceScreenTime, 0L), maxOf(totalAppExecution, 0L), validApps)
     }
 
+    /**
+     * The Screen-Off Activity for the window: per-app totals of time the app
+     * was resumed while the screen was off, with resolved spans removed and
+     * the rest left for the user to name. Spans shorter than minSpanMillis
+     * are dropped individually, so a sync app's micro-blips never flood the
+     * section even when their sum crosses the floor. Apps are ordered by
+     * their first qualifying span, so the list reads in day order.
+     *
+     * Resolution semantics, kept strictly one-way:
+     *  - DISMISSED spans (stored in screen_off_dismissed) count as usage
+     *    again; they are subtracted here and added back by getAppUsage.
+     *  - LABELED spans are covered by an offline activity; any overlap with
+     *    offline rows is subtracted here and NOT added back anywhere. The
+     *    label owns that time now.
+     */
+    suspend fun getScreenOffActivity(start: Long, end: Long, minSpanMillis: Long): List<ScreenOffItem> = withContext(Dispatchers.Default) {
+        val dismissed = repository.storage.getDismissedScreenOffSpans(start, end)
+        val now = System.currentTimeMillis()
+        val raw = engine.getScreenOffIntervals(start, end)
+        val offlineCovered = mergeIntervals(
+            repository.getRawOfflineActivitiesBetween(start, end)
+                .mapNotNull { sanitizeTrackedRow(it.timestamp, it.durationInMillis, now) }
+        )
+        val out = mutableListOf<ScreenOffItem>()
+        for ((pkg, spans) in raw) {
+            yield()
+            var kept = spans
+            for ((dPkg, dStart, dEnd) in dismissed) {
+                if (dPkg == pkg) {
+                    // PREFIX rule (2026-10-23, the growing-span fix): a span
+                    // still growing when the user answered it ("count it as
+                    // usage" on pocket music) keeps extending its end, and
+                    // subtracting only the dismissed interval let the grown
+                    // tail resurface. A span starting at the same millisecond
+                    // as a dismissal IS that span; the answer covers it
+                    // however long it grows.
+                    kept = kept.filterNot { it.first == dStart }
+                    kept = engine.subtractIntervals(kept, listOf(dStart to dEnd))
+                }
+            }
+            kept = engine.subtractIntervals(kept, offlineCovered)
+            // Per-SPAN filtering, matching what the changelog promises and
+            // what the user expects: a noisy sync app whose micro-blips sum
+            // past the floor must not flood the section with "0m" cards.
+            // The old per-app-total filter kept every blip of any app whose
+            // TOTAL crossed the floor (regression audit, 2026-10-21).
+            val merged = engine.mergeIntervals(kept).filter { (s, e) -> e - s >= minSpanMillis }
+            if (merged.isEmpty()) continue
+            val total = merged.sumOf { it.second - it.first }
+            val earliest = merged.first().first
+            out.add(ScreenOffItem(pkg, repository.getAppName(pkg), total, earliest, merged))
+        }
+        // Chronological by each app's first qualifying span, so the section
+        // reads in day order (regression audit, 2026-10-21).
+        out.sortedBy { it.timestamp }
+    }
+
     suspend fun getAppDetail(packageName: String, start: Long, end: Long, ghostMins: Int, ackGhosts: List<AcknowledgedGhost>): AppUsageItem? = withContext(Dispatchers.Default) {
         val ghostMillis = ghostThresholdMillis(ghostMins)
         val intervalsMap = repository.getAllIntervalsCached(start, end)
         val intervals = intervalsMap[packageName] ?: emptyList()
-        val merged = engine.mergeIntervals(intervals)
+        // Dismissed screen-off spans are usage again; add them to this app's
+        // intervals before totalling, mirroring getAppUsage.
+        val dismissed = repository.storage.getDismissedScreenOffSpans(start, end).filter { it.first == packageName }.map { it.second to it.third }
+        val merged = engine.mergeIntervals(intervals + dismissed)
         val total = merged.sumOf { it.second - it.first }
-        val rawGhosts = engine.getGhostCandidateIntervals(start, end)
+        val (rawGhosts, rawUnattended) = engine.getIdleProjections(start, end)
 
         val pkgGhosts = selectGhostGapsForPackage(rawGhosts, packageName, ghostMillis, ackGhosts)
+        val pkgUnattended = selectGhostGapsForPackage(rawUnattended, packageName, ghostMillis, ackGhosts)
 
-        if (total <= 0L && pkgGhosts.isEmpty()) return@withContext null
-        AppUsageItem(packageName, repository.getAppName(packageName), total, merged.maxOfOrNull { it.second } ?: start, emptySet(), ghostIntervals = pkgGhosts)
+        if (total <= 0L && pkgGhosts.isEmpty() && pkgUnattended.isEmpty()) return@withContext null
+        AppUsageItem(packageName, repository.getAppName(packageName), total, merged.maxOfOrNull { it.second } ?: start, emptySet(), ghostIntervals = pkgGhosts, unattendedIntervals = pkgUnattended)
     }
 
     suspend fun getOfflineActivities(start: Long, end: Long, range: TimeRangeLabel): List<OfflineActivityItem> = withContext(Dispatchers.Default) {
@@ -113,18 +183,38 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         val allAppIntervals = repository.getAllIntervalsCached(start, end).values.flatten()
         val mergedApp = engine.mergeIntervals(allAppIntervals)
 
-        val grouped = entities.groupBy { it.title to it.iconName }
-        grouped.map { (key, list) ->
-            val (title, icon) = key
+        // Group by TITLE ALONE, never by title+icon.
+        //
+        // BUG (fixed 2026-09-30): grouping by `title to iconName` emitted one item
+        // per (title, icon) pair. One label saved twice with two different icons
+        // therefore produced two items that both carried the same `id` (the
+        // title), so both rendered into the same LazyColumn slot and Compose threw
+        // `IllegalArgumentException: Key "offline_sleep" was already used` the moment
+        // the user tapped Total Offline Time. This stayed hidden for as long as the
+        // offline read returned nothing at all (see OfflineOverlapSql).
+        //
+        // One title is one activity, so it must be one row. The icon is display
+        // decoration: pick the most common one so the result is stable rather than
+        // depending on row order.
+        val grouped = entities.groupBy { it.title }
+        grouped.map { (title, list) ->
+            val icon = list.groupingBy { it.iconName }.eachCount().maxByOrNull { it.value }?.key
+                ?: list.first().iconName
             val rawIntervals = list.mapNotNull { sanitizeOfflineRow(it.timestamp, it.durationInMillis, start, end, now) }
             val mergedOffline = engine.mergeIntervals(rawIntervals)
             val shardedOffline = engine.subtractIntervals(mergedOffline, mergedApp)
             val totalDuration = shardedOffline.sumOf { it.second - it.first }
-            val minTimestamp = shardedOffline.minOfOrNull { it.first } ?: start
-            val tags = getSyncTagsForIntervals(shardedOffline, range)
-            
-            OfflineActivityItem(title, title, totalDuration, minTimestamp, icon, tags) 
-        }.filter { it.durationInMillis > 0L }
+                        val minTimestamp = shardedOffline.minOfOrNull { it.first } ?: start
+                        val tags = getSyncTagsForIntervals(shardedOffline, range)
+
+                        // Honest reporting (user decision 2026-10-01): if this one entry is backed by
+                        // several stored rows, SAY SO on the entry rather than silently collapsing
+                        // them or quietly deleting them. The count rides along with the item and the
+                        // screen renders it inline.
+                        val storedRowCount = list.size
+
+                        OfflineActivityItem(title, title, totalDuration, minTimestamp, icon, tags, storedRowCount)
+                    }.filter { it.durationInMillis > 0L }
     }
 
     suspend fun getOfflineDetail(title: String, start: Long, end: Long): OfflineActivityItem? = withContext(Dispatchers.Default) {
@@ -178,32 +268,79 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         val offlineItems = repository.getRawOfflineActivitiesBetween(start, end)
         // Sanitised, NOT clamped to the window: the walk below already tolerates
         // a row that begins before `start` (it cannot emit a leading gap, and
-        // `current` still advances — GapScanTest). The end is capped at `now`
+        // `current` still advances - GapScanTest). The end is capped at `now`
         // anyway, which is belt-and-braces here rather than a behaviour change:
         // the trailing `a < now` filter already removed every gap the runaway
         // end could have swallowed. What the guard does newly reject is a row
         // that starts in the future, which no legitimate label can do.
         val offlineIntervals = offlineItems.mapNotNull { sanitizeTrackedRow(it.timestamp, it.durationInMillis, now) }
-        
-        val combinedIntervals = appIntervals + offlineIntervals
+
+        // Screen-Off Activity spans, minus anything the user already sent back
+        // to usage. Kept separately so each gap can name what sat beside it.
+        val dismissedSpans = repository.storage.getDismissedScreenOffSpans(start, end)
+        var screenOffSpans = engine.getScreenOffIntervals(start, end).values.flatten()
+        for ((_, dStart, dEnd) in dismissedSpans) screenOffSpans = engine.subtractIntervals(screenOffSpans, listOf(dStart to dEnd))
+
+        // Labeled intervals, one display name per tracked span, for the gap
+        // explainers. App intervals name the app; offline rows name the label
+        // the user chose. Screen-off spans stay in the accounted set above so
+        // they suppress gaps, but they are NOT gap neighbors by name: they
+        // sit in their own section right above, with their own explainers.
+        val labeled = mutableListOf<Triple<String, Long, Long>>()
+        for ((pkg, ivs) in repository.getFilteredIntervals(start, end, hiddenPkgs)) {
+            for ((s, e) in ivs) labeled.add(Triple(repository.getAppName(pkg), s, e))
+        }
+        // Pair each label with ITS OWN sanitized interval, never with
+        // offlineIntervals[i]: sanitization can drop rows (non-positive
+        // duration, future start), and the index-paired version then
+        // shifted every following title onto the wrong interval, making a
+        // neighbor explainer name the wrong label (regression audit,
+        // 2026-10-21). The accounted set above still uses the interval
+        // list; this loop re-runs the same pure check per item so title
+        // and interval can never drift apart.
+        for (item in offlineItems) {
+            val interval = sanitizeTrackedRow(item.timestamp, item.durationInMillis, now)
+            if (interval != null) labeled.add(Triple(item.title, interval.first, interval.second))
+        }
+
+        val combinedIntervals = appIntervals + offlineIntervals + screenOffSpans
         val allTracked = engine.mergeIntervals(combinedIntervals)
-        
+
+        // Nearest neighbor lookup for the explainers. A gap's "before" is the
+        // latest named span ending at or before the gap's start; its "after"
+        // is the earliest named span starting at or after the gap's end. When
+        // several spans coalesced into one merged interval, the nearest real
+        // named thing on each side is what the user experienced there.
+        val byEnd = labeled.sortedByDescending { it.third }
+        val byStart = labeled.sortedBy { it.second }
+
+        fun nearestBefore(t: Long): String? {
+            // Latest interval whose end is <= t (+1s: the walk's coalescing
+            // tolerance, so a span ending exactly at the boundary counts).
+            val hit = byEnd.firstOrNull { it.third <= t + 1000L }
+            return hit?.first
+        }
+        fun nearestAfter(t: Long): String? {
+            val hit = byStart.firstOrNull { it.second >= t - 1000L }
+            return hit?.first
+        }
+
         val gaps = mutableListOf<UsageGap>()
         var current = start
-        
-        for (interval in allTracked) { 
+
+        for (interval in allTracked) {
             if (interval.first > current) {
                 val hasHidden = mergedHidden.any { it.first < interval.first && it.second > current }
-                gaps.add(UsageGap(current, interval.first, hasHidden))
+                gaps.add(UsageGap(current, interval.first, hasHidden, nearestBefore(current), nearestAfter(interval.first)))
             }
-            current = maxOf(current, interval.second) 
+            current = maxOf(current, interval.second)
         }
         if (end > current) {
             val hasHidden = mergedHidden.any { it.first < end && it.second > current }
-            gaps.add(UsageGap(current, end, hasHidden))
+            gaps.add(UsageGap(current, end, hasHidden, nearestBefore(current), null))
         }
 
-        gaps.filter { it.startMillis < now }.map { UsageGap(it.startMillis, minOf(it.endMillis, now), it.hasHiddenAppFootprint) }
+        gaps.filter { it.startMillis < now }.map { UsageGap(it.startMillis, minOf(it.endMillis, now), it.hasHiddenAppFootprint, it.precededBy, it.followedBy) }
     }
 
     suspend fun expandVoid(start: Long, end: Long, hiddenPkgs: Set<String>): Pair<Long, Long> = withContext(Dispatchers.Default) {
@@ -289,7 +426,12 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         val clampedOfflineBuckets = engine.sliceIntervals(currentOffList, bucketType)
 
         val cal = Calendar.getInstance().apply { timeInMillis = start }
-        val count = when(range) { TimeRangeLabel.DAY -> 24; TimeRangeLabel.WEEK -> 7; TimeRangeLabel.MONTH -> cal.getActualMaximum(Calendar.DAY_OF_MONTH) }
+        // A day view is bucketed by the LOCAL day, which is 23 wall-clock
+        // hours on a spring-forward day and 25 on a fall-back one. The old
+        // hardcoded 24 walked past midnight on the former and never reached
+        // 23:00 on the latter - see hourBucketsOfDay and DstClockChangeTest.
+        // Week and month buckets are whole days and have no such boundary.
+        val count = when(range) { TimeRangeLabel.DAY -> hourBucketsOfDay(start).size; TimeRangeLabel.WEEK -> 7; TimeRangeLabel.MONTH -> cal.getActualMaximum(Calendar.DAY_OF_MONTH) }
         val currentMillis = System.currentTimeMillis()
         val points = mutableListOf<ChartPoint>()
         
@@ -311,7 +453,13 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
             if (range == TimeRangeLabel.DAY) {
                 val hour = cal.get(Calendar.HOUR_OF_DAY)
                 label = getHourLabel(hour)
-                fullLabel = "${getHourLabel(hour)} - ${getHourLabel((hour+1)%24)}"
+                // The bucket's true end hour, read from the advanced cursor:
+                // (hour + 1) % 24 is WRONG on a spring-forward day, where the
+                // 01:00 bucket ends at 03:00 because 02:00 never happens, and
+                // on the first of the two 01:00 buckets of a fall-back day,
+                // which ends at the second 01:00.
+                val endHour = tempCal.get(Calendar.HOUR_OF_DAY)
+                fullLabel = "${getHourLabel(hour)} - ${getHourLabel(endHour)}"
                 syncTag = hour.toString()
             } else if (range == TimeRangeLabel.WEEK) {
                 val dayStr = SimpleDateFormat("EEE", Locale.ENGLISH).format(cal.time)
@@ -391,7 +539,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
  * intervals vs sharded offline for one title), which the callers still supply.
  *
  * Exact integer arithmetic throughout, no rounding. The threshold is compared
- * with `<=`, so a gap of exactly the threshold is bridged — see
+ * with `<=`, so a gap of exactly the threshold is bridged - see
  * ClusteringThresholdBoundaryTest. `activeDuration` is the sum of the real
  * sub-intervals and EXCLUDES the bridged gaps, so it is strictly less than
  * `endTime - startTime` whenever a cluster has an internal gap; a cluster with
@@ -426,24 +574,19 @@ fun clusterSessions(merged: List<Interval>, clusterThreshold: Long): List<Sessio
 fun minutesToMillisExact(minutes: Int): Long = minutes.toLong() * 60_000L
 
 /**
- * The ghost minimum-duration setting, in exact milliseconds.
+ * The ghost minimum-duration threshold, in exact milliseconds.
  *
- * 0 means the feature is OFF, not "no minimum". `SettingsScreen`'s
- * "Idle App Detection" selector offers `listOf("Off" to 0, "30m" to 30, "1h"
- * to 60, "Custom" to -1)`, so 0 is what the user picks to switch idle
- * detection off — and the custom-value dialog accepts 0 too, which the
- * selector then displays as "Off". The same convention governs all four
- * heuristic settings (archive sync, gap minimum, merge tolerance).
+ * The value comes from the Minimum Duration setting (DetailLevel, presets
+ * 1/5/15 minutes plus Custom 1 to 1440), the same number that governs gaps
+ * and screen-off spans. The UI can no longer produce 0 or a negative value,
+ * but the guard stays for defense in depth: a non-positive minute count
+ * would otherwise mean "no minimum" and surface every sub-second blip,
+ * so it is clamped to [Long.MAX_VALUE], the one threshold no finite
+ * duration can satisfy, and the ghost list comes back empty.
  *
- * "Off" is therefore encoded as [Long.MAX_VALUE], the one threshold no finite
- * duration can satisfy, so `duration >= threshold` is false for every ghost
- * span and the list is empty. This is deliberate, not a bug: returning 0L
- * instead would switch the feature ON for every user who turned it off, and
- * would surface every sub-second idle blip as a "Suspicious Idle Session".
- *
- * The sentinel is safe only because no real span can reach it. If the feature
- * ever needs a genuine "no minimum" option, it needs a DISTINCT stored value
- * (e.g. -1) plus a new selector entry — not a reinterpretation of 0.
+ * The sentinel is safe only because no real span can reach it. A genuine
+ * "no minimum" option would need a DISTINCT stored value (e.g. -1) plus a
+ * new selector entry - not a reinterpretation of 0.
  *
  * A large positive setting is honoured exactly: [Int.MAX_VALUE] minutes is
  * 128_849_018_820_000 ms, comfortably inside Long and unreachable by any span,
@@ -456,8 +599,15 @@ fun ghostThresholdMillis(ghostMins: Int): Long =
  * The ghost spans offered for [packageName] under a [thresholdMillis] minimum,
  * minus any the user has already acknowledged.
  *
- * Acknowledgement is an exact three-field match (package, start, end) on
- * purpose — see ClusteringThresholdBoundaryTest.
+ * Acknowledgement matches (package, start) as a PREFIX (2026-10-23, the
+ * growing-span fix): a span that is still growing when the user answers it
+ * ("music in the pocket") keeps extending its end every minute, and an exact
+ * (package, start, end) match let the grown tail resurface as a new question
+ * after every check. Two spans of the same app cannot share a start
+ * millisecond, so same start means same span: the answer covers it however
+ * long it grows. A touch after the answer re-anchors the next span at a new
+ * start, which asks again honestly. Restoring an acknowledgment removes the
+ * row, so the span (grown or not) comes back either way.
  */
 fun selectGhostGapsForPackage(
     rawGhosts: List<Triple<String, Long, Long>>,
@@ -467,7 +617,7 @@ fun selectGhostGapsForPackage(
 ): List<UsageGap> = rawGhosts
     .filter { it.first == packageName }
     .filter { (it.third - it.second) >= thresholdMillis }
-    .filterNot { g -> acknowledged.any { it.packageName == packageName && it.startMillis == g.second && it.endMillis == g.third } }
+    .filterNot { g -> acknowledged.any { it.packageName == packageName && it.startMillis == g.second } }
     .map { UsageGap(it.second, it.third, false) }
 
 /**
@@ -495,14 +645,14 @@ fun circularDialDistance(a: Int, b: Int, dialSize: Int): Int {
  * Used by the suggestion weighting in
  * `ActivityRepository.getSmartSuggestions`, which compared raw
  * `abs(hour - targetHour)` and so scored a 23:00 habit as maximally distant
- * from an 01:00 one — exactly the late-night habit the user does most often.
+ * from an 01:00 one - exactly the late-night habit the user does most often.
  */
 fun circularHourDistance(hourOfDay: Int, otherHourOfDay: Int): Int =
     circularDialDistance(hourOfDay, otherHourOfDay, 24)
 
 /**
  * Proximity weight for a suggestion [hoursApart] from the hour being labelled.
- * A score, not a duration — the distance it consumes is an exact Int count of
+ * A score, not a duration - the distance it consumes is an exact Int count of
  * hours.
  */
 fun hourProximityWeight(hoursApart: Int): Double =
@@ -512,7 +662,7 @@ fun hourProximityWeight(hoursApart: Int): Double =
  * `a + b` saturating at [Long.MAX_VALUE] instead of wrapping negative.
  *
  * A single vault row can carry a duration near Long.MAX_VALUE, and
- * `timestamp + duration` would then wrap to a negative end — which reads as
+ * `timestamp + duration` would then wrap to a negative end - which reads as
  * "ends before it starts" and silently discards the row (or, worse, trims
  * another interval against it).
  */
@@ -563,7 +713,7 @@ fun sanitizeOfflineRow(
 /**
  * A stored offline row for the walk-based paths (the gap scan, the label
  * cascade, the void expansion), which are already tolerant of rows that begin
- * before their window — see GapScanTest: a leading interval can never emit a
+ * before their window - see GapScanTest: a leading interval can never emit a
  * gap, and `current` still advances. So this guard deliberately does NOT clamp
  * the start to a window. It only removes rows that cannot be real:
  *
@@ -572,7 +722,7 @@ fun sanitizeOfflineRow(
  *  - the add is saturating, so a duration near Long.MAX_VALUE cannot wrap the
  *    end to a negative value.
  *
- * [maxEnd] caps the end. Pass [Long.MAX_VALUE] to leave the end uncapped —
+ * [maxEnd] caps the end. Pass [Long.MAX_VALUE] to leave the end uncapped -
  * required by `expandVoid`, whose "what activity precedes this gap" lookup
  * selects on `interval.second <= start + 1000` and would otherwise start
  * matching a corrupt row that has been truncated to [now], mistaking it for a

@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
+import andromedvn.heuristic.activity.tracker.domain.DetailLevel
 import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
 import andromedvn.heuristic.activity.tracker.domain.shouldShowSupportPrompt
 import andromedvn.heuristic.activity.tracker.ui.components.*
@@ -95,8 +97,14 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    context.contentResolver.openOutputStream(uri)?.use { repository.exportSecureVault(it) }
-                    withContext(Dispatchers.Main) { Toast.makeText(context, "Master Vault Exported", Toast.LENGTH_SHORT).show() }
+                    val ok = context.contentResolver.openOutputStream(uri)?.use { repository.exportSecureVault(it) } ?: false
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            context,
+                            if (ok) "Master Vault Exported" else "Export Failed - database was busy, try again",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Export Failed", Toast.LENGTH_SHORT).show() } }
             }
         }
@@ -106,10 +114,10 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val success = context.contentResolver.openInputStream(uri)?.use { repository.restoreSecureVault(it, context.cacheDir) } ?: false
-                    withContext(Dispatchers.Main) { 
-                        if(success) {
-                            Toast.makeText(context, "Vault Restored. Restarting safely...", Toast.LENGTH_LONG).show()
+                    val report = context.contentResolver.openInputStream(uri)?.use { repository.restoreSecureVault(it, context.cacheDir) }
+                    withContext(Dispatchers.Main) {
+                        if (report != null && report.success) {
+                            Toast.makeText(context, "Vault Restored. ${report.offlineMerged} label(s) merged, ${report.offlineSkipped} skipped as overlapping existing ones. Restarting safely...", Toast.LENGTH_LONG).show()
                             delay(1000)
                             val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
                             val componentName = intent?.component
@@ -118,11 +126,12 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                             Runtime.getRuntime().exit(0)
                         } else {
                             // mergeDatabase only ever INSERTs (CONFLICT_IGNORE),
-                            // so nothing existing was deleted — but some tables may
+                            // so nothing existing was deleted - but some tables may
                             // have merged before the failure. Do not claim the file
                             // was tampered with: an incomplete merge is a different
                             // failure and the user needs to know which they hit.
-                            Toast.makeText(context, "Restore incomplete — some data could not be restored. Nothing was deleted, but the vault was not fully applied.", Toast.LENGTH_LONG).show()
+                            val counts = report?.let { " (${it.offlineMerged} label(s) merged, ${it.offlineSkipped} skipped)" } ?: ""
+                            Toast.makeText(context, "Restore incomplete: some data could not be restored. Nothing was deleted, but the vault was not fully applied.$counts", Toast.LENGTH_LONG).show()
                         }
                     }
                 } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }
@@ -152,7 +161,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         val hiddenPkgs = storage.getHiddenPackagesFlow().first()
                         val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
                         
-                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, currentSettings!!.ghostTimeTriggerMins, hiddenPkgs, ackGhosts)
+                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, DetailLevel.ghostTriggerMinutes(currentSettings!!), hiddenPkgs, ackGhosts)
                         val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)
                         
                         // Must be sharded against app foreground time, exactly as the
@@ -208,17 +217,22 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         // interval that is not merely a no-op, it is a badly broken value; for
         // the others it disabled the feature without the user ever being told.
         val parsedValue = input.toIntOrNull()
+        // The detail and idle minimums are capped at one day (1440 min): no
+        // HAT range is longer than a day, so a bigger minimum would guarantee
+        // an empty app (no gaps worth showing, or no question cards at all).
+        // The limit is stated in the error message, never silently clamped.
+        val maxAllowed = if (customDialogSetting == "archive") 9999 else DetailLevel.CUSTOM_MAX_MINUTES
         val valueError = when {
             input.isBlank() -> "Enter a value"
             parsedValue == null -> "Digits only"
             parsedValue <= 0 -> "Must be at least 1"
-            parsedValue > 9999 -> "Must be 9999 or less"
+            parsedValue > maxAllowed -> "Must be $maxAllowed or less"
             else -> null
         }
         HatOutlinedDialog(onDismissRequest = { customDialogSetting = null }, title = "Custom Value") {
             OutlinedTextField(
                 value = input, onValueChange = { if (it.all { char -> char.isDigit() }) input = it },
-                label = { Text(if (customDialogSetting == "gap" || customDialogSetting == "cluster" || customDialogSetting == "ghost") "Minutes" else "Hours") },
+                label = { Text(if (customDialogSetting == "archive") "Hours" else "Minutes") },
                 isError = valueError != null,
                 supportingText = { if (valueError != null) Text(valueError, color = MaterialTheme.colorScheme.error) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
@@ -230,10 +244,9 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 TextButton(enabled = valueError == null, onClick = {
                     val value = parsedValue ?: return@TextButton
                     when (customDialogSetting) {
-                        "gap" -> updateSettings(currentSettings!!.copy(minGapThresholdMins = value))
-                        "cluster" -> updateSettings(currentSettings!!.copy(sessionClusteringMins = value))
                         "archive" -> updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = value))
-                        "ghost" -> updateSettings(currentSettings!!.copy(ghostTimeTriggerMins = value))
+                        "detail" -> updateSettings(currentSettings!!.copy(detailLevel = DetailLevel.CUSTOM, customDetailMinutes = value))
+                        "idle" -> updateSettings(currentSettings!!.copy(idleMinimumMinutes = value))
                     }
                     customDialogSetting = null
                 }) { Text("Save", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
@@ -284,6 +297,10 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     Text("DATA CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     SettingsItem("Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
+                    SettingsItem("How HAT Works", "Review the three kinds of time and what HAT needs from Android.") { navController.navigate("permissions?review=true") }
+                    SettingsItem("Keep My History Safe", "Exempt HAT from battery optimization so aggressive battery managers cannot stop the archiver that saves your history before Android deletes it.") {
+                        try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                    }
                     SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
                     SettingsItem("Restore Master Vault", "Import a previously saved master vault.") { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
                 }
@@ -292,18 +309,22 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 // GROUP 3: HEURISTIC ENGINE
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("HEURISTIC ENGINE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Duration" to SortType.DURATION, "Recent" to SortType.RECENT, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
-                    HatSlidingSelector<Int>("Idle App Detection", "Flag an app as a 'Suspicious Idle Session' if it stays on screen without interaction.", listOf("Off" to 0, "30m" to 30, "1h" to 60, "Custom" to -1), currentSettings!!.ghostTimeTriggerMins, "m", { updateSettings(currentSettings!!.copy(ghostTimeTriggerMins = it)) }, { customDialogSetting = "ghost" })
-                    HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to archive your usage history before Android deletes it.", listOf("Off" to 0, "2h" to 2, "6h" to 6, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
-                    HatSlidingSelector<Int>("Actionable Gap Minimum", "Hides tiny gaps from your labeling list so you aren't asked to categorize quick bathroom breaks.\nThe time itself is never deleted from your timeline.", listOf("Off" to 0, "5m" to 5, "15m" to 15, "Custom" to -1), currentSettings!!.minGapThresholdMins, "m", { updateSettings(currentSettings!!.copy(minGapThresholdMins = it)) }, { customDialogSetting = "gap" })
-                    HatSlidingSelector<Int>("Session Merge Tolerance", "If you switch apps and come back within this window,\nHAT treats it as one continuous session.", listOf("Off" to 0, "1m" to 1, "5m" to 5, "Custom" to -1), currentSettings!!.sessionClusteringMins, "m", { updateSettings(currentSettings!!.copy(sessionClusteringMins = it)) }, { customDialogSetting = "cluster" })
+                    // Selector convention (the owner's, 2026-10-23): the default
+                    // is always the leftmost option, on every dial. Recent is
+                    // the stored sort default, 12h is the sync default, 1 min
+                    // is the fresh gap default, 15 min is the fresh idle
+                    // default.
+                    HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Recent" to SortType.RECENT, "Duration" to SortType.DURATION, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
+                    HatSlidingSelector<Int>("Gap Minimum", "Stretches of recorded silence shorter than this don't appear. A gap is time where nothing ran at all.", listOf("1 min" to DetailLevel.ONE_MIN, "5 min" to DetailLevel.FIVE_MIN, "15 min" to DetailLevel.FIFTEEN_MIN, "Custom" to -1), if (currentSettings!!.detailLevel == DetailLevel.CUSTOM) currentSettings!!.customDetailMinutes else currentSettings!!.detailLevel, " min", { updateSettings(currentSettings!!.copy(detailLevel = it)) }, { customDialogSetting = "detail" })
+                    HatSlidingSelector<Int>("Idle Minimum", "Idle, lock-screen, and screen-off cards shorter than this don't ask. Question cards are born every time you set the phone down with something on screen; gaps are rare, these are not.", listOf("15 min" to 15, "30 min" to 30, "1h" to 60, "Custom" to -1), currentSettings!!.idleMinimumMinutes, " min", { updateSettings(currentSettings!!.copy(idleMinimumMinutes = it)) }, { customDialogSetting = "idle" })
+                    HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to archive your usage history before Android deletes it. There is no Off: the worker is what keeps your past alive.", listOf("12h" to 12, "6h" to 6, "2h" to 2, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
                 // GROUP 4: SUPPORT (donations handled entirely on an external page)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("SUPPORT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    SettingsItem("Support Development", "HAT is free with no ads, trackers, or subscriptions. If it saved you time, a coffee helps keep it maintained.") { context.openExternalWebLink(SPONSOR_URL) }
+                    SettingsItem("Support Development", "HAT is free, no ads, no subscriptions. Supporting it means one developer can keep building full-time.") { context.openExternalWebLink(SPONSOR_URL) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 

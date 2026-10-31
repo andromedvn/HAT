@@ -2,8 +2,11 @@ package andromedvn.heuristic.activity.tracker.data
 
 import android.content.Context
 import android.util.LruCache
+import andromedvn.heuristic.activity.tracker.domain.ArchiveCursor
+import andromedvn.heuristic.activity.tracker.domain.EventCode
 import andromedvn.heuristic.activity.tracker.domain.circularHourDistance
 import andromedvn.heuristic.activity.tracker.domain.hourProximityWeight
+import andromedvn.heuristic.activity.tracker.domain.nextLocalMidnight
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.utils.VaultSecurity
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
@@ -58,14 +61,39 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
             val minSystemData = getOldestSystemData()
             val startOfMinSystemData = Calendar.getInstance().apply { timeInMillis = minSystemData; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
             val lastArchived = storage.getLatestArchivedDayMillis()
-            var currentDay = if (lastArchived != null) lastArchived + 86400000L else startOfMinSystemData
+            // The cursor (2026-10-28): the last local midnight ATTEMPTED, empty
+            // days included. The old walk restarted from the watermark
+            // (MAX(start_millis)), and because an empty day inserts no rows,
+            // five or more consecutive empty days re-queried the same days
+            // forever - everything after the hole stayed unarchived until
+            // Android's retention window deleted it. The cursor advances on
+            // empty days too, so the walk can never wedge. Installs predating
+            // the field (cursor 0) fall back to the watermark-based start.
+            val savedCursor = storage.settings.first().archiveCursorMillis
+            val cursorStart = if (savedCursor > 0) savedCursor
+                else (lastArchived?.let { nextLocalMidnight(it) } ?: startOfMinSystemData)
+            // Calendar day, not `+ 86_400_000L`: a fixed 24-hour seed lands at
+            // 01:00 local the day after a spring-forward and at 23:00 the
+            // evening after a fall-back, and every window after the boundary
+            // inherits the wrong anchor. `lastArchived` is already normalised
+            // to a local midnight by getLatestArchivedDayMillis, so the next
+            // calendar midnight is exactly the next day to archive.
+            var currentDay = maxOf(cursorStart, startOfMinSystemData)
             val db = storage.dbHelper.writableDatabase
-            
-            var daysProcessed = 0
-            while (currentDay < startOfToday && daysProcessed < 5) {
+
+            val days = ArchiveCursor.passDays(currentDay, startOfToday)
+            for (day in days) {
                 yield()
-                if (currentDay >= startOfMinSystemData) {
-                    val raw = engine.getUsageIntervals(currentDay, currentDay + 86400000L, emptySet())
+                currentDay = day
+                if (day >= startOfMinSystemData) {
+                    // End the window at the NEXT local midnight, not
+                    // `currentDay + 86_400_000L`: on a 25-hour fall-back day
+                    // the fixed end cut off the local 23:00-24:00 hour, and
+                    // that hour was never archived by any later pass either -
+                    // the next window started at the next midnight. A day is
+                    // however long the calendar says it is.
+                    val dayEnd = nextLocalMidnight(day)
+                    val raw = engine.getUsageIntervals(day, dayEnd, emptySet())
                     val computedSpans = mutableListOf<Triple<String, Long, Long>>()
                     for ((pkg, intervals) in raw) {
                         for ((s, e) in engine.mergeIntervals(intervals)) computedSpans.add(Triple(pkg, s, e))
@@ -76,8 +104,14 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
                         db.setTransactionSuccessful()
                     } finally { db.endTransaction() }
                 }
-                daysProcessed++
-                val driftCal = Calendar.getInstance().apply { timeInMillis = currentDay }; driftCal.add(Calendar.DAY_OF_YEAR, 1); currentDay = driftCal.timeInMillis
+            }
+            // Persist the cursor as the NEXT day to attempt, even when the
+            // attempted days produced no rows: a day with zero usage must
+            // still advance the walk, or a hole of empty days wedges it at
+            // the watermark forever.
+            if (days.isNotEmpty()) {
+                storage.saveSettings(storage.settings.first().copy(archiveCursorMillis = nextLocalMidnight(days.last())))
+                HatLogger.log("ActivityRepository: Archive pass attempted ${days.size} day(s) through ${days.last()}")
             }
         } finally { isArchiverRunning.set(false) }
     }
@@ -157,23 +191,31 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     
     suspend fun clearAllData() { storage.clearAllData() }
     
-    suspend fun exportSecureVault(outputStream: OutputStream) = withContext(Dispatchers.IO) {
-        storage.checkpointDatabase()
+    suspend fun exportSecureVault(outputStream: OutputStream): Boolean = withContext(Dispatchers.IO) {
+        // The checkpoint must fully flush the WAL before the file is copied, because
+        // only hat_heuristic.db is archived - never -wal/-shm. A partial checkpoint
+        // would emit a vault that looks fine but is missing recent writes (or cannot
+        // be opened at all). Better to fail loudly than to hand back a bad backup.
+        if (!storage.checkpointDatabase()) {
+            HatLogger.logError("Vault", "Export aborted: WAL checkpoint was busy, vault would have been incomplete.")
+            return@withContext false
+        }
         VaultSecurity.exportMasterVault(outputStream, storage.getDatabaseFile(), storage.getCombinedPreferencesJson())
+        true
     }
 
-    suspend fun restoreSecureVault(inputStream: InputStream, tempDir: File): Boolean = withContext(Dispatchers.IO) {
+    suspend fun restoreSecureVault(inputStream: InputStream, tempDir: File): OfflineStorage.RestoreReport = withContext(Dispatchers.IO) {
         try {
             val result = VaultSecurity.importMasterVault(inputStream, tempDir)
             if (result != null) {
                 val (dbFile, prefs) = result
                 storage.restoreCombinedPreferences(prefs)
-                val mergeSuccess = storage.mergeDatabase(dbFile)
+                val report = storage.mergeDatabase(dbFile)
                 dbFile.delete(); forceInvalidateCache()
-                return@withContext mergeSuccess
+                return@withContext report
             }
-            return@withContext false
-        } catch (e: Exception) { return@withContext false }
+            return@withContext OfflineStorage.RestoreReport(success = false, offlineMerged = 0, offlineSkipped = 0)
+        } catch (e: Exception) { return@withContext OfflineStorage.RestoreReport(success = false, offlineMerged = 0, offlineSkipped = 0) }
     }
     
     suspend fun exportCalculatedMatrix(outputStream: OutputStream) = withContext(Dispatchers.IO) {
@@ -204,7 +246,7 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
             // Dropping the reference is what lets the chunk be collected; the
             // explicit System.gc() that used to sit here was a stop-the-world
             // pause once per 30-day chunk and does not change whether an OOM
-            // would occur — ART's collector decides that either way.
+            // would occur - ART's collector decides that either way.
             cachedIntervals = emptyMap(); chunkStart = chunkEnd
         }
         writer.endArray(); writer.close(); forceInvalidateCache()
@@ -213,6 +255,35 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     suspend fun exportCrashLogs(outputStream: OutputStream) = withContext(Dispatchers.IO) {
         val logs = HatLogger.getCrashLogs(context); val writer = outputStream.bufferedWriter()
         if (logs.isEmpty()) writer.write("No crash logs found.\n") else logs.forEach { file -> writer.write("=== File: ${file.name} ===\n"); writer.write(file.readText()); writer.write("\n\n") }
+        writer.flush()
+    }
+
+    /**
+     * Exports the raw usage event stream for the last [days] days, one line
+     * per event: millisecond timestamp, local-time rendering, type code and
+     * name, package, class. Events appear in the exact order queryEvents
+     * yields them, which is the order HAT's replays resolve ties with, and
+     * which no logcat or dumpsys view can show at millisecond precision.
+     * Born from the Bitget anchor investigation (2026-10-23): the idle span
+     * on the card read 8:23 PM while the session itself began 7:54 PM, and
+     * the only way to settle which event order the phone really delivers is
+     * to see the stream the app actually receives.
+     */
+    suspend fun exportRawEventStream(outputStream: OutputStream, days: Int = 3) = withContext(Dispatchers.IO) {
+        val end = System.currentTimeMillis()
+        val start = end - days * 86_400_000L
+        // The replays query with a 24h buffer before the window; the export
+        // uses the same buffer so head-of-window events match what a day
+        // view would see.
+        val events = engine.collectRawEventsForExport(start - 86_400_000L, end)
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.getDefault())
+        val writer = outputStream.bufferedWriter()
+        writer.write("# HAT raw event stream, ${sdf.format(java.util.Date(start))} to ${sdf.format(java.util.Date(end))}")
+        writer.write("\n# Arrival order preserved, millisecond timestamps, not re-sorted.\n")
+        for (e in events) {
+            yield()
+            writer.write("ts=${e.timestamp} [${sdf.format(java.util.Date(e.timestamp))}] type=${e.type} (${EventCode.nameOf(e.type)}) pkg=${e.packageName} class=${e.className ?: ""}\n")
+        }
         writer.flush()
     }
     
@@ -224,7 +295,7 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
 
     suspend fun clearCrashLogs() = withContext(Dispatchers.IO) { HatLogger.clearLogs(context) }
     // Deleting a label makes its window unknown-offline again, so the idle
-    // suppression for that window has to go with it — see
+    // suppression for that window has to go with it - see
     // OfflineStorage.removeIgnoredSessionsInWindow. Windows are de-duplicated
     // because two activities can share one, and the delete is window-wide.
     suspend fun deleteOfflineActivitiesByTitle(title: String, start: Long, end: Long) = withContext(Dispatchers.IO) {
@@ -233,6 +304,9 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
         acts.map { it.timestamp to (it.timestamp + it.durationInMillis) }.distinct().forEach { (from, to) -> storage.removeIgnoredSessionsInWindow(from, to) }
     }
     suspend fun updateOfflineActivitiesByTitle(oldTitle: String, newTitle: String, newIconName: String, start: Long, end: Long) = withContext(Dispatchers.IO) { storage.updateOfflineActivitiesByTitle(oldTitle, newTitle, newIconName, start, end) }
+    // A fresh label for a gap is an INSERT. Editing an existing one renames it via
+    // updateOfflineActivitiesByTitle. Nothing here guesses which existing row to
+    // overwrite - see the removed insertOrReplaceLabel for why that destroyed labels.
     suspend fun saveOfflineActivity(title: String, duration: Long, timestamp: Long, iconName: String) = withContext(Dispatchers.IO) { if (duration > 0L) storage.addActivityAtomic(OfflineActivityEntity(title = title, durationInMillis = duration, timestamp = timestamp, iconName = iconName)) }
     suspend fun hideApp(packageName: String) { storage.saveHiddenPackages(storage.getHiddenPackagesFlow().first() + packageName) }
     suspend fun unhideApp(packageName: String) { storage.saveHiddenPackages(storage.getHiddenPackagesFlow().first() - packageName) }

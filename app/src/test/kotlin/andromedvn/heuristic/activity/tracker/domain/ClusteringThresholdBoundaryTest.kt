@@ -8,12 +8,12 @@ import org.junit.Test
  * Clustering threshold boundaries and the ghost/offline double-count cases.
  *
  * `SessionClusteringTest` covers the span-vs-active split but only ever uses a
- * 1_000 ms threshold and gaps of 500 ms and 4_000 ms — comfortably either side.
+ * 1_000 ms threshold and gaps of 500 ms and 4_000 ms, comfortably either side.
  * The comparison in `HeuristicEngine.getAppSessions` is `gapDur <=
  * clusterThreshold` (inclusive) and the threshold is a user setting, so the
  * exact boundary value is reachable in normal use and untested.
  *
- * The second half of this class covers invariant 3 — the no-double-count rule
+ * The second half of this class covers invariant 3, the no-double-count rule
  * for the ghost-conversion path. `DashboardViewModel.convertGhostTime` writes
  * an `IgnoredSession` AND an `OfflineActivityEntity` for the same millisecond
  * range, which is the single most double-count-prone thing the app does.
@@ -120,7 +120,7 @@ class ClusteringThresholdBoundaryTest {
         // The ghost-conversion case. convertGhostTime writes an offline row for
         // the ghost AND an IgnoredSession that removes the app interval. The
         // offline row therefore covers time the app also owned. Sharding must
-        // remove it — otherwise the user is credited with time twice.
+        // remove it, otherwise the user is credited with time twice.
         val app = mergeIntervals(listOf(0L to 10_000L))
         val convertedOffline = listOf(0L to 10_000L)
 
@@ -176,31 +176,34 @@ class ClusteringThresholdBoundaryTest {
     }
 
     @Test
-    fun `acknowledging a ghost requires an exact three-field match so near misses are not silently dropped`() {
-        // HeuristicEngine:82 and :107 filter with
-        //   ackGhosts.any { it.packageName == pkg && it.startMillis == g.second && it.endMillis == g.third }
-        // All three fields must match. A one-millisecond drift on either edge
-        // leaves the ghost un-acknowledged, which is why the replay clamp in
-        // `replayGhostIntervals` has to be stable for a given window.
+    fun `acknowledging a ghost matches package and start, and covers an end that kept growing`() {
+        // The growing-span fix (2026-10-23): HeuristicEngine's filter is now
+        //   ackGhosts.any { it.packageName == pkg && it.startMillis == g.second }
+        // A span still growing when answered keeps moving its end, so end
+        // drift is EXPECTED and must stay suppressed. A start drift is a
+        // different span (a touch re-anchored it) and honestly re-asks. The
+        // old exact three-field match re-asked the tail of every growing
+        // span after every check ("music in the pocket").
         val pkg = "com.a"
         val ghost = Triple(pkg, 1_000L, 5_000L)
-        val acks = listOf(Triple(pkg, 1_000L, 5_000L))
+        val acks = listOf(Triple(pkg, 1_000L, 4_999L))
 
         fun isAcknowledged(g: Triple<String, Long, Long>) =
-            acks.any { it.first == g.first && it.second == g.second && it.third == g.third }
+            acks.any { it.first == g.first && it.second == g.second }
 
-        assertTrue("the exact ack matches", isAcknowledged(ghost))
-        assertTrue("a 1 ms start drift does not match", !isAcknowledged(ghost.copy(second = 1_001L)))
-        assertTrue("a 1 ms end drift does not match", !isAcknowledged(ghost.copy(third = 4_999L)))
+        assertTrue("the ack matches its span", isAcknowledged(ghost))
+        assertTrue("an end that kept growing past the answer still matches", isAcknowledged(ghost.copy(third = 999_999L)))
+        assertTrue("a 1 ms start drift is a different span and does not match", !isAcknowledged(ghost.copy(second = 1_001L)))
         assertTrue("a different package does not match", !isAcknowledged(ghost.copy(first = "com.b")))
     }
 
     @Test
     fun `a ghost clamped to two different day windows produces two different ack keys`() {
-        // PINNED RISK. `replayGhostIntervals` clamps to [start, end], so the
-        // same physical ghost yields a different (start, end) triple depending
-        // on which day it is viewed from. An ack recorded on day 1 therefore
-        // never matches on day 2, and the ghost reappears.
+        // PINNED RISK, unchanged by the 2026-10-23 prefix fix: the prefix
+        // covers a growing END, never a clamped START. `replayGhostIntervals`
+        // clamps to [start, end], so the same physical ghost clamped into a
+        // different day window has a different START, the ack recorded on
+        // day 1 does not cover it, and the ghost reappears on day 2.
         val physicalStart = 1_000L
         val physicalEnd = 900_000L
         val day1 = 0L to 500_000L
@@ -211,6 +214,6 @@ class ClusteringThresholdBoundaryTest {
 
         assertEquals(Triple("com.a", 1_000L, 500_000L), onDay1)
         assertEquals(Triple("com.a", 500_000L, 900_000L), onDay2)
-        assertTrue("the two ack keys differ, so the ack is window-scoped", onDay1 != onDay2)
+        assertTrue("the two starts differ, so the ack is window-scoped", onDay1.second != onDay2.second)
     }
 }

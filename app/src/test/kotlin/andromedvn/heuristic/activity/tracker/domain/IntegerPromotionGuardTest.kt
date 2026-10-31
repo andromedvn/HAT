@@ -10,13 +10,21 @@ import java.io.File
  *
  * Kotlin evaluates `minutes * 60 * 1000L` as `(minutes * 60)` in Int, THEN
  * widens to Long. Once the setting passes ~35,829 minutes the Int product
- * overflows and wraps, producing a threshold that is wildly wrong — for
+ * overflows and wraps, producing a threshold that is wildly wrong, for
  * `minGapThresholdMins` that silently reclassifies every gap as major or minor.
  *
- * The correct form is `minutes * 60L * 1000L`.
+ * The correct form is `minutes * 60L * 1000L`, or `minutes.toLong() * 60_000L`.
  *
  * This test reads the actual source tree, so a reintroduced `* 60 * 1000L`
  * anywhere in the app fails the build instead of shipping.
+ *
+ * The guard is spelling-based, not type-based: it flags any multiply by a
+ * millisecond-scale constant whose literal lacks the `L` suffix (60_000,
+ * 3_600_000, 86_400_000, and their bare-digit forms), plus the mixed
+ * `* 60 * 1000L` chain. A Long receiver multiplied by a bare Int literal is
+ * technically safe (`Long * Int` widens), but a literal that must be
+ * long-suffixed to be correct is the spelling this codebase standardizes on;
+ * if the scanner ever flags a line, add the `L` or `.toLong()` the receiver.
  */
 class IntegerPromotionGuardTest {
 
@@ -26,13 +34,22 @@ class IntegerPromotionGuardTest {
         return main.walkTopDown().filter { it.extension == "kt" }.toList()
     }
 
+    private val hazards = listOf(
+        Regex("""\*\s*60\s*\*\s*1000L"""),
+        Regex("""\*\s*60_000(?![\dL])"""),
+        Regex("""\*\s*60000(?![\dL])"""),
+        Regex("""\*\s*3_600_000(?![\dL])"""),
+        Regex("""\*\s*3600000(?![\dL])"""),
+        Regex("""\*\s*86_400_000(?![\dL])"""),
+        Regex("""\*\s*86400000(?![\dL])""")
+    )
+
     @Test
     fun `no source file multiplies minutes as Int before widening to Long`() {
         val offenders = mutableListOf<String>()
-        val hazard = Regex("""\*\s*60\s*\*\s*1000L""")
         for (file in sourceFiles()) {
             file.readLines().forEachIndexed { i, line ->
-                if (hazard.containsMatchIn(line)) {
+                if (hazards.any { it.containsMatchIn(line) }) {
                     offenders.add("${file.name}:${i + 1}  ${line.trim()}")
                 }
             }

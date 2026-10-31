@@ -122,6 +122,8 @@ object HatLogger {
         if (crashDir.exists()) crashDir.listFiles()?.forEach { it.delete() }
         val diagDir = File(context.filesDir, "diagnostics")
         if (diagDir.exists()) diagDir.listFiles()?.forEach { it.delete() }
-        log("All telemetry logs cleared")
+        // These are local diagnostic logs, never telemetry: nothing here has
+        // ever left the device (docs audit, 2026-10-21).
+        log("All diagnostic logs cleared")
     }
 }

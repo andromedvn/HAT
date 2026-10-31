@@ -34,8 +34,8 @@ import org.junit.Test
  * fixes: a negative duration and a row starting after the window were both
  * dropped by the clamp (the first as a side effect, not deliberately). What was
  * NOT handled is that the end was bounded only by the day window, never by
- * `now` — so on the current day a corrupt row claimed offline time up to
- * 23:59:59.999 while app time stopped at the present — and that the
+ * `now`, so on the current day a corrupt row claimed offline time up to
+ * 23:59:59.999 while app time stopped at the present, and that the
  * `timestamp + duration` add could wrap.
  */
 class MalformedVaultRowTest {
@@ -47,7 +47,7 @@ class MalformedVaultRowTest {
 
     /**
      * TODAY, viewed at noon. Here the window end (23:59:59.999) is still in the
-     * future, so `now` — not the window — is the binding ceiling. This is the
+     * future, so `now`, not the window, is the binding ceiling. This is the
      * only situation in which a corrupt row can inflate a figure the user sees:
      * for a finished day the window end is already the tighter bound, so the old
      * clamp and the new one agree.
@@ -110,7 +110,7 @@ class MalformedVaultRowTest {
     @Test
     fun `on a finished day the window end is already the tighter bound`() {
         // The honest counterpart: here the old clamp and the new one agree, and
-        // the new one still caps at `now` — it is simply not the binding limit.
+        // the new one still caps at `now`, it is simply not the binding limit.
         val start = dayStart + 3_600_000L
         val row = sanitizeOfflineRow(start, day * 365L, dayStart, dayEnd, now)
         assertEquals("clamped to the end of the day being viewed", start to dayEnd, row)
@@ -120,7 +120,7 @@ class MalformedVaultRowTest {
     fun `the old clamp let a corrupt row claim the rest of the day`() {
         // Today at noon, a row imported with a one-year duration. The old clamp
         // bounded it by the day window only, so the dashboard showed offline
-        // time running to 23:59:59.999 — twelve hours that had not happened.
+        // time running to 23:59:59.999, twelve hours that had not happened.
         val startOfToday = 1_700_000_000_000L
         val endOfToday = startOfToday + 86_399_999L
         val noon = startOfToday + 43_200_000L
@@ -195,7 +195,7 @@ class MalformedVaultRowTest {
     @Test
     fun `capping the end does not change the gap list, because the walk already filtered it`() {
         // Characterisation, not a claim of a fix. A corrupt end used to send
-        // `current` past the end of the day so no trailing gap was emitted —
+        // `current` past the end of the day so no trailing gap was emitted, 
         // but every such gap starts at or after `now`, and the final
         // `it.startMillis < now` filter dropped it regardless. The cap makes
         // the walk sound; it does not change what the user sees here.
@@ -220,7 +220,7 @@ class MalformedVaultRowTest {
     fun `a row starting in the future cannot change the gap list either`() {
         // The second honest null. A row that starts after `now` emits a gap
         // from `current` to its start, but that gap is then trimmed to `now` by
-        // `minOf(it.endMillis, now)` — so the visible result is already the same
+        // `minOf(it.endMillis, now)`, so the visible result is already the same
         // as with no row at all. The guard is kept because it makes the
         // invariant explicit rather than relying on two filters in different
         // places cancelling out.
@@ -252,7 +252,7 @@ class MalformedVaultRowTest {
     fun `a corrupt row cannot run the label cascade into the future`() {
         // `expandActivityCascade` grew `maxE` from `timestamp + duration` with
         // no bound, and the caller offers the result to the user as a block to
-        // label — which then writes an offline row spanning every day it
+        // label, which then writes an offline row spanning every day it
         // touches. 3_000_000_000_000 ms is a 34-day window, not a real one.
         val rows = listOf(1_000L to 2_000L, 9_000L to 3_000_000_000_000L)
 
@@ -340,7 +340,7 @@ class MalformedVaultRowTest {
         return gaps.mapNotNull { (a, b) -> if (a < now) a to minOf(b, now) else null }
     }
 
-    /** `expandActivityCascade` with the sanitiser — the shipped shape. */
+    /** `expandActivityCascade` with the sanitiser, the shipped shape. */
     private fun cascadeBounds(rows: List<Interval>, start: Long, end: Long, now: Long): Pair<Long, Long> =
         grow(rows.mapNotNull { sanitizeTrackedRow(it.first, it.second - it.first, now) }, start, end)
 

@@ -19,7 +19,7 @@ import java.util.TimeZone
  *
  * Nothing in the suite pinned those two numbers down. The existing
  * `OfflineShardingTest.sharding never lets app and offline exceed the day`
- * hardcodes `window = 86_400_000L`, which is NOT the window production uses —
+ * hardcodes `window = 86_400_000L`, which is NOT the window production uses, 
  * the real one is 1 ms shorter. That 1 ms matters twice over: it is the exact
  * clamp value, and it is the reason the 24-hour gap-labelling loop silently
  * loses a millisecond at every midnight it crosses.

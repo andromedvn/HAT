@@ -35,6 +35,7 @@ import andromedvn.heuristic.activity.tracker.ui.components.verticalFadingEdges
 import andromedvn.heuristic.activity.tracker.ui.components.HeuristicTipCard
 import andromedvn.heuristic.activity.tracker.ui.components.EmptyStateCard
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
+import andromedvn.heuristic.activity.tracker.data.SortType
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
 import java.util.Calendar
 import java.text.SimpleDateFormat
@@ -64,8 +65,13 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
         chartScrollState.scrollToItem(0)
     }
     
-    val appList = remember(uiState.activityList) {
-        uiState.activityList.filterIsInstance<AppUsageItem>().sortedByDescending { it.durationInMillis }
+    val sortType = viewModel.currentSortTypeValue
+    val appList = remember(uiState.activityList, sortType) {
+        when (sortType) {
+            SortType.DURATION -> uiState.activityList.filterIsInstance<AppUsageItem>().sortedByDescending { it.durationInMillis }
+            SortType.CHRONOLOGICAL -> uiState.activityList.filterIsInstance<AppUsageItem>().sortedBy { it.timestamp }
+            else -> uiState.activityList.filterIsInstance<AppUsageItem>().sortedByDescending { it.timestamp }
+        }
     }
     
     LaunchedEffect(appList) {

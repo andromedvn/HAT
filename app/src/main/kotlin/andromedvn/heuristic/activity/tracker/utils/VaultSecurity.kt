@@ -11,6 +11,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import java.security.MessageDigest
 
 object VaultSecurity {
     // Note: This is an integrity key, not cryptographic security against the device owner.
@@ -67,7 +68,14 @@ object VaultSecurity {
                     // SECURITY PATCH: Zip-Slip Prevention (Canonical Path Validation)
                     val targetFile = File(tempDir, entry.name)
                     val canonicalTarget = targetFile.canonicalPath
-                    if (!canonicalTarget.startsWith(canonicalTempDir)) {
+                    // The separator matters: without it, a sibling directory
+                    // whose name merely STARTS WITH the temp dir's name (e.g.
+                    // tempDir "vault_tmp" vs a crafted "../vault_tmp2/x.db")
+                    // passes the prefix check and escapes. An entry exactly AT
+                    // the temp dir itself is not a file write and stays legal.
+                    if (canonicalTarget != canonicalTempDir &&
+                        !canonicalTarget.startsWith(canonicalTempDir + File.separator)
+                    ) {
                         HatLogger.logError("VaultSecurity", "Zip Slip blocked: Extracted file path traverses outside temp directory -> ${entry.name}")
                         zis.closeEntry()
                         entry = zis.nextEntry
@@ -101,7 +109,14 @@ object VaultSecurity {
 
             if (prefsStr != null && dbTempFile.exists() && signatureStr != null) {
                 val calculatedSig = Base64.encodeToString(mac.doFinal(), Base64.NO_WRAP)
-                if (calculatedSig == signatureStr) {
+                // Constant-time comparison: String == short-circuits on the
+                // first differing byte, which leaks how many leading bytes of
+                // a forged signature match. MessageDigest.isEqual does not.
+                if (MessageDigest.isEqual(
+                        calculatedSig.toByteArray(Charsets.UTF_8),
+                        signatureStr.toByteArray(Charsets.UTF_8)
+                    )
+                ) {
                     HatLogger.log("VaultSecurity: Signature verified.")
                     return Pair(dbTempFile, prefsStr)
                 } else {

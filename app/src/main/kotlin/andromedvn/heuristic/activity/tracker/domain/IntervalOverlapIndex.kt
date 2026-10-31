@@ -10,7 +10,7 @@ package andromedvn.heuristic.activity.tracker.domain
  *     WHERE timestamp < ? AND timestamp + duration > ?
  *
  * With ~23,000 rows already in the destination that is a full scan per
- * imported row — hundreds of millions of comparisons for one restore. This
+ * imported row - hundreds of millions of comparisons for one restore. This
  * index answers the identical predicate in O(log n) from memory, so the
  * destination table is read once instead of once per row.
  *
@@ -34,13 +34,13 @@ package andromedvn.heuristic.activity.tracker.domain
  * [500,600); query [700,800). Both starts precede 800, but only the first
  * extends past 700. Checking the neighbour alone reports no overlap and
  * silently admits a row that the SQL would have rejected. Hence
- * `prefixMaxEnd`, the running maximum of ends — an O(1) lookup once the O(log
+ * `prefixMaxEnd`, the running maximum of ends - an O(1) lookup once the O(log
  * n) binary search has found the candidate prefix.
  *
  * ## Incremental use during a merge
  *
  * The merge adds rows as it goes, and each newly inserted row must be visible
- * to the *next* row's check — the SQL saw the table grow. Callers must
+ * to the *next* row's check - the SQL saw the table grow. Callers must
  * therefore [add] every interval they actually insert:
  *
  *     val index = IntervalOverlapIndex.build(existing)
@@ -68,7 +68,7 @@ class IntervalOverlapIndex private constructor(
 
     /**
      * True iff any known interval satisfies `existingStart < end &&
-     * existingEnd > start` — the exact predicate the per-row SELECT used.
+     * existingEnd > start` - the exact predicate the per-row SELECT used.
      */
     fun overlapsAny(start: Long, end: Long): Boolean {
         if (sorted.overlapsAny(start, end)) return true

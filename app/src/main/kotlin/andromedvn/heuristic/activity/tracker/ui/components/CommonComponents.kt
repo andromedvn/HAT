@@ -1,5 +1,8 @@
 package andromedvn.heuristic.activity.tracker.ui.components
 
+import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
+import andromedvn.heuristic.activity.tracker.utils.SPONSOR_URL
+import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -76,6 +79,7 @@ import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import kotlinx.coroutines.delay
 import java.util.Calendar
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 fun Modifier.verticalFadingEdges(canScrollUp: Boolean, canScrollDown: Boolean, topEdgeHeight: Dp = 16.dp, bottomEdgeHeight: Dp = 32.dp): Modifier = this.graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
@@ -105,9 +109,11 @@ val AVAILABLE_ICONS = ICON_REGISTRY.map { PresetIcon(it.key, it.value) }
 data class HighlightEvent(val point: ChartPoint? = null, val stackIndex: Int = -1, val timestamp: Long = System.currentTimeMillis(), val isLongPress: Boolean = false, val isFromChart: Boolean = true, val sourceKey: String = "", val activeTags: Set<String> = emptySet())
 
 sealed class LedgerContext {
-    data class StandardGap(val startMillis: Long, val endMillis: Long) : LedgerContext()
-    data class IdleSession(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String) : LedgerContext()
+    data class StandardGap(val startMillis: Long, val endMillis: Long, val precededBy: String? = null, val followedBy: String? = null) : LedgerContext()
+    data class IdleSession(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String, val wasUnattended: Boolean = false) : LedgerContext()
     data class BatchMerge(val count: Int, val totalDurationMillis: Long) : LedgerContext()
+    /** A Screen-Off Activity span: the app was resumed while the screen was provably dark. */
+    data class ScreenOff(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String) : LedgerContext()
 }
 
 @Composable
@@ -195,7 +201,7 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
     fun isSameDay(a: Long, b: Long): Boolean { val calA = Calendar.getInstance().apply { timeInMillis = a }; val calB = Calendar.getInstance().apply { timeInMillis = b }; return calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) && calA.get(Calendar.DAY_OF_YEAR) == calB.get(Calendar.DAY_OF_YEAR) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(16.dp)) {
+        Card(modifier = Modifier.fillMaxWidth().border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
             Box(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Select Date", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp))
@@ -259,9 +265,27 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
 }
 
 @Composable
-fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
+    // The label's start, adjustable where the device's evidence is
+    // untrustworthy (2026-10-23). Idle Session spans anchor at the last
+    // RECORDED touch, and some manufacturers (the maintainer's own itel
+    // logs a handful of touches per week) barely record touches at all,
+    // so the span can start earlier than the moment the user actually
+    // stopped using the phone. The human was there; the hardware was not.
+    // Only unattended spans offer the steppers: lock spans anchor at a
+    // keyguard event, which every device records faithfully.
+    var adjustedStart by remember(ledgerContext) {
+        mutableStateOf(
+            when (val ctx = ledgerContext) {
+                is LedgerContext.IdleSession -> ctx.startMillis
+                is LedgerContext.StandardGap -> ctx.startMillis
+                is LedgerContext.ScreenOff -> ctx.startMillis
+                else -> -1L
+            }
+        )
+    }
 
     HatOutlinedDialog(onDismissRequest = onDismiss, title = "Label Activity") {
         if (ledgerContext != null) {
@@ -270,6 +294,18 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                     is LedgerContext.StandardGap -> {
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
                         val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
+                        // The context line: what was before and after this gap.
+                        // The user asked for this back (2026-10-20). The gap
+                        // explainer on the card tells you where the time sits
+                        // in your day, and the dialog should say the same thing.
+                        if (ledgerContext.precededBy != null || ledgerContext.followedBy != null) {
+                            val contextStr = when {
+                                ledgerContext.precededBy != null && ledgerContext.followedBy != null -> "Nothing recorded between ${ledgerContext.precededBy} and ${ledgerContext.followedBy}"
+                                ledgerContext.precededBy != null -> "Nothing recorded after ${ledgerContext.precededBy}"
+                                else -> "Nothing recorded before ${ledgerContext.followedBy}"
+                            }
+                            Text(contextStr, style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is LedgerContext.IdleSession -> {
@@ -277,12 +313,43 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                         val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
                         Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Detection: Continuous screen-on", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (ledgerContext.wasUnattended) "The screen was on and the phone was unlocked, but no touch landed for this whole stretch"
+                            else "The phone stayed locked the whole time",
+                            style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (ledgerContext.wasUnattended) {
+                            Text(
+                                "If you remember when you actually stopped using it, nudge the start. Your memory beats the phone's evidence.",
+                                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    listOf(-5L to "-5m", -1L to "-1m").forEach { (delta, label) ->
+                                        TextButton(onClick = { adjustedStart = maxOf(ledgerContext.startMillis, adjustedStart + delta * 60_000L) }) { Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
+                                    }
+                                }
+                                Text(fmt.format(Date(adjustedStart)), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    listOf(1L to "+1m", 5L to "+5m").forEach { (delta, label) ->
+                                        TextButton(onClick = { adjustedStart = minOf(ledgerContext.endMillis, adjustedStart + delta * 60_000L) }) { Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is LedgerContext.ScreenOff -> {
+                        val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
+                        val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
+                        Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("The screen was off the whole time", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is LedgerContext.BatchMerge -> {
-                        Text("Action: Merging ${ledgerContext.count} distinct gaps", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Total tracked time: ${TimeUtils.formatDuration(ledgerContext.totalDurationMillis)}", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Note: App usage between these gaps will remain unaffected.", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Merging ${ledgerContext.count} gaps into one label", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Total: ${TimeUtils.formatDuration(ledgerContext.totalDurationMillis)}. App usage between them stays untouched.", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -308,7 +375,7 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
             }
         }
         Spacer(modifier = Modifier.height(24.dp))
-        DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName) }
+        DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
     }
 }
 
@@ -370,7 +437,7 @@ fun EmptyStateCard(icon: ImageVector, title: String, subtitle: String) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun RealActivityListItem(navController: NavController, app: AppUsageItem, color: Color, progress: Float, onLongClick: () -> Unit = {}, isHighlighted: Boolean = false) {
-    val mod = Modifier.fillMaxWidth().padding(bottom = 12.dp).border(if(isHighlighted) 2.dp else 1.dp, color.copy(alpha = if(isHighlighted) 1f else 0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = { navController.navigate("details/app/${Uri.encode(app.packageName)}") }, onLongClick = onLongClick)
+    val mod = Modifier.fillMaxWidth().padding(bottom = 12.dp).border(if(isHighlighted) 2.dp else 1.dp, color.copy(alpha = if(isHighlighted) 1f else 0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = { navController.navigate(NavRouteCodec.appDetailsRoute(app.packageName)) }, onLongClick = onLongClick)
     Card(modifier = mod, colors = CardDefaults.cardColors(containerColor = if (isHighlighted) color.copy(alpha=0.1f) else Color.Transparent)) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -394,7 +461,7 @@ fun RealActivityListItem(navController: NavController, app: AppUsageItem, color:
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun MockOfflineListItem(name: String, duration: String, iconName: String, color: Color, progress: Float, isSelectedForAction: Boolean = false, onClick: () -> Unit = {}, onLongClick: () -> Unit = {}, isHighlighted: Boolean = false) {
+fun MockOfflineListItem(name: String, duration: String, iconName: String, color: Color, progress: Float, isSelectedForAction: Boolean = false, onClick: () -> Unit = {}, onLongClick: () -> Unit = {}, isHighlighted: Boolean = false, storedRowCount: Int = 1) {
     val icon = ICON_REGISTRY[iconName] ?: Icons.AutoMirrored.Filled.DirectionsWalk
     val showHighlight = isHighlighted || isSelectedForAction
     val mod = Modifier.fillMaxWidth().padding(bottom = 12.dp).border(if(showHighlight) 2.dp else 1.dp, color.copy(alpha = if(showHighlight) 1f else 0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -407,6 +474,18 @@ fun MockOfflineListItem(name: String, duration: String, iconName: String, color:
                     Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                         Text(name, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("Offline Activity", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        // HONESTY (user decision 2026-10-01): if this entry is backed by more
+                        // than one stored row, say so right here. HAT shows duplicates instead
+                        // of deleting them, because silently removing the user's data is
+                        // exactly what this app must never do.
+                        if (storedRowCount > 1) {
+                            Text(
+                                "$storedRowCount copies saved - tap and hold, then delete, to remove",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2
+                            )
+                        }
                     }
                     Text(duration, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -538,20 +617,42 @@ fun HexColorInput(currentColor: Color, onColorChange: (Color) -> Unit) {
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
             )
+            // The support ask lives right here, every time. Not a dialog, not
+            // once-per-install: a quiet line under the hex input, always
+            // visible while the user is customizing their theme. Making your
+            // app yours is the moment you're most likely to appreciate the
+            // work that went into it, so that's where the reminder sits.
+            Spacer(modifier = Modifier.height(12.dp))
+            val context = LocalContext.current
+            Text(
+                "HAT is free, built by one person. Your support makes more of this possible.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth().clickable { context.openExternalWebLink(SPONSOR_URL) }
+            )
         }
     }
 }
 
 @Composable
 fun ThemePreviewBox(derivedColor: Color) {
+    // The Pro preview with the user's changes (2026-10-20, trimmed 2026-10-29):
+    // - Three elements only: chart bars, calendar circle, D/W/M pill. The
+    //   dot+line card is gone (owner's call) - what remains is what the
+    //   dashboard actually shows.
+    // - Circle shows 22, pill has three segments (D/W/M) matching the
+    //   Day/Week/Month switcher.
+    // - All elements share a 36dp bounding height for optical alignment.
     Box(
         modifier = Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(16.dp)).background(derivedColor.copy(alpha = 0.05f)).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.height(40.dp), contentAlignment = Alignment.BottomCenter) {
+                // 1. Chart bars: three, 36dp tall, bottom-aligned, descending
+                //    heights so the group reads as one bar chart at a glance.
+                Box(modifier = Modifier.height(36.dp), contentAlignment = Alignment.BottomCenter) {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
-                        Canvas(modifier = Modifier.width(12.dp).height(40.dp)) {
+                        Canvas(modifier = Modifier.width(12.dp).height(36.dp)) {
                             val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
                             drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }
@@ -559,22 +660,26 @@ fun ThemePreviewBox(derivedColor: Color) {
                             val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
                             drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }
+                        Canvas(modifier = Modifier.width(12.dp).height(14.dp)) {
+                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
+                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
+                        }
                     }
                 }
+                // 2. Calendar circle: 36dp, shows 22.
                 Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(derivedColor.copy(alpha = 0.15f)).border(2.dp, derivedColor, CircleShape), contentAlignment = Alignment.Center) {
-                    Text("28", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = derivedColor)
+                    Text("22", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = derivedColor)
                 }
-                Box(modifier = Modifier.width(56.dp).height(36.dp).clip(RoundedCornerShape(8.dp)).background(derivedColor.copy(alpha = 0.05f)).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.CenterStart) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp)) {
-                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(derivedColor))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Box(modifier = Modifier.height(2.dp).weight(1f).clip(RoundedCornerShape(50)).background(derivedColor.copy(alpha = 0.5f)))
-                    }
-                }
-                Box(modifier = Modifier.width(64.dp).height(28.dp).clip(RoundedCornerShape(50)).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(50))) {
+                // 3. The Day/Week/Month range switcher, in miniature. Same grammar
+                // as the real TimeSelector on the dashboard (user request,
+                // 2026-10-21): pill outline at half alpha, selected segment
+                // filled and fully bordered, full words not letters, and
+                // unselected labels at the same 60% alpha the app uses.
+                Box(modifier = Modifier.width(102.dp).height(36.dp).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(50)).padding(3.dp)) {
                     Row(modifier = Modifier.fillMaxSize()) {
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(50)).background(derivedColor.copy(alpha = 0.15f)).border(1.dp, derivedColor, RoundedCornerShape(50)), contentAlignment = Alignment.Center) { Text("D", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp), color = derivedColor) }
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text("W", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, fontSize = 9.sp), color = derivedColor.copy(alpha = 0.5f)) }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(50)).background(derivedColor.copy(alpha = 0.15f)).border(2.dp, derivedColor, RoundedCornerShape(50)), contentAlignment = Alignment.Center) { Text("Day", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp), color = derivedColor) }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text("Week", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, fontSize = 9.sp), color = derivedColor.copy(alpha = 0.6f)) }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text("Month", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, fontSize = 9.sp), color = derivedColor.copy(alpha = 0.6f)) }
                     }
                 }
             }

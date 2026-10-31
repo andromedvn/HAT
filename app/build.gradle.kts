@@ -9,13 +9,13 @@ plugins {
 }
 
 // Release signing credentials live in `key.properties` at the repo root.
-// That file is gitignored — never commit it. A template is committed as
+// That file is gitignored , never commit it. A template is committed as
 // `key.properties.example`.
 //
 // A release signed with the debug key cannot be replaced by a correctly
 // signed one: installing it over a real release fails with
 // INSTALL_FAILED_UPDATE_INCOMPATIBLE, and the artifact is un-updatable
-// forever. Nothing can recover the key — no remote keeps a copy — so a
+// forever. Nothing can recover the key , no remote keeps a copy , so a
 // missing key.properties must FAIL the release build rather than quietly
 // produce something that looks fine.
 //
@@ -43,7 +43,7 @@ if (!hasReleaseKey) {
         )
     }
     logger.warn(
-        "HAT: key.properties not found — any release build will use the DEBUG key. " +
+        "HAT: key.properties not found , any release build will use the DEBUG key. " +
             "Do NOT publish such a build. See RELEASE.md."
     )
 }
@@ -56,8 +56,8 @@ android {
         applicationId = "andromedvn.heuristic.activity.tracker"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.1.2"
     }
 
     signingConfigs {

@@ -12,13 +12,13 @@ import org.junit.Test
  * without Robolectric for exactly that reason. Nothing in the suite has ever
  * run the interval algebra at a realistic size: the largest input anywhere is
  * two intervals. The measurements below are therefore first observations, not
- * regressions — but they are the numbers that decide whether a heavy user sees
+ * regressions, but they are the numbers that decide whether a heavy user sees
  * a spinner or an ANR.
  *
  * The integer half pins the 2^31 boundary. 2_147_483_647 ms is 24.855 days, so
  * any aggregation over ~25 days of milliseconds overflows an Int. The app
  * aggregates a MONTH in one `sumOf` and a YEAR in the archive, so every
- * accumulator in the time domain must be Long — these tests make that explicit
+ * accumulator in the time domain must be Long, these tests make that explicit
  * rather than incidental.
  */
 class ScaleAndIntegerWidthTest {
@@ -71,7 +71,7 @@ class ScaleAndIntegerWidthTest {
 
     @Test
     fun `the day constant used as a Long divisor stays a Long`() {
-        // `DashboardViewModel:195` does ((now - oldest) / 86400000L).toInt() —
+        // `DashboardViewModel:195` does ((now - oldest) / 86400000L).toInt(), 
         // correct, Long division before the narrowing. Line 417 uses
         // (1000 * 60 * 60 * 24) which is an Int product that happens to fit.
         assertEquals(86_400_000L, 1000L * 60L * 60L * 24L)
@@ -149,7 +149,7 @@ class ScaleAndIntegerWidthTest {
         // database returns them. Measured on a desktop JVM this is a few
         // hundred ms; on a low-RAM phone budget it is the difference between a
         // spinner and a jank frame. The assertion is a smoke bound, not a
-        // benchmark — it fails only if the algorithm regresses by orders of
+        // benchmark, it fails only if the algorithm regresses by orders of
         // magnitude.
         val source = (0 until 5_000).map { (it * 1_000L) to (it * 1_000L + 1_000L) }
         val removals = (0 until 2_000).map { (it * 1_000L + 200L) to (it * 1_000L + 300L) }
@@ -186,14 +186,19 @@ class ScaleAndIntegerWidthTest {
     @Test
     fun `replayGhostIntervals handles a long unattended stretch without inventing ghosts`() {
         // Screen goes off, an app resumes and is never paused, then the day ends.
+        // (2026-10-16) A dark-screen resume is Screen-Off Activity now, so the
+        // ghost replay must claim nothing; the span belongs to the screen-off
+        // walk, which must still close it at the cap without any overflow.
         val events = listOf(
             RawEvent(EventCode.SCREEN_NON_INTERACTIVE, 0L, ""),
             RawEvent(EventCode.ACTIVITY_RESUMED, 1_000L, "com.a", "A")
         )
-        val ghosts = replayGhostIntervals(events, 0L, 86_400_000L, cap = 86_400_000L)
 
-        assertEquals(1, ghosts.size)
-        assertEquals(GhostSpan("com.a", 1_000L, 86_400_000L), ghosts.single())
+        assertEquals(0, replayGhostIntervals(events, 0L, 86_400_000L, cap = 86_400_000L).size)
+        assertEquals(
+            mapOf("com.a" to listOf(1_000L to 86_400_000L)),
+            replayScreenOffIntervals(events, 0L, 86_400_000L, cap = 86_400_000L)
+        )
     }
 
     @Test
