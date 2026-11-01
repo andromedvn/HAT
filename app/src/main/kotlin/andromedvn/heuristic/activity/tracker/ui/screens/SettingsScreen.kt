@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,6 +62,7 @@ import java.util.Locale
 
 @Composable
 fun SettingsScreen(navController: NavController, repository: ActivityRepository) {
+    val tourRegistry = androidx.compose.runtime.remember { TourRegistry() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val storage = remember { OfflineStorage.getInstance(context) }
@@ -259,9 +262,12 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
     }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets(0,0,0,0)) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()).windowInsetsPadding(WindowInsets.statusBars).verticalScroll(scrollState)) {
             Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                Column(modifier = Modifier.tutorialTarget("settingsScreen", tourRegistry)) {
                 HatDynamicHeader(title = "Settings", subtitle = "App Configuration")
+                }
 
                 // GROUP 1: THEME ENGINE
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -297,8 +303,6 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     Text("DATA CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     SettingsItem("Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
-                    SettingsItem("How HAT Works", "Review the three kinds of time and what HAT needs from Android.") { navController.navigate("permissions?review=true") }
-                    SettingsItem("Replay the dashboard tour", "Walk the dashboard again with the spotlight tour, ending at Label Gaps.") { navController.navigate("dashboard?startTour=true") }
                     SettingsItem("Keep My History Safe", "Exempt HAT from battery optimization so aggressive battery managers cannot stop the archiver that saves your history before Android deletes it.") {
                         try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     }
@@ -335,6 +339,8 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }
                     SettingsItem("Terms of Service", "Conditions of use and liability limitations.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/TERMS.html") }
                     SettingsItem("Open Source Licenses", "Third-party software attributions.") { navController.navigate("licenses") }
+                    SettingsItem("How HAT Works", "Review the two onboarding screens: welcome and the one permission.") { navController.navigate("permissions?review=true") }
+                    SettingsItem("Replay the tour", "Walk every screen again with the spotlight tour, ending in Settings.") { navController.navigate("dashboard?startTour=true") }
                     
                     Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
                         Text("HAT Engine v$appVersion", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
@@ -343,6 +349,29 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 
                 Spacer(modifier = Modifier.height(32.dp))
             }
+        }
+        
+        // The app tour (2026-11-01): the last two steps live here, spotlighting
+        // the screen itself and the Hidden Apps row's group.
+        val settingsStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_SETTINGS }
+        TourStepOverlay(
+            registry = tourRegistry,
+            currentStep = settingsStep,
+            globalIndex = AppTourState.stepIndex,
+            globalCount = DashboardTourSteps.steps.size,
+            onNext = {
+                if (AppTourState.stepIndex >= DashboardTourSteps.steps.lastIndex) {
+                    AppTourState.end()
+                    scope.launch { val cur = repository.settings.first(); storage.saveSettings(cur.copy(hasSeenTour = true)) }
+                }
+                AppTourState.stepIndex++
+            },
+            onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
+            onSkip = {
+                AppTourState.end()
+                scope.launch { val cur = repository.settings.first(); storage.saveSettings(cur.copy(hasSeenTour = true)) }
+            }
+        )
         }
     }
 }

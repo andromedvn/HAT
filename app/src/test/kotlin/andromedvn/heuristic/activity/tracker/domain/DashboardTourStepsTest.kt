@@ -6,17 +6,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The tour curriculum is copy the owner ratified (2026-10-31): five steps,
- * ending at Label Gaps with a real navigation. The charter bans em dashes
- * and hype words in every user-facing string, so the test enforces that here,
- * where the strings live, instead of trusting review.
+ * The tour curriculum is copy the owner ratified (2026-11-01: "make the user
+ * familiar with every screen"). Eleven steps across four real screens; the
+ * charter bans em dashes and hype words in every user-facing string, so the
+ * test enforces that here, where the strings live, instead of trusting review.
  */
 class DashboardTourStepsTest {
 
     @Test
-    fun `tour has exactly five steps in the ratified order`() {
-        val ids = DashboardTourSteps.steps.map { it.id }
-        assertEquals(listOf("timeSelector", "chart", "statCards", "appRows", "labelGaps"), ids)
+    fun `tour covers four screens in the ratified order`() {
+        val screens = DashboardTourSteps.steps.map { it.screen }.distinct()
+        assertEquals(
+            listOf(
+                DashboardTourSteps.SCREEN_DASHBOARD,
+                DashboardTourSteps.SCREEN_GAPS,
+                DashboardTourSteps.SCREEN_STATS,
+                DashboardTourSteps.SCREEN_SETTINGS
+            ),
+            screens
+        )
     }
 
     @Test
@@ -32,13 +40,17 @@ class DashboardTourStepsTest {
     }
 
     @Test
-    fun `final step opens Label Gaps and completes the tour`() {
-        val last = DashboardTourSteps.steps.last()
-        assertEquals("labelGaps", last.id)
-        assertTrue(last.opensLabelGaps)
-        assertTrue(last.completesTour)
-        DashboardTourSteps.steps.dropLast(1).forEach { step ->
-            assertFalse("only the last step may complete the tour: ${step.id}", step.completesTour)
+    fun `exactly one step completes the tour and it is the last`() {
+        val completing = DashboardTourSteps.steps.filter { it.completesTour }
+        assertEquals(1, completing.size)
+        assertEquals(DashboardTourSteps.steps.last().id, completing.first().id)
+        assertEquals(DashboardTourSteps.SCREEN_SETTINGS, completing.first().screen)
+    }
+
+    @Test
+    fun `every screen's steps share that screen's route`() {
+        DashboardTourSteps.steps.forEach { step ->
+            assertEquals("step ${step.id} route mismatch", step.screen, step.route)
         }
     }
 }

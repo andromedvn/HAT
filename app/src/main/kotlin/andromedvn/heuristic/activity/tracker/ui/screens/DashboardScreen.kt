@@ -62,8 +62,9 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import andromedvn.heuristic.activity.tracker.ui.components.TourRegistry
-import andromedvn.heuristic.activity.tracker.ui.components.DashboardTourOverlay
+import andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay
 import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
 import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -76,20 +77,17 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     val uiState by viewModel.uiState.collectAsState()
     val chartHighlight = uiState.chartHighlight
     var hasPermission by remember { mutableStateOf(hasUsageStatsPermission(context)) }
-    // The spotlight tour (2026-10-31): -1 means off. It starts only when the
-    // onboarding's "See your dashboard" (or Settings > Replay) asks for it,
-    // and ends by walking the user into Label Gaps. tourLaunched guards the
-    // auto-start: the startTour argument lives in the back stack entry's
-    // saved state, so returning from Label Gaps recomposes with startTour
-    // still true - without the guard the whole tour restarted on return
-    // (owner report, 2026-11-01).
+    // The app tour (2026-11-01): one global state, every screen hosts its own
+    // steps. tourLaunched guards the auto-start: the startTour argument lives
+    // in the back stack entry's saved state, so returning from Label Gaps
+    // recomposes with startTour still true - without the guard the whole tour
+    // restarted on return (owner report, 2026-11-01).
     val tourRegistry = remember { andromedvn.heuristic.activity.tracker.ui.components.TourRegistry() }
-    var tourStep by remember { mutableIntStateOf(-1) }
     var tourLaunched by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(startTour) {
         if (startTour && !tourLaunched) {
             tourLaunched = true
-            tourStep = 0
+            AppTourState.start()
         }
     }
     // Bring the current step's target into view before the spotlight lands on
@@ -98,7 +96,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     // listState below, so the scroll call has its receiver.
     val tourAutoScrollPx = with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     fun endTour() {
-        tourStep = -1
+        AppTourState.end()
         viewModel.markTourSeen()
     }
     // Re-check on every ON_RESUME: the user grants Usage Access in system
@@ -121,10 +119,11 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
 
     // Auto-scroll the tour: bring each step's target to ~38% of the screen
     // height so the spotlight never lands on something below the fold.
-    androidx.compose.runtime.LaunchedEffect(tourStep) {
-        if (tourStep < 0) return@LaunchedEffect
+    val tourStepHere = if (AppTourState.active && AppTourState.current?.screen == DashboardTourSteps.SCREEN_DASHBOARD) AppTourState.stepIndex else -1
+    androidx.compose.runtime.LaunchedEffect(tourStepHere) {
+        if (tourStepHere < 0) return@LaunchedEffect
         kotlinx.coroutines.delay(250)
-        val id = DashboardTourSteps.steps.getOrNull(tourStep)?.id ?: return@LaunchedEffect
+        val id = DashboardTourSteps.steps.getOrNull(tourStepHere)?.targetKey ?: return@LaunchedEffect
         val rect = tourRegistry.bounds[id] ?: return@LaunchedEffect
         val anchor = tourAutoScrollPx * 0.38f
         val delta = rect.center.y - anchor
@@ -311,27 +310,26 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
 
             // System back walks the tour backward while it is active. This
             // handler is composed after the one above, so it wins while enabled.
-            androidx.activity.compose.BackHandler(enabled = tourStep >= 0) {
-                if (tourStep == 0) endTour() else tourStep--
+            androidx.activity.compose.BackHandler(enabled = AppTourState.active) {
+                if (AppTourState.stepIndex == 0) endTour() else AppTourState.stepIndex--
             }
-            DashboardTourOverlay(
+            val dashStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_DASHBOARD }
+            TourStepOverlay(
                 registry = tourRegistry,
-                stepIndex = tourStep,
+                currentStep = dashStep,
+                globalIndex = AppTourState.stepIndex,
+                globalCount = DashboardTourSteps.steps.size,
                 onNext = {
-                    val step = DashboardTourSteps.steps.getOrNull(tourStep)
-                    if (step?.opensLabelGaps == true) {
-                        // The finale: the tour hands the user to Label Gaps,
-                        // where they label their first real span. Merging is
-                        // explained in the step copy, done on the real screen.
+                    val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
+                    if (next == null) {
                         endTour()
                         navController.navigate("label_gaps")
-                    } else if (tourStep >= DashboardTourSteps.steps.lastIndex) {
-                        endTour()
-                    } else {
-                        tourStep++
+                    } else if (next.screen != DashboardTourSteps.SCREEN_DASHBOARD) {
+                        navController.navigate(next.route)
                     }
+                    AppTourState.stepIndex++
                 },
-                onBack = { if (tourStep > 0) tourStep-- },
+                onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
                 onSkip = { endTour() }
             )
         }

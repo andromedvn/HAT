@@ -49,6 +49,8 @@ import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.UsageGap
 import andromedvn.heuristic.activity.tracker.data.ScreenOffItem
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import andromedvn.heuristic.activity.tracker.ui.components.ChartMode
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
@@ -64,6 +66,7 @@ import java.util.Locale
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardViewModel) {
+    val tourRegistry = androidx.compose.runtime.remember { TourRegistry() }
     val uiState by dashboardViewModel.uiState.collectAsState()
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
@@ -319,7 +322,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             Column(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()).fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).pointerInput(Unit) { detectTapGestures(onTap = { chartHighlight = null; returnScrollIndex = -1; returnScrollOffset = 0 }) }.verticalFadingEdges(listState.canScrollBackward, listState.canScrollForward)) {
                 LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
                     item {
-                        Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 20.dp).tutorialTarget("gapsScreen", tourRegistry)) {
                             HatDynamicHeader(title = "Gaps", subtitle = "Manage") {
                                 // (uiState.dismissedScreenOffSpans.isNotEmpty()): the gate
                                 // checked only idle dismissals (functional sweep, 2026-10-23),
@@ -577,6 +580,32 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                     }
                 }
             }
+
+            // The app tour (2026-11-01): this screen's steps, hosted on the
+            // real surface. The registry target is the header column above.
+            val gapsStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_GAPS }
+            TourStepOverlay(
+                registry = tourRegistry,
+                currentStep = gapsStep,
+                globalIndex = AppTourState.stepIndex,
+                globalCount = DashboardTourSteps.steps.size,
+                onNext = {
+                    val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
+                    if (next != null && next.screen != DashboardTourSteps.SCREEN_GAPS) {
+                        navController.navigate(next.route)
+                    }
+                    if (next == null) {
+                        AppTourState.end()
+                        dashboardViewModel.markTourSeen()
+                    }
+                    AppTourState.stepIndex++
+                },
+                onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
+                onSkip = {
+                    AppTourState.end()
+                    dashboardViewModel.markTourSeen()
+                }
+            )
         }
     }
 }

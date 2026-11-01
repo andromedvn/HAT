@@ -1,11 +1,23 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package andromedvn.heuristic.activity.tracker.ui.screens
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,48 +26,56 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.OfflineBolt
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Splitscreen
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.R
 import andromedvn.heuristic.activity.tracker.data.OfflineStorage
 import andromedvn.heuristic.activity.tracker.data.ActivityRepository
-import andromedvn.heuristic.activity.tracker.ui.components.HatDynamicHeader
-import andromedvn.heuristic.activity.tracker.ui.components.PromptHighlightButton
-import andromedvn.heuristic.activity.tracker.ui.components.PromptOutlineButton
-import andromedvn.heuristic.activity.tracker.ui.components.hatSwitchColors
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
 import andromedvn.heuristic.activity.tracker.utils.hasUsageStatsPermission
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * First-launch onboarding (2026-11-01, native rebuild): two screens built from
- * the app's own components so they read as HAT, not as a web page. Every
- * screen opens with the same HatDynamicHeader as the dashboard; actions are
- * the real PromptHighlightButton / PromptOutlineButton pills; the permission
- * switch is a real Material3 Switch in hatSwitchColors(); the icon card uses
- * the SummaryStatCard border anatomy.
- *
- *   0. Welcome - the v1.1.1 launcher icon (the adaptive icon's own layers),
- *      one honest paragraph, Restore vault footnote.
- *   1. One permission, read only - the live Usage access switch. After the
- *      grant the pill becomes "See your dashboard", which launches the
- *      spotlight tour (startTour=true).
+ * First-launch onboarding (2026-11-01): the v1.1.1 anatomy the owner asked to
+ * bring back, stripped to two screens. Page 0 is the original Welcome (72dp
+ * icon box with the tinted launcher glyph, centered headlineMedium, animated
+ * pill-dots, PrivacyPoint rows). Page 1 is the original Usage access page
+ * with the battery exemption folded in: once the grant is real the page grows
+ * a battery section and the bar button becomes Continue, which launches the
+ * app tour (startTour=true).
  *
  * System back reviews the previous page; the flow replays from
  * Settings > How HAT Works (reviewMode exits with Done, no tour launch).
@@ -70,8 +90,6 @@ fun PermissionsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
-    val primary = MaterialTheme.colorScheme.primary
-    val onSurface = MaterialTheme.colorScheme.onSurface
 
     val pageCount = 2
     val pagerState = rememberPagerState(pageCount = { pageCount })
@@ -90,7 +108,8 @@ fun PermissionsScreen(
             if (reviewMode) {
                 navController.popBackStack()
             } else if (markTour) {
-                navController.navigate("dashboard?startTour=true") { popUpTo("permissions") { inclusive = true } }
+                AppTourState.start()
+                navController.navigate("dashboard") { popUpTo("permissions") { inclusive = true } }
             } else {
                 navController.navigate("dashboard") { popUpTo("permissions") { inclusive = true } }
             }
@@ -99,10 +118,10 @@ fun PermissionsScreen(
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            scope.launch(Dispatchers.IO) {
                 try {
                     val report = context.contentResolver.openInputStream(uri)?.use { repository.restoreSecureVault(it, context.cacheDir) }
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    withContext(Dispatchers.Main) {
                         if (report != null && report.success) {
                             Toast.makeText(context, "Vault Restored. ${report.offlineMerged} label(s) merged, ${report.offlineSkipped} skipped as overlapping existing ones. Restarting safely...", Toast.LENGTH_LONG).show()
                             delay(1000)
@@ -115,13 +134,14 @@ fun PermissionsScreen(
                             Toast.makeText(context, "Restore failed: the file is damaged, was edited after export, or is not a HAT vault.", Toast.LENGTH_LONG).show()
                         }
                     }
-                } catch (e: Exception) { withContext(kotlinx.coroutines.Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }
+                } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }
             }
         }
     }
 
     // The permission check refreshes on return from system settings; the
-    // moment the grant is real, the pill becomes "See your dashboard".
+    // moment the grant is real, the battery section grows in and the bar
+    // button becomes Continue.
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -134,152 +154,138 @@ fun PermissionsScreen(
 
     // System back reviews the previous page instead of leaving the app.
     BackHandler(enabled = pagerState.currentPage > 0) {
-        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1, animationSpec = tween(400, easing = FastOutSlowInEasing)) }
     }
 
-    fun goNext() = scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+    fun goNext() = scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1, animationSpec = tween(400, easing = FastOutSlowInEasing)) }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { _ ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { position ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 24.dp)
-            ) {
-                HatDynamicHeader(
-                    title = if (position == 0) "Welcome to HAT" else "One permission",
-                    subtitle = if (position == 0) "First run" else "Read only"
-                )
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { innerPadding ->
+        Column(
+            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()).fillMaxSize().padding(bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(64.dp))
 
-                when (position) {
-                    0 -> {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            // The launcher icon inside the app's card anatomy
-                            // (1dp 50% border, 24dp radius, transparent fill).
-                            Box(
-                                modifier = Modifier
-                                    .size(148.dp)
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .border(1.dp, primary.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
-                                    .background(MaterialTheme.colorScheme.background),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(112.dp)
-                                        .clip(RoundedCornerShape(18.dp))
-                                ) {
-                                    Image(
-                                        painter = painterResource(R.drawable.ic_launcher_background),
-                                        contentDescription = null,
-                                        modifier = Modifier.matchParentSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    Image(
-                                        painter = painterResource(R.drawable.ic_launcher_foreground),
-                                        contentDescription = "HAT",
-                                        modifier = Modifier.matchParentSize(),
-                                        contentScale = ContentScale.Fit
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            "HAT counts your screen time. Everything stays on this phone. No account. No internet. No one reads it but you.",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = onSurface.copy(alpha = 0.85f)
-                        )
-                    }
-                    1 -> {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            "HAT reads the usage records Android already keeps. It cannot change settings, read your files, or send anything anywhere. You can turn it off any time in Android settings. Tap Allow access, then come back.",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = onSurface.copy(alpha = 0.85f)
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        // The real switch, in the app's own colors, inside the
-                        // HatOutlinedDialog card anatomy (2dp primary border,
-                        // 24dp radius).
-                        Card(
-                            modifier = Modifier.fillMaxWidth().border(2.dp, primary, RoundedCornerShape(24.dp)),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
-                            shape = RoundedCornerShape(24.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(20.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Usage access", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = onSurface)
-                                    Text("Android setting", style = MaterialTheme.typography.bodyMedium, color = onSurface.copy(alpha = 0.55f))
-                                }
-                                Switch(checked = usageGranted, onCheckedChange = null, colors = hatSwitchColors())
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Bottom rail: the app's real button pair, end-aligned.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = false,
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            ) { position ->
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    Spacer(modifier = Modifier.height(16.dp))
                     when (position) {
                         0 -> {
-                            if (!reviewMode) {
-                                PromptOutlineButton("Skip") { completeSetup(false) }
-                                Spacer(modifier = Modifier.width(12.dp))
+                            Box(modifier = Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
+                                Image(painter = painterResource(id = R.drawable.ic_launcher_foreground), contentDescription = "HAT Logo", colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary), contentScale = ContentScale.FillBounds, modifier = Modifier.requiredSize(84.dp))
                             }
-                            PromptHighlightButton("Next") { goNext() }
+                            Spacer(modifier = Modifier.height(32.dp))
+                            Text("Welcome to HAT", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("HAT counts your screen time and keeps it on this phone. No account. No internet.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(48.dp))
+                            PrivacyPoint(Icons.Default.Timeline, "HAT translates your raw screen usage into a readable timeline.")
+                            Spacer(modifier = Modifier.height(24.dp))
+                            PrivacyPoint(Icons.Default.Splitscreen, "Active apps and empty gaps are shown exactly as they happened.")
+                            Spacer(modifier = Modifier.height(24.dp))
+                            PrivacyPoint(Icons.Default.Edit, "Label the offline moments or leave them empty. It's your call.")
+                            Spacer(modifier = Modifier.height(24.dp))
+                            PrivacyPoint(Icons.Default.Security, "No internet permission. Nothing can leave this phone.")
                         }
-                        else -> {
-                            if (usageGranted) {
-                                PromptHighlightButton(if (reviewMode) "Done" else "See your dashboard") { completeSetup(!reviewMode) }
-                            } else {
-                                PromptOutlineButton("Not now") { completeSetup(false) }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                PromptHighlightButton("Allow access") {
-                                    try { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply { data = android.net.Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                        1 -> {
+                            Box(modifier = Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+                            }
+                            Spacer(modifier = Modifier.height(32.dp))
+                            Text("Usage Access Required", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("HAT reads activity states only. We never access your messages, content, or personal data.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(48.dp))
+                            PrivacyPoint(Icons.Default.Security, "Android requires \"Usage Access\" so HAT can see when apps move to the foreground or background.")
+                            Spacer(modifier = Modifier.height(24.dp))
+                            PrivacyPoint(Icons.Default.OfflineBolt, "This allows HAT to detect when your screen was active and when it was off.")
+                            Spacer(modifier = Modifier.height(24.dp))
+                            PrivacyPoint(Icons.Default.Security, "All data is processed entirely on your device. HAT does not have internet permissions and cannot upload your timeline.")
+                            // The battery exemption, folded in post-grant (the
+                            // v1.1.1 page-3 ask, kept on the permission page).
+                            AnimatedVisibility(
+                                visible = usageGranted,
+                                enter = expandVertically(animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400))
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    PrivacyPoint(Icons.Default.OfflineBolt, "Android deletes old usage records after a few days. HAT archives them first so your history survives.")
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    PrivacyPoint(Icons.Default.BatterySaver, "Battery savers can stop that archive. Exempting HAT keeps it running.")
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    OutlinedButton(
+                                        onClick = { try { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } },
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                                    ) { Text("Exempt HAT from Battery Saving", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) }
                                 }
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
+            }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                if (position == 0 && !reviewMode) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        Text("Have a backup?  ", style = MaterialTheme.typography.labelSmall, color = onSurface.copy(alpha = 0.6f))
-                        Text(
-                            "Restore vault",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = primary,
-                            modifier = Modifier.clickableNoRipple { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
-                        )
+            // Bottom bar: the v1.1.1 animated pill-dots + the OutlinedButton.
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp).padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    repeat(pageCount) { index ->
+                        val isSelected = pagerState.currentPage == index
+                        val width by animateDpAsState(targetValue = if (isSelected) 24.dp else 8.dp, animationSpec = tween(300, easing = FastOutSlowInEasing), label = "width")
+                        val color by animateColorAsState(targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), animationSpec = tween(300), label = "color")
+                        Box(modifier = Modifier.height(8.dp).width(width).clip(CircleShape).background(color))
                     }
-                } else if (position == 1) {
-                    Text(
-                        "Read these screens anytime: Settings > How HAT Works.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = onSurface.copy(alpha = 0.6f)
-                    )
+                }
+                when (pagerState.currentPage) {
+                    0 -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (!reviewMode) Text("Skip", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickableNoRipple { completeSetup(false) })
+                            OnboardingOutlinedButton("Next") { goNext() }
+                        }
+                    }
+                    else -> {
+                        if (usageGranted) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                OnboardingOutlinedButton(if (reviewMode) "Done" else "See Your Dashboard") { completeSetup(!reviewMode) }
+                            }
+                        } else {
+                            OnboardingOutlinedButton("Grant Access") {
+                                try { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+/** The v1.1.1 page button: 16dp radius, 15% fill, 2dp border, titleMedium Bold. */
+@Composable
+private fun OnboardingOutlinedButton(text: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+    ) { Text(text, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) }
+}
+
+/** The v1.1.1 PrivacyPoint row, verbatim. */
+@Composable
+fun PrivacyPoint(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp).padding(top = 2.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

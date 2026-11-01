@@ -30,6 +30,11 @@ import andromedvn.heuristic.activity.tracker.ui.components.HatChart
 import andromedvn.heuristic.activity.tracker.ui.components.HatDatePickerModal
 import andromedvn.heuristic.activity.tracker.ui.components.RealActivityListItem
 import andromedvn.heuristic.activity.tracker.ui.components.HatDynamicHeader
+import andromedvn.heuristic.activity.tracker.ui.components.TourRegistry
+import andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay
+import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import andromedvn.heuristic.activity.tracker.ui.components.TimeSelector
 import andromedvn.heuristic.activity.tracker.ui.components.verticalFadingEdges
 import andromedvn.heuristic.activity.tracker.ui.components.HeuristicTipCard
@@ -44,6 +49,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewModel) {
+    val tourRegistry = androidx.compose.runtime.remember { TourRegistry() }
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val chartScrollState = rememberLazyListState()
@@ -114,7 +120,7 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
         ) {
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
                 item {
-                    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp).tutorialTarget("statsScreen", tourRegistry)) {
                         HatDynamicHeader(title = "Apps Usage", subtitle = "Quick Overview")
                         TimeSelector(currentRange = uiState.timeRange, onRangeSelected = { viewModel.setTimeRange(it) })
                         Spacer(modifier = Modifier.height(24.dp))
@@ -183,6 +189,32 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
                     }
                 }
             }
+
+            // The app tour (2026-11-01): screen-level spotlight on the real
+            // ranked list. The registry target is the header column above.
+            val statsStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_STATS }
+            TourStepOverlay(
+                registry = tourRegistry,
+                currentStep = statsStep,
+                globalIndex = AppTourState.stepIndex,
+                globalCount = DashboardTourSteps.steps.size,
+                onNext = {
+                    val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
+                    if (next != null && next.screen != DashboardTourSteps.SCREEN_STATS) {
+                        navController.navigate(next.route)
+                    }
+                    if (next == null) {
+                        AppTourState.end()
+                        viewModel.markTourSeen()
+                    }
+                    AppTourState.stepIndex++
+                },
+                onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
+                onSkip = {
+                    AppTourState.end()
+                    viewModel.markTourSeen()
+                }
+            )
         }
     }
 }
