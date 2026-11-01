@@ -37,6 +37,13 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import andromedvn.heuristic.activity.tracker.data.ActivityRepository
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import androidx.lifecycle.lifecycleScope
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
+import andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay
+import andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
 import andromedvn.heuristic.activity.tracker.data.OfflineStorage
 import andromedvn.heuristic.activity.tracker.data.ThemeType
 import andromedvn.heuristic.activity.tracker.data.UserSettings
@@ -208,6 +215,48 @@ class MainActivity : ComponentActivity() {
                             LicensesScreen(navController) 
                         }
                     }
+
+                    // The app tour: ONE overlay above the whole navigation
+                    // (2026-11-01). It reads the global step and the global
+                    // registry, so screen handoffs can never drop it.
+                    val tourStep = AppTourState.current
+                    androidx.activity.compose.BackHandler(enabled = AppTourState.active) {
+                        val prev = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex - 1)
+                        if (prev != null && prev.route != (tourStep?.route ?: "")) {
+                            navController.popBackStack(prev.route, false)
+                        } else if (prev == null) {
+                            AppTourState.end()
+                            lifecycleScope.launch { storage.saveSettings(storage.settings.first().copy(hasSeenTour = true)) }
+                        }
+                        AppTourState.stepIndex = (AppTourState.stepIndex - 1).coerceAtLeast(0)
+                    }
+                    TourStepOverlay(
+                        registry = AppTourRegistry,
+                        currentStep = tourStep,
+                        globalIndex = AppTourState.stepIndex,
+                        globalCount = DashboardTourSteps.steps.size,
+                        onNext = {
+                            val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
+                            if (next == null) {
+                                AppTourState.end()
+                                lifecycleScope.launch { storage.saveSettings(storage.settings.first().copy(hasSeenTour = true)) }
+                            } else if (next.route != (tourStep?.route ?: "")) {
+                                navController.navigate(next.route)
+                            }
+                            AppTourState.stepIndex++
+                        },
+                        onBack = {
+                            val prev = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex - 1)
+                            if (prev != null && prev.route != (tourStep?.route ?: "")) {
+                                navController.popBackStack(prev.route, false)
+                            }
+                            AppTourState.stepIndex--
+                        },
+                        onSkip = {
+                            AppTourState.end()
+                            lifecycleScope.launch { storage.saveSettings(storage.settings.first().copy(hasSeenTour = true)) }
+                        }
+                    )
                 }
             }
         }

@@ -49,12 +49,11 @@ import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.UsageGap
 import andromedvn.heuristic.activity.tracker.data.ScreenOffItem
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
-import andromedvn.heuristic.activity.tracker.domain.AppTourState
-import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import andromedvn.heuristic.activity.tracker.ui.components.ChartMode
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
 import andromedvn.heuristic.activity.tracker.viewmodel.IdleSession
+import androidx.compose.ui.platform.LocalContext
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import kotlinx.coroutines.launch
@@ -66,7 +65,8 @@ import java.util.Locale
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardViewModel) {
-    val tourRegistry = androidx.compose.runtime.remember { TourRegistry() }
+    val context = LocalContext.current
+    val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
     val uiState by dashboardViewModel.uiState.collectAsState()
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
@@ -351,6 +351,8 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                             AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
                                 Column(modifier = Modifier.padding(top = 16.dp)) {
                                     val isFuture = currentHighlight?.point?.isFuture == true
+                                    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+                                    val isBatteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
                                     val quote = remember(currentHighlight) {
                                         HeuristicQuotes.getQuote(
                                             point = currentHighlight?.point,
@@ -359,8 +361,8 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             isDataReliable = uiState.isDataReliable,
                                             hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
                                             osRetentionDays = uiState.osRetentionDays,
-                                            chartMode = ChartMode.GAPS
-                                        )
+                                            chartMode = ChartMode.GAPS,
+                                            isBatteryExempt = isBatteryExempt)
                                     }
                                     LaunchedEffect(currentHighlight) {
                                         if (!uiState.isDataReliable && !isFuture && !uiState.hasSeenHistoryLimitWarning) {
@@ -581,31 +583,6 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                 }
             }
 
-            // The app tour (2026-11-01): this screen's steps, hosted on the
-            // real surface. The registry target is the header column above.
-            val gapsStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_GAPS }
-            TourStepOverlay(
-                registry = tourRegistry,
-                currentStep = gapsStep,
-                globalIndex = AppTourState.stepIndex,
-                globalCount = DashboardTourSteps.steps.size,
-                onNext = {
-                    val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
-                    if (next != null && next.screen != DashboardTourSteps.SCREEN_GAPS) {
-                        navController.navigate(next.route)
-                    }
-                    if (next == null) {
-                        AppTourState.end()
-                        dashboardViewModel.markTourSeen()
-                    }
-                    AppTourState.stepIndex++
-                },
-                onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
-                onSkip = {
-                    AppTourState.end()
-                    dashboardViewModel.markTourSeen()
-                }
-            )
         }
     }
 }

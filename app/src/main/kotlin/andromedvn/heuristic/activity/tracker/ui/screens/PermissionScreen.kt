@@ -13,9 +13,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -31,13 +28,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Splitscreen
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -49,13 +46,13 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.R
 import andromedvn.heuristic.activity.tracker.data.OfflineStorage
@@ -70,12 +67,11 @@ import kotlinx.coroutines.withContext
 
 /**
  * First-launch onboarding (2026-11-01): the v1.1.1 anatomy the owner asked to
- * bring back, stripped to two screens. Page 0 is the original Welcome (72dp
- * icon box with the tinted launcher glyph, centered headlineMedium, animated
- * pill-dots, PrivacyPoint rows). Page 1 is the original Usage access page
- * with the battery exemption folded in: once the grant is real the page grows
- * a battery section and the bar button becomes Continue, which launches the
- * app tour (startTour=true).
+ * bring back, three screens. Welcome (the original: 72dp tinted launcher-glyph
+ * box, centered headline, PrivacyPoint rows, animated pill-dots) -> the Usage
+ * access ask (the original page with its PrivacyPoints) -> the battery
+ * exemption as its own screen (the old page-3 ask, back in the flow where the
+ * owner wants it). Continue on the battery page launches the app tour.
  *
  * System back reviews the previous page; the flow replays from
  * Settings > How HAT Works (reviewMode exits with Done, no tour launch).
@@ -91,13 +87,15 @@ fun PermissionsScreen(
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val pageCount = 2
+    val pageCount = 3
     val pagerState = rememberPagerState(pageCount = { pageCount })
     var usageGranted by remember { mutableStateOf(hasUsageStatsPermission(context)) }
+    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+    var batteryExempt by remember { mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName)) }
     var setupCompleted by remember { mutableStateOf(false) }
 
-    // markTour=true only from the granted path: Skip and Not now land on the
-    // dashboard without the tour (the permission card waits there instead).
+    // markTour=true only from the battery page: Skip lands on the dashboard
+    // without the tour (the permission card waits there instead).
     val completeSetup: (Boolean) -> Unit = { markTour ->
         if (!setupCompleted) {
             setupCompleted = true
@@ -140,12 +138,12 @@ fun PermissionsScreen(
     }
 
     // The permission check refreshes on return from system settings; the
-    // moment the grant is real, the battery section grows in and the bar
-    // button becomes Continue.
+    // moment the grant is real, "Grant Access" becomes "Continue".
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 usageGranted = hasUsageStatsPermission(context)
+                batteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -208,26 +206,19 @@ fun PermissionsScreen(
                             PrivacyPoint(Icons.Default.OfflineBolt, "This allows HAT to detect when your screen was active and when it was off.")
                             Spacer(modifier = Modifier.height(24.dp))
                             PrivacyPoint(Icons.Default.Security, "All data is processed entirely on your device. HAT does not have internet permissions and cannot upload your timeline.")
-                            // The battery exemption, folded in post-grant (the
-                            // v1.1.1 page-3 ask, kept on the permission page).
-                            AnimatedVisibility(
-                                visible = usageGranted,
-                                enter = expandVertically(animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400))
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Spacer(modifier = Modifier.height(32.dp))
-                                    PrivacyPoint(Icons.Default.OfflineBolt, "Android deletes old usage records after a few days. HAT archives them first so your history survives.")
-                                    Spacer(modifier = Modifier.height(24.dp))
-                                    PrivacyPoint(Icons.Default.BatterySaver, "Battery savers can stop that archive. Exempting HAT keeps it running.")
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    OutlinedButton(
-                                        onClick = { try { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } },
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                                    ) { Text("Exempt HAT from Battery Saving", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) }
-                                }
+                        }
+                        2 -> {
+                            Box(modifier = Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.BatterySaver, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
                             }
+                            Spacer(modifier = Modifier.height(32.dp))
+                            Text("Keep Your History Safe", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Android deletes old usage records after a few days. HAT archives them first so your history survives.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(48.dp))
+                            PrivacyPoint(Icons.Default.OfflineBolt, "Battery savers can stop that archive mid-save. When it stops, days of history are gone for good.")
+                            Spacer(modifier = Modifier.height(24.dp))
+                            PrivacyPoint(Icons.Default.BatterySaver, "Exempting HAT is a normal Android setting. It does not disable battery saving for anything else.")
                         }
                     }
                     Spacer(modifier = Modifier.height(32.dp))
@@ -251,14 +242,21 @@ fun PermissionsScreen(
                             OnboardingOutlinedButton("Next") { goNext() }
                         }
                     }
-                    else -> {
+                    1 -> {
                         if (usageGranted) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                OnboardingOutlinedButton(if (reviewMode) "Done" else "See Your Dashboard") { completeSetup(!reviewMode) }
-                            }
+                            OnboardingOutlinedButton("Continue") { goNext() }
                         } else {
                             OnboardingOutlinedButton("Grant Access") {
                                 try { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                            }
+                        }
+                    }
+                    else -> {
+                        if (batteryExempt) {
+                            OnboardingOutlinedButton(if (reviewMode) "Done" else "See Your Dashboard") { completeSetup(!reviewMode) }
+                        } else {
+                            OnboardingOutlinedButton("Exempt Battery") {
+                                try { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
                             }
                         }
                     }

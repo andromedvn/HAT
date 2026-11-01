@@ -1,6 +1,7 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
 import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -46,6 +47,7 @@ import java.util.Calendar
 
 @Composable
 fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewModel) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val chartScrollState = rememberLazyListState()
@@ -185,6 +187,8 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                             AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
                                 Column(modifier = Modifier.padding(top = 16.dp)) {
                                     val isFuture = chartHighlight?.point?.isFuture == true
+                                    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+                                    val isBatteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
                                     val quote = remember(chartHighlight) {
                                         HeuristicQuotes.getQuote(
                                             point = chartHighlight?.point,
@@ -193,8 +197,8 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                                             isDataReliable = uiState.isDataReliable,
                                             hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
                                             osRetentionDays = uiState.osRetentionDays,
-                                            chartMode = ChartMode.OFFLINE
-                                        )
+                                            chartMode = ChartMode.OFFLINE,
+                                            isBatteryExempt = isBatteryExempt)
                                     }
                                     LaunchedEffect(chartHighlight) {
                                         if (!uiState.isDataReliable && !isFuture && !uiState.hasSeenHistoryLimitWarning) {

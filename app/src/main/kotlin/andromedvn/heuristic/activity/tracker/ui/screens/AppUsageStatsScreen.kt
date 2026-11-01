@@ -1,6 +1,7 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -31,10 +32,7 @@ import andromedvn.heuristic.activity.tracker.ui.components.HatDatePickerModal
 import andromedvn.heuristic.activity.tracker.ui.components.RealActivityListItem
 import andromedvn.heuristic.activity.tracker.ui.components.HatDynamicHeader
 import andromedvn.heuristic.activity.tracker.ui.components.TourRegistry
-import andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay
 import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
-import andromedvn.heuristic.activity.tracker.domain.AppTourState
-import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import andromedvn.heuristic.activity.tracker.ui.components.TimeSelector
 import andromedvn.heuristic.activity.tracker.ui.components.verticalFadingEdges
 import andromedvn.heuristic.activity.tracker.ui.components.HeuristicTipCard
@@ -49,7 +47,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewModel) {
-    val tourRegistry = androidx.compose.runtime.remember { TourRegistry() }
+    val context = LocalContext.current
+    val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val chartScrollState = rememberLazyListState()
@@ -132,6 +131,8 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
                         AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
                             Column(modifier = Modifier.padding(top = 16.dp)) {
                                 val isFuture = chartHighlight?.point?.isFuture == true
+                                val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+                                val isBatteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
                                 val quote = remember(chartHighlight) {
                                     HeuristicQuotes.getQuote(
                                         point = chartHighlight?.point,
@@ -140,8 +141,8 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
                                         isDataReliable = uiState.isDataReliable,
                                         hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
                                         osRetentionDays = uiState.osRetentionDays,
-                                        chartMode = ChartMode.APP_USAGE
-                                    )
+                                        chartMode = ChartMode.APP_USAGE,
+                                        isBatteryExempt = isBatteryExempt)
                                 }
                                 LaunchedEffect(chartHighlight) {
                                     if (!uiState.isDataReliable && !isFuture && !uiState.hasSeenHistoryLimitWarning) {
@@ -190,31 +191,6 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
                 }
             }
 
-            // The app tour (2026-11-01): screen-level spotlight on the real
-            // ranked list. The registry target is the header column above.
-            val statsStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_STATS }
-            TourStepOverlay(
-                registry = tourRegistry,
-                currentStep = statsStep,
-                globalIndex = AppTourState.stepIndex,
-                globalCount = DashboardTourSteps.steps.size,
-                onNext = {
-                    val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
-                    if (next != null && next.screen != DashboardTourSteps.SCREEN_STATS) {
-                        navController.navigate(next.route)
-                    }
-                    if (next == null) {
-                        AppTourState.end()
-                        viewModel.markTourSeen()
-                    }
-                    AppTourState.stepIndex++
-                },
-                onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
-                onSkip = {
-                    AppTourState.end()
-                    viewModel.markTourSeen()
-                }
-            )
         }
     }
 }

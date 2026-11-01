@@ -4,9 +4,11 @@ import andromedvn.heuristic.activity.tracker.ui.components.ChartMode
 import andromedvn.heuristic.activity.tracker.ui.components.ChartPoint
 
 /**
- * The tip copy (overhauled 2026-11-01, owner directive): the HAT voice.
+ * The tip copy (2026-11-01, owner-picked line by line): the HAT voice.
  * Plain words, short sentences, two lines maximum: the fact, then the way
- * out. No speculation, no blame, no flourishes. The charter rules apply
+ * out. The history-limit tips are battery-aware: when HAT is not exempted
+ * they warn that battery saving can stop the archive; once exempted they
+ * point to backups and the archive instead. The charter rules apply
  * (no em dashes, no hype words).
  */
 object HeuristicQuotes {
@@ -18,7 +20,8 @@ object HeuristicQuotes {
         isDataReliable: Boolean,
         hasSeenHistoryLimitWarning: Boolean,
         osRetentionDays: Int,
-        chartMode: ChartMode
+        chartMode: ChartMode,
+        isBatteryExempt: Boolean = true
     ): String {
         if (point == null) return ""
 
@@ -27,32 +30,41 @@ object HeuristicQuotes {
         // 1. Unrecorded History Logic
         if (!isDataReliable && !isFuture) {
             if (!hasSeenHistoryLimitWarning) {
-                return "This goes back further than HAT can reach.\nAndroid keeps about ~$osRetentionDays days of usage history. Older records were deleted before HAT was installed. The archive protects everything from here on."
+                val cause = "It keeps about ~$osRetentionDays days of history, and HAT was not installed yet, so nothing saved them."
+                return if (isBatteryExempt) {
+                    "Android already deleted this.\n$cause Got a backup? Restoring brings the old days back. From here on, the archive protects everything."
+                } else {
+                    "Android already deleted this.\n$cause Battery saving can stop HAT's archive too. Exempt HAT so this never happens again."
+                }
             }
-            return "Android deleted this data before HAT could save it.\nThere is nothing here to recover."
+            return if (isBatteryExempt) {
+                "Deleted before HAT could save it.\nNothing to recover here. The archive prevents it from now on."
+            } else {
+                "Deleted before HAT could save it.\nNothing to recover here. With battery saving on, the archive can be stopped too. Exempt HAT to keep the rest safe."
+            }
         }
 
         // 2. The Future
         if (isFuture) {
             val isHeavyScreenTime = totalScreenTimeMillis > 4L * 60L * 60L * 1000L
             return if (isHeavyScreenTime) {
-                "A heavy day so far.\nThis block has not happened yet."
+                "This block is the future.\nHAT will fill it in as it happens."
             } else {
-                "This time has not happened yet.\nHAT logs it when it does."
+                "Hasn't happened yet.\nHAT writes it down the moment it does."
             }
         }
 
         // 3. Week / Month Overviews (Past)
         if (!isDayView) {
-            return "Nothing recorded here.\nIf the phone was off that day, log the time manually from the Gaps screen."
+            return "This day has no records.\nThe phone was off or dead, Usage access was off, or Android cleared what little there was. If you remember it, the Gaps screen can still log the time."
         }
 
         // 4. The Past (Day View)
         return when (chartMode) {
-            ChartMode.GAPS -> "No gaps here.\nScreen time and offline logs account for every minute of this period."
-            ChartMode.APP_USAGE -> "No app usage in this hour.\nOffline time is hidden in this view. The Gaps chart shows the full picture."
-            ChartMode.OFFLINE -> "Nothing logged yet.\nHead to Gaps to label this time."
-            else -> "No screen activity or manual logs here.\nIf you were away from the device, name this time with View Unlabeled Gaps below."
+            ChartMode.GAPS -> "All accounted for.\nApp time and labeled offline time cover this whole period. Nothing here needs a name."
+            ChartMode.APP_USAGE -> "No app used the screen this hour.\nOffline time does not show here. The Gaps chart has the full picture."
+            ChartMode.OFFLINE -> "Nothing here.\nGaps is where this time gets named."
+            else -> "No screen activity or manual logs here\nTap View Unlabeled Gaps below and tell HAT what really happened."
         }
     }
 }

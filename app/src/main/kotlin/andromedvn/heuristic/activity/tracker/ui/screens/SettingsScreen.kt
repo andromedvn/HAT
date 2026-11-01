@@ -11,8 +11,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
-import andromedvn.heuristic.activity.tracker.domain.AppTourState
-import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,7 +60,7 @@ import java.util.Locale
 
 @Composable
 fun SettingsScreen(navController: NavController, repository: ActivityRepository) {
-    val tourRegistry = androidx.compose.runtime.remember { TourRegistry() }
+    val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val storage = remember { OfflineStorage.getInstance(context) }
@@ -351,27 +349,6 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
             }
         }
         
-        // The app tour (2026-11-01): the last two steps live here, spotlighting
-        // the screen itself and the Hidden Apps row's group.
-        val settingsStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_SETTINGS }
-        TourStepOverlay(
-            registry = tourRegistry,
-            currentStep = settingsStep,
-            globalIndex = AppTourState.stepIndex,
-            globalCount = DashboardTourSteps.steps.size,
-            onNext = {
-                if (AppTourState.stepIndex >= DashboardTourSteps.steps.lastIndex) {
-                    AppTourState.end()
-                    scope.launch { val cur = repository.settings.first(); storage.saveSettings(cur.copy(hasSeenTour = true)) }
-                }
-                AppTourState.stepIndex++
-            },
-            onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
-            onSkip = {
-                AppTourState.end()
-                scope.launch { val cur = repository.settings.first(); storage.saveSettings(cur.copy(hasSeenTour = true)) }
-            }
-        )
         }
     }
 }

@@ -6,12 +6,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -62,7 +65,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import andromedvn.heuristic.activity.tracker.ui.components.TourRegistry
-import andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay
 import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
 import andromedvn.heuristic.activity.tracker.domain.AppTourState
 import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
@@ -82,7 +84,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     // in the back stack entry's saved state, so returning from Label Gaps
     // recomposes with startTour still true - without the guard the whole tour
     // restarted on return (owner report, 2026-11-01).
-    val tourRegistry = remember { andromedvn.heuristic.activity.tracker.ui.components.TourRegistry() }
+    val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
     var tourLaunched by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(startTour) {
         if (startTour && !tourLaunched) {
@@ -118,16 +120,17 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     val scope = rememberCoroutineScope()
 
     // Auto-scroll the tour: bring each step's target to ~38% of the screen
-    // height so the spotlight never lands on something below the fold.
+    // height, animated (the owner called the jump "robotic"), so the spotlight
+    // never lands on something below the fold.
     val tourStepHere = if (AppTourState.active && AppTourState.current?.screen == DashboardTourSteps.SCREEN_DASHBOARD) AppTourState.stepIndex else -1
     androidx.compose.runtime.LaunchedEffect(tourStepHere) {
         if (tourStepHere < 0) return@LaunchedEffect
-        kotlinx.coroutines.delay(250)
+        kotlinx.coroutines.delay(120)
         val id = DashboardTourSteps.steps.getOrNull(tourStepHere)?.targetKey ?: return@LaunchedEffect
         val rect = tourRegistry.bounds[id] ?: return@LaunchedEffect
         val anchor = tourAutoScrollPx * 0.38f
         val delta = rect.center.y - anchor
-        if (kotlin.math.abs(delta) > 80f) listState.scrollBy(delta)
+        if (kotlin.math.abs(delta) > 80f) listState.animateScrollBy(delta, tween(450, easing = FastOutSlowInEasing))
     }
 
     var headerTapCount by remember { mutableIntStateOf(0) }
@@ -206,7 +209,11 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                                 }
                             )
                             val showHint = chartHighlight != null && chartHighlight.stackIndex == -1 && chartHighlight.point?.values?.all { it <= 0f } == true
-                            AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
+                            AnimatedVisibility(
+                                visible = showHint,
+                                enter = fadeIn(tween(300)) + expandVertically(tween(300, easing = FastOutSlowInEasing)),
+                                exit = fadeOut(tween(300)) + shrinkVertically(tween(300, easing = FastOutSlowInEasing))
+                            ) {
                                 Column(modifier = Modifier.padding(top = 16.dp)) {
                                     val isFuture = chartHighlight?.point?.isFuture == true
                                     val quote = remember(chartHighlight) {
@@ -307,31 +314,6 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
             AnimatedVisibility(visible = uiState.isLoading, enter = fadeIn(tween(200)), exit = fadeOut(tween(400)), modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.65f)).pointerInput(Unit) { detectTapGestures {  } }, contentAlignment = Alignment.Center) { HatLoadingSpinner(MaterialTheme.colorScheme.primary) }
             }
-
-            // System back walks the tour backward while it is active. This
-            // handler is composed after the one above, so it wins while enabled.
-            androidx.activity.compose.BackHandler(enabled = AppTourState.active) {
-                if (AppTourState.stepIndex == 0) endTour() else AppTourState.stepIndex--
-            }
-            val dashStep = AppTourState.current?.takeIf { it.screen == DashboardTourSteps.SCREEN_DASHBOARD }
-            TourStepOverlay(
-                registry = tourRegistry,
-                currentStep = dashStep,
-                globalIndex = AppTourState.stepIndex,
-                globalCount = DashboardTourSteps.steps.size,
-                onNext = {
-                    val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
-                    if (next == null) {
-                        endTour()
-                        navController.navigate("label_gaps")
-                    } else if (next.screen != DashboardTourSteps.SCREEN_DASHBOARD) {
-                        navController.navigate(next.route)
-                    }
-                    AppTourState.stepIndex++
-                },
-                onBack = { if (AppTourState.stepIndex > 0) AppTourState.stepIndex-- },
-                onSkip = { endTour() }
-            )
-        }
-    }
-}
+        } // Scaffold content Box
+    } // Scaffold
+} // DashboardScreen
