@@ -12,6 +12,7 @@ import andromedvn.heuristic.activity.tracker.domain.hourBucketsOfDay
 import andromedvn.heuristic.activity.tracker.ui.components.ChartPoint
 import andromedvn.heuristic.activity.tracker.ui.components.HighlightEvent
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
+import andromedvn.heuristic.activity.tracker.domain.PresenceClassifier
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +91,40 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
     }
 
     fun triggerBackgroundArchiveSync() = viewModelScope.launch { repository.syncArchive() }
+
+    /**
+     * Presence evidence for gap cards (2026-11-02, presence arena composite):
+     * classifies each gap from the persisted raw event stream and returns a
+     * factual card line, or null when the evidence is undecided (which is
+     * the honest answer for every gap older than the raw-event field).
+     * Charter rules: facts only, past tense, no em dashes.
+     */
+    suspend fun presenceVerdicts(gaps: List<Pair<Long, Long>>): Map<Long, String> = withContext(Dispatchers.IO) {
+        if (gaps.isEmpty()) return@withContext emptyMap()
+        val minStart = gaps.minOf { it.first }
+        val maxEnd = gaps.maxOf { it.second }
+        val timeoutMs = try {
+            android.provider.Settings.System.getInt(
+                context.contentResolver,
+                android.provider.Settings.System.SCREEN_OFF_TIMEOUT
+            ).toLong()
+        } catch (e: Exception) { 60_000L }
+        val events = repository.storage.loadRawEvents(minStart - PresenceClassifier.PRE_WINDOW_MS, maxEnd + PresenceClassifier.POST_LOOKAHEAD_MS)
+        if (events.isEmpty()) return@withContext emptyMap()
+        val out = HashMap<Long, String>(gaps.size)
+        for ((start, end) in gaps) {
+            val verdict = PresenceClassifier.classify(events, start, end, timeoutMs)
+            val text = when (verdict.kind) {
+                PresenceClassifier.Kind.ANCHORED -> "You were using the phone during this time."
+                PresenceClassifier.Kind.CHOSE_TO_STOP -> "You locked the phone yourself."
+                PresenceClassifier.Kind.TIMEOUT -> "The screen timed out on its own. The phone sat until you came back."
+                PresenceClassifier.Kind.MEDIA_CONTINUED -> "This app kept running through the quiet."
+                PresenceClassifier.Kind.UNDECIDED -> null
+            }
+            if (text != null) out[start] = text
+        }
+        out
+    }
     fun setChartHighlight(event: HighlightEvent?) { _uiState.value = _uiState.value.copy(chartHighlight = event) }
     
     fun markHistoryLimitWarningSeen() = viewModelScope.launch {

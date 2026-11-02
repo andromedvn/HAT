@@ -57,6 +57,20 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
         if (!isArchiverRunning.compareAndSet(false, true)) return@withContext
         HatLogger.log("ActivityRepository: Starting Archive Sync (Micro-Batching)")
         try {
+            // Raw event persistence (schema v4, 2026-11-02): the interval
+            // archive is structurally blind to screen, keyguard, touch and
+            // foreground-service events. Persisting the drained stream on
+            // every sync means every day from now on carries full presence
+            // evidence. The 48h overlap makes the write idempotent.
+            try {
+                val now = System.currentTimeMillis()
+                val raw = engine.collectRawEventsForExport(now - 48L * 3600_000L, now)
+                storage.persistRawEvents(raw)
+                storage.pruneRawEvents(now - 180L * 86_400_000L)
+                HatLogger.log("ActivityRepository: raw events persisted (${raw.size} rows in window)")
+            } catch (e: Exception) {
+                HatLogger.logError("ActivityRepository", "raw event persistence failed; continuing with interval sync", e)
+            }
             val startOfToday = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
             val minSystemData = getOldestSystemData()
             val startOfMinSystemData = Calendar.getInstance().apply { timeInMillis = minSystemData; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis

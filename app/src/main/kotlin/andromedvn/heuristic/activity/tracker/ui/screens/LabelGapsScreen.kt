@@ -115,6 +115,19 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
 
     val todayStartMillis = getStartOfDay(Calendar.getInstance().apply { timeInMillis = uiState.startTime })
 
+    // Presence evidence lines per gap card (2026-11-02): factual, sourced
+    // from the persisted raw event stream. Gaps older than the field, or
+    // with undecided evidence, show nothing.
+    var presenceLines by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    androidx.compose.runtime.LaunchedEffect(uiState.majorGaps, uiState.idleSessions, uiState.lockScreenSessions, uiState.screenOffItems) {
+        val ranges = buildList {
+            uiState.majorGaps.forEach { add(it.startMillis to it.endMillis) }
+            uiState.idleSessions.forEach { add(it.gap.startMillis to it.gap.endMillis) }
+            uiState.lockScreenSessions.forEach { add(it.gap.startMillis to it.gap.endMillis) }
+        }
+        if (ranges.isNotEmpty()) presenceLines = dashboardViewModel.presenceVerdicts(ranges)
+    }
+
     LaunchedEffect(uiState.timeRange, uiState.dateLabelRelative) {
         chartHighlight = null
         returnScrollIndex = -1
@@ -439,6 +452,9 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                                                    presenceLines[gap.startMillis]?.let { line ->
+                                                        Text(line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    }
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text(gap.contextExplainer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                         if (gap.hasHiddenAppFootprint) {
@@ -473,6 +489,9 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(card.session.gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                                                    presenceLines[card.session.gap.startMillis]?.let { line ->
+                                                        Text(line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    }
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text("${card.session.appName} was open when this gap started", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                     }
@@ -498,6 +517,9 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(card.session.gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                                                    presenceLines[card.session.gap.startMillis]?.let { line ->
+                                                        Text(line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    }
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text("Behind the lock screen: ${card.session.appName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                     }

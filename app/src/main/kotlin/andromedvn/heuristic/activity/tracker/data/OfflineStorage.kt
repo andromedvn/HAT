@@ -817,4 +817,64 @@ class OfflineStorage private constructor(private val context: Context) {
         HatLogger.logError("OfflineStorage", "Delete by id failed - ${e.message}")
         false
     }
+    /**
+     * Persists the raw usage-event stream (schema v4). INSERT OR IGNORE on the
+     * (ts, type, package, class) primary key makes the sync idempotent: the
+     * 48-hour overlap window re-drains events that are already stored and
+     * they simply no-op. Rows from before this field existed do not exist,
+     * and old gaps therefore classify as UNDECIDED - the honest answer.
+     */
+    fun persistRawEvents(events: List<andromedvn.heuristic.activity.tracker.domain.RawEvent>) {
+        if (events.isEmpty()) return
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+        try {
+            val stmt = db.compileStatement(
+                "INSERT OR IGNORE INTO ${HatDatabaseHelper.TABLE_RAW_EVENTS} (ts_utc_ms, type_int, package_name, class_name) VALUES (?, ?, ?, ?)"
+            )
+            for (e in events) {
+                if (e.timestamp <= 0) continue
+                stmt.bindLong(1, e.timestamp)
+                stmt.bindLong(2, e.type.toLong())
+                stmt.bindString(3, e.packageName.ifEmpty { "unknown" })
+                if (e.className != null) stmt.bindString(4, e.className) else stmt.bindNull(4)
+                stmt.executeInsert()
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun pruneRawEvents(olderThanMillis: Long) {
+        try {
+            dbHelper.writableDatabase.execSQL(
+                "DELETE FROM ${HatDatabaseHelper.TABLE_RAW_EVENTS} WHERE ts_utc_ms < ?",
+                arrayOf(olderThanMillis)
+            )
+        } catch (e: Exception) {
+            HatLogger.logError("OfflineStorage", "raw event prune failed", e)
+        }
+    }
+
+    fun loadRawEvents(start: Long, end: Long): List<andromedvn.heuristic.activity.tracker.domain.RawEvent> {
+        val out = ArrayList<andromedvn.heuristic.activity.tracker.domain.RawEvent>(512)
+        dbHelper.readableDatabase.rawQuery(
+            "SELECT ts_utc_ms, type_int, package_name, class_name FROM ${HatDatabaseHelper.TABLE_RAW_EVENTS} WHERE ts_utc_ms >= ? AND ts_utc_ms <= ? ORDER BY ts_utc_ms ASC",
+            arrayOf(start.toString(), end.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    andromedvn.heuristic.activity.tracker.domain.RawEvent(
+                        type = c.getInt(1),
+                        timestamp = c.getLong(0),
+                        packageName = c.getString(2) ?: "",
+                        className = if (c.isNull(3)) null else c.getString(3)
+                    )
+                )
+            }
+        }
+        return out
+    }
+
 }

@@ -22,7 +22,16 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
          * but this phone already runs a version-2 database, so the step is
          * kept distinct and the creation is idempotent either way.
          */
-        private const val DATABASE_VERSION = 3
+        /**
+         * 4 (2026-11-02): added `raw_usage_events`. The archive stores
+         * intervals only, which is structurally blind to the events the
+         * presence work needs (screen state, keyguard, USER_INTERACTION,
+         * foreground services). From version 4 the sync persists the raw
+         * stream as it is drained, so every future day carries the full
+         * evidence. Old days stay interval-only and honestly classify as
+         * UNDECIDED.
+         */
+        private const val DATABASE_VERSION = 4
 
         const val TABLE_OFFLINE = "offline_activities"
         const val COL_ID = "id"
@@ -40,6 +49,7 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val TABLE_IGNORED = "ignored_sessions"
         const val TABLE_ACK_GHOSTS = "ack_ghosts"
         const val TABLE_SCREEN_OFF_DISMISSED = "screen_off_dismissed"
+        const val TABLE_RAW_EVENTS = "raw_usage_events"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -161,5 +171,16 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         createUniqueIndexSafely(db, "idx_ignored_unique", TABLE_IGNORED, listOf("package_name", "start_millis", "end_millis"))
         createUniqueIndexSafely(db, "idx_ack_unique", TABLE_ACK_GHOSTS, listOf("package_name", "start_millis", "end_millis"))
         createUniqueIndexSafely(db, "idx_screen_off_dismissed_unique", TABLE_SCREEN_OFF_DISMISSED, listOf("package_name", "start_millis", "end_millis"))
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_RAW_EVENTS (
+                ts_utc_ms INTEGER NOT NULL,
+                type_int INTEGER NOT NULL,
+                package_name TEXT NOT NULL,
+                class_name TEXT,
+                PRIMARY KEY (ts_utc_ms, type_int, package_name, class_name)
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_raw_events_ts ON $TABLE_RAW_EVENTS(ts_utc_ms)")
     }
 }
