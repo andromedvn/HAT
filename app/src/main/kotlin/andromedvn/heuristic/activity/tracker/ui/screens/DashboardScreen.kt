@@ -180,7 +180,10 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                         }) {
                             HatDynamicHeader(title = "HAT", subtitle = "Dashboard") {
                                 IconButton(onClick = { viewModel.loadDashboardData(force = true, isBackgroundTick = false) }) { Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurface) }
-                                IconButton(onClick = { navController.navigate("settings") }) { Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurface) }
+                                IconButton(
+                                    onClick = { navController.navigate("settings") },
+                                    modifier = Modifier.tutorialTarget("settingsGear", tourRegistry)
+                                ) { Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurface) }
                             }
                         }
                         

@@ -48,7 +48,7 @@ object HeuristicQuotes {
         if (isFuture) {
             val isHeavyScreenTime = totalScreenTimeMillis > 4L * 60L * 60L * 1000L
             return if (isHeavyScreenTime) {
-                "This block is the future.\nHAT will fill it in as it happens."
+                "Yours to live, not to scroll.\nWhat do you plan to do with it?"
             } else {
                 "Hasn't happened yet.\nHAT writes it down the moment it does."
             }

@@ -53,4 +53,35 @@ class DashboardTourStepsTest {
             assertEquals("step ${step.id} route mismatch", step.screen, step.route)
         }
     }
+
+    @Test
+    fun `every screen change is taught through a pulsing real button`() {
+        // The owner's rule (2026-11-02): the tour must not teleport between
+        // screens. Whenever the tour moves to a screen the user was not on,
+        // one of the two steps must carry a transitionKey: the tour pulses
+        // the real button and the tap performs that button's navigation.
+        val targets = DashboardTourSteps.steps.mapNotNull { it.targetKey }.toSet()
+        for (i in 1 until DashboardTourSteps.steps.size) {
+            val prev = DashboardTourSteps.steps[i - 1]
+            val curr = DashboardTourSteps.steps[i]
+            if (curr.screen != prev.screen) {
+                val taught = prev.transitionKey != null || curr.transitionKey != null
+                assertTrue(
+                    "screen change ${prev.id} -> ${curr.id} teleports (no transitionKey)",
+                    taught
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `transition keys pulse buttons that are actually registered targets`() {
+        val targets = DashboardTourSteps.steps.mapNotNull { it.targetKey }.toSet()
+        DashboardTourSteps.steps.filter { it.transitionKey != null }.forEach { step ->
+            assertTrue(
+                "step ${step.id} pulses ${step.transitionKey}, which no step targets",
+                step.transitionKey in targets
+            )
+        }
+    }
 }

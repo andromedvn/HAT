@@ -7,11 +7,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * The app tour (2026-11-01, second pass: "make it sound human"): eleven steps
- * across four real screens. Each step names the screen it lives on; when the
- * tour advances past a screen's last step the host navigates to the next
- * route and the next screen's host picks the tour up. Skipping anywhere ends
- * the whole tour. Copy speaks like a friend showing you around, not a manual.
+ * One step of the app tour. [transitionKey] marks a TRANSITION step: the tour
+ * does not teleport to the next screen. Instead the real dashboard button that
+ * leads there is highlighted with a pulsing ring, Next is hidden, and tapping
+ * the button (the cutout) performs the button's own navigation. The user
+ * learns how to reach each screen, because every screen in HAT is entered
+ * from the dashboard (hub and spoke).
  */
 data class TourStep(
     val id: String,
@@ -19,6 +20,7 @@ data class TourStep(
     val route: String,
     val copy: String,
     val targetKey: String? = null,
+    val transitionKey: String? = null,
     val completesTour: Boolean = false
 )
 
@@ -30,28 +32,32 @@ object DashboardTourSteps {
 
     val steps = listOf(
         // Dashboard
-        TourStep("timeSelector", SCREEN_DASHBOARD, "dashboard", "Day, week, or month. The bars follow whatever you pick.", "timeSelector"),
-        TourStep("chart", SCREEN_DASHBOARD, "dashboard", "Every bar is an hour of your phone. Tap one and HAT tells you what it knows.", "chart"),
-        TourStep("statCards", SCREEN_DASHBOARD, "dashboard", "The two totals: what lit up your screen, and everything that happened without it.", "statCards"),
-        TourStep("appRows", SCREEN_DASHBOARD, "dashboard", "Your apps, heaviest first. Tap one and every session inside opens up.", "appRows"),
-        TourStep("labelGaps", SCREEN_DASHBOARD, "dashboard", "This button is where the honesty lives. Open it, and name what the phone cannot.", "labelGaps"),
+        TourStep("timeSelector", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Tap Day, Week, or Month. The bars follow your pick.", "timeSelector"),
+        TourStep("chart", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Each bar is one hour. Tap a bar to see its apps.", "chart"),
+        TourStep("statCards", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "One card counts screen time. The other counts time the screen was off.", "statCards"),
+        TourStep("appRows", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Apps appear heaviest first. Tap one to open its sessions.", "appRows"),
+        // Transition: the real Label Gaps button pulses; tapping it opens the screen.
+        TourStep("labelGaps", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This button opens your gaps. Tap it and name the first one.", "labelGaps", transitionKey = "labelGaps"),
         // Label Gaps screen
-        TourStep("gapsScreen", SCREEN_GAPS, "label_gaps", "Here is where the truth keeps itself: the off hours, the idle stretches, everything Android cannot name.", "gapsScreen"),
-        TourStep("gapsLabel", SCREEN_GAPS, "label_gaps", "Tap a span, say what it really was, save. Your timeline folds it in like it was always there.", "gapsScreen"),
+        TourStep("gapsScreen", SCREEN_GAPS, SCREEN_GAPS, "All the times the screen was off. I have no idea what happened. You might.", "gapsScreen"),
+        TourStep("gapsLabel", SCREEN_GAPS, SCREEN_GAPS, "Tap a span, name it, save. HAT takes your word for it.", "gapsScreen"),
+        // Transition back through the hub: the Total Apps Usage card pulses; tapping it opens the ranking.
+        TourStep("statCardsNav", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This card opens the Apps Usage ranking, heaviest first. Tap it.", "statCards", transitionKey = "statCards"),
         // App usage stats screen
-        TourStep("statsScreen", SCREEN_STATS, "app_usage_stats", "The full ranking. Every app, every hour it quietly took.", "statsScreen"),
-        TourStep("statsDetail", SCREEN_STATS, "app_usage_stats", "Tap any app and walk its sessions, minute by minute.", "statsScreen"),
+        TourStep("statsDetail", SCREEN_STATS, SCREEN_STATS, "Tap an app to list every session and its length.", "statsScreen"),
+        // Transition back through the hub: the header gear pulses; tapping it opens Settings.
+        TourStep("settingsGear", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "The gear up top opens Settings. Tap it.", "settingsGear", transitionKey = "settingsGear"),
         // Settings screen
-        TourStep("settingsScreen", SCREEN_SETTINGS, "settings", "Everything you can bend to your will: themes, thresholds, backups, all of it.", "settingsScreen"),
-        TourStep("settingsHidden", SCREEN_SETTINGS, "settings", "Last thing: Hidden Apps quiets the noisy ones. That is the whole tour. The rest is yours to find.", "settingsScreen", completesTour = true)
+        TourStep("settingsHidden", SCREEN_SETTINGS, SCREEN_SETTINGS, "Hidden Apps keeps chosen apps off your lists. That's the whole tour.", "settingsScreen", completesTour = true)
     )
 
     fun forScreen(screen: String): List<TourStep> = steps.filter { it.screen == screen }
 }
 
 /**
- * One tour, every screen. Hosts read [active] plus the current step's screen;
- * skipping or finishing sets both flags and persists hasSeenTour.
+ * One tour, every screen. The overlay lives at the NavHost level and reads
+ * [active] plus the current step; skipping or finishing sets both flags and
+ * persists hasSeenTour.
  */
 object AppTourState {
     var active by mutableStateOf(false)

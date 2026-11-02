@@ -1,7 +1,11 @@
 package andromedvn.heuristic.activity.tracker.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,9 +104,22 @@ fun TourStepOverlay(
     val cutoutRadius = with(density) { 16.dp.toPx() }
     val targetRect = currentStep.targetKey?.let { registry.bounds[it] }
 
+    // Transition steps hide Next: the pulsing button IS the way forward.
+    val isTransition = currentStep.transitionKey != null
+
     // The cutout glides between targets instead of teleporting: animate the
     // hole's edges (or its collapse when a step has no registered target).
     val hasTarget = targetRect != null && !targetRect.isEmpty
+    val pulseProgress = rememberInfiniteTransition(label = "tourPulse").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "tourPulseT"
+    ).value
+
     val animLeft by animateFloatAsState(
         targetValue = if (hasTarget) targetRect.left - cutoutInset else -1f,
         animationSpec = tween(320, easing = FastOutSlowInEasing), label = "cutL"
@@ -130,6 +147,21 @@ fun TourStepOverlay(
                     left = animLeft, top = animTop, right = animRight, bottom = animBottom,
                     radiusPx = cutoutRadius
                 )
+                // Transition steps PULSE the button the user must tap, so the
+                // tour teaches the real navigation instead of teleporting.
+                if (currentStep.transitionKey != null && hasTarget && animLeft >= 0f) {
+                    val t = pulseProgress
+                    drawRoundRect(
+                        color = primary.copy(alpha = (1f - t) * 0.85f),
+                        topLeft = Offset(animLeft - 10f - 26f * t, animTop - 10f - 26f * t),
+                        size = Size(
+                            (animRight - animLeft) + 20f + 52f * t,
+                            (animBottom - animTop) + 20f + 52f * t
+                        ),
+                        cornerRadius = CornerRadius(cutoutRadius + 8f + 20f * t),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f - 2.5f * t)
+                    )
+                }
             }
             .pointerInput(currentStep.id, targetRect) {
                 // Tap inside the cutout = advance. Everything else passes
@@ -195,12 +227,15 @@ fun TourStepOverlay(
                                     .clickableNoRipple { if (globalIndex > 0) onBack() }
                                     .padding(vertical = 8.dp)
                             )
+                            // On a transition step the pulsing button is the
+                            // only way forward; a second "Next" would teach
+                            // nothing (owner: no cutting corners).
                             Text(
-                                if (globalIndex == globalCount - 1) "Done" else "Next",
+                                text = if (isTransition) "" else if (globalIndex == globalCount - 1) "Done" else "Next",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = primary,
                                 modifier = Modifier
-                                    .clickableNoRipple { onNext() }
+                                    .then(if (isTransition) Modifier else Modifier.clickableNoRipple { onNext() })
                                     .padding(vertical = 8.dp)
                             )
                         }
