@@ -39,8 +39,8 @@ object DashboardTourSteps {
         // Transition: the real Label Gaps button pulses; tapping it opens the screen.
         TourStep("labelGaps", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This button opens your gaps. Tap it and name the first one.", "labelGaps", transitionKey = "labelGaps"),
         // Label Gaps screen
-        TourStep("gapsScreen", SCREEN_GAPS, SCREEN_GAPS, "Every stretch when the screen was off. The phone cannot say what happened. You can.", "gapsScreen"),
-        TourStep("gapsLabel", SCREEN_GAPS, SCREEN_GAPS, "Tap a span, name it, save. HAT takes your word for it.", "gapsScreen"),
+        TourStep("gapsScreen", SCREEN_GAPS, SCREEN_GAPS, "Every bar here is a gap. If a spot is empty, an app was used.", "gapsScreen"),
+        TourStep("gapsLabel", SCREEN_GAPS, SCREEN_GAPS, "Tap a gap, name it, save. HAT takes your word for it.", "gapsScreen"),
         // Transition back through the hub: the Total Apps Usage card pulses; tapping it opens the ranking.
         TourStep("statCardsNav", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This card opens the Apps Usage ranking. Tap it.", "statCardApps", transitionKey = "statCardApps"),
         // App usage stats screen

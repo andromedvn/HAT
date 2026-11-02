@@ -71,7 +71,6 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var showCascadeDialog by rememberSaveable { mutableStateOf(false) }
-    var showIdleActionDialog by rememberSaveable { mutableStateOf(false) }
     // Which evidence the idle dialog is presenting (2026-10-21): true for an
     // untouched-app Idle Session (the maintainer's original feature), false
     // for Lock Screen Activity (app active behind a locked phone). Both ask
@@ -126,7 +125,6 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     val handleBack: () -> Unit = {
         if (showDatePicker) { showDatePicker = false }
         else if (showRestorationDialog) { showRestorationDialog = false }
-        else if (showIdleActionDialog) { showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; singleGapStart = -1L; singleGapEnd = -1L }
         else if (showScreenOffDialog) { showScreenOffDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L }
         else if (showCascadeDialog) { showCascadeDialog = false; cascadeStart = -1L; cascadeEnd = -1L; cascadeTrueStart = -1L; cascadeTrueEnd = -1L; cascadeTitle = ""; cascadeIcon = "" }
         else if (showDialog) { showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; ghostPkg = ""; ghostAppName = "" }
@@ -136,7 +134,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     }
 
     val isResumed = lifecycleState == Lifecycle.State.RESUMED
-    BackHandler(enabled = isResumed && (returnScrollIndex != -1 || selectedGaps.isNotEmpty() || showDialog || showCascadeDialog || showIdleActionDialog || showRestorationDialog || showScreenOffDialog || showDatePicker)) { handleBack() }
+    BackHandler(enabled = isResumed && (returnScrollIndex != -1 || selectedGaps.isNotEmpty() || showDialog || showCascadeDialog || showRestorationDialog || showScreenOffDialog || showDatePicker)) { handleBack() }
 
     if (showDatePicker) {
         HatDatePickerModal(
@@ -151,14 +149,14 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     if (showRestorationDialog) {
         HatOutlinedDialog(onDismissRequest = { showRestorationDialog = false }, title = "Dismissed Sessions") {
             if (uiState.dismissedIdleSessions.isEmpty() && uiState.dismissedScreenOffSpans.isEmpty()) {
-                EmptyStateCard(icon = Icons.Default.History, title = "No Dismissed Sessions", subtitle = "No dismissed idle sessions or screen-off spans for this period.")
+                EmptyStateCard(icon = Icons.Default.History, title = "No Dismissed Sessions", subtitle = "No dismissed sessions for this period.")
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     PromptHighlightButton("Close") { showRestorationDialog = false }
                 }
             } else {
                 if (uiState.dismissedIdleSessions.isNotEmpty()) {
-                    Text("These spans were previously labeled by you as active app usage. Restore them if you changed your mind.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("These times were previously labeled by you as active app usage. Restore them if you changed your mind.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
@@ -184,7 +182,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                         item {
                             Column(modifier = Modifier.padding(top = 8.dp)) {
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("These screen-off spans were previously counted back as usage. Restoring one returns it to Screen-Off Activity.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("These screen-off records were previously counted back as usage. Restoring one returns it to Screen-Off Activity.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         items(uiState.dismissedScreenOffSpans, key = { "so_${it.packageName}_${it.startMillis}_${it.endMillis}" }) { span ->
@@ -232,30 +230,6 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         }
     }
     
-    if (showIdleActionDialog) {
-        HatOutlinedDialog(
-            onDismissRequest = { showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; singleGapStart = -1L; singleGapEnd = -1L },
-            title = if (idleDialogIsUnattended) "Idle Session" else "Lock Screen Activity"
-        ) {
-            val durationStr = TimeUtils.formatDuration(singleGapEnd - singleGapStart)
-            if (idleDialogIsUnattended) {
-                val lastTouch = SimpleDateFormat("h:mm a", Locale.getDefault()).format(singleGapStart)
-                Text("$ghostAppName was open for $durationStr. You hadn't touched it since $lastTouch. Were you still using it?", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Text("$ghostAppName was active behind the lock screen for $durationStr. The phone never unlocked. Was anyone using it?", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            // Stacked full-width buttons (2026-10-22): side-by-side text
-            // buttons wrapped on 720px screens ("No, name what it was"
-            // became three lines tall next to a one-line sibling and the
-            // pair misaligned). Full width can never wrap and the two
-            // answers read top to bottom like a sentence.
-            Column(modifier = Modifier.fillMaxWidth()) {
-                TextButton(modifier = Modifier.fillMaxWidth(), onClick = { dashboardViewModel.dismissGhost(ghostPkg, singleGapStart, singleGapEnd); showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; singleGapStart = -1L; singleGapEnd = -1L }) { Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Yes, I was using it", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-                TextButton(modifier = Modifier.fillMaxWidth(), onClick = { showIdleActionDialog = false; showDialog = true }) { Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No, name what it was", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) } }
-            }
-        }
-    }
 
     if (showScreenOffDialog) {
         HatOutlinedDialog(onDismissRequest = { showScreenOffDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L }, title = "Screen-Off Activity") {
@@ -281,7 +255,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         }
 
         ActivityEditorDialog(
-            initialTitle = if(ghostPkg.isNotEmpty() || screenOffPkg.isNotEmpty()) "Sleep" else "", initialIconName = if(ghostPkg.isNotEmpty() || screenOffPkg.isNotEmpty()) "Sleep" else "Walk", suggestions = uiState.recentSuggestions,
+            initialTitle = if (screenOffPkg.isNotEmpty()) "Sleep" else "", initialIconName = if(ghostPkg.isNotEmpty() || screenOffPkg.isNotEmpty()) "Sleep" else "Walk", suggestions = uiState.recentSuggestions,
             ledgerContext = ledgerContext,
             onDismiss = { showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; ghostPkg = ""; ghostAppName = ""; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L },
             onSave = { outTitle, outIcon, outStart ->
@@ -291,7 +265,10 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                 } else if (singleGapStart != -1L) {
                     scope.launch {
                         dashboardViewModel.resolveContiguousGap(outStart, singleGapEnd) { tS, tE ->
-                            if (tS < outStart || tE > singleGapEnd) {
+                            // The cascade dialog exists for blocks HAT split at
+                            // midnight. A wider same-day resolution is just the
+                            // gap HAT recorded; save it plain (owner fix, 2026-11-02).
+                            if (tS < todayStartMillis) {
                                 cascadeStart = outStart; cascadeEnd = singleGapEnd; cascadeTrueStart = tS; cascadeTrueEnd = tE; cascadeTitle = outTitle; cascadeIcon = outIcon
                                 showDialog = false; showCascadeDialog = true
                             } else {
@@ -480,13 +457,16 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                         Card(
                                             modifier = Modifier.weight(1f).padding(bottom = 12.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
                                                 .clickable {
+                                                    // The idle guess is gone (owner call, 2026-11-02):
+                                                    // the card states the fact, the tap labels
+                                                    // the time directly.
                                                     dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = card.session.gap.startMillis }.get(Calendar.HOUR_OF_DAY))
                                                     ghostPkg = card.session.packageName
                                                     ghostAppName = card.session.appName
                                                     singleGapStart = card.session.gap.startMillis
                                                     singleGapEnd = card.session.gap.endMillis
                                                     idleDialogIsUnattended = true
-                                                    showIdleActionDialog = true
+                                                    showDialog = true
                                                 },
                                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha=0.05f))
                                         ) {
@@ -494,7 +474,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(card.session.gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text("Possible idle session: ${card.session.appName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                                        Text("${card.session.appName} was open when this gap started", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                     }
                                                 }
                                                 Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha=0.15f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp)) { Text(card.session.gap.durationFormatted, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false) }
@@ -511,7 +491,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                     singleGapStart = card.session.gap.startMillis
                                                     singleGapEnd = card.session.gap.endMillis
                                                     idleDialogIsUnattended = false
-                                                    showIdleActionDialog = true
+                                                    showDialog = true
                                                 },
                                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha=0.05f))
                                         ) {

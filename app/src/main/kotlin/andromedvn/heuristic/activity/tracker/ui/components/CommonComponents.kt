@@ -268,14 +268,8 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
 fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
-    // The label's start, adjustable where the device's evidence is
-    // untrustworthy (2026-10-23). Idle Session spans anchor at the last
-    // RECORDED touch, and some manufacturers (the maintainer's own itel
-    // logs a handful of touches per week) barely record touches at all,
-    // so the span can start earlier than the moment the user actually
-    // stopped using the phone. The human was there; the hardware was not.
-    // Only unattended spans offer the steppers: lock spans anchor at a
-    // keyguard event, which every device records faithfully.
+    // The label's start, taken from the device's evidence. HAT saves the
+    // gap it recorded; no manual nudging (owner call, 2026-11-02).
     var adjustedStart by remember(ledgerContext) {
         mutableStateOf(
             when (val ctx = ledgerContext) {
@@ -314,31 +308,10 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                         Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            if (ledgerContext.wasUnattended) "The screen was on and the phone was unlocked, but no touch landed for this whole stretch"
+                            if (ledgerContext.wasUnattended) "The screen was on and the phone was unlocked, but no touch landed the whole time"
                             else "The phone stayed locked the whole time",
                             style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (ledgerContext.wasUnattended) {
-                            Text(
-                                "If you remember when you actually stopped using it, nudge the start. Your memory beats the phone's evidence.",
-                                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    listOf(-5L to "-5m", -1L to "-1m").forEach { (delta, label) ->
-                                        TextButton(onClick = { adjustedStart = maxOf(ledgerContext.startMillis, adjustedStart + delta * 60_000L) }) { Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-                                    }
-                                }
-                                Text(fmt.format(Date(adjustedStart)), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    listOf(1L to "+1m", 5L to "+5m").forEach { (delta, label) ->
-                                        TextButton(onClick = { adjustedStart = minOf(ledgerContext.endMillis, adjustedStart + delta * 60_000L) }) { Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-                                    }
-                                }
-                            }
-                        }
                     }
                     is LedgerContext.ScreenOff -> {
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
@@ -662,8 +635,9 @@ fun ThemePreviewBox(derivedColor: Color) {
                             drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }
 
-                        // Bar 3 stays the small plain bar from v1.1.1.
-                        Canvas(modifier = Modifier.width(12.dp).height(14.dp)) {
+                        // Bar 3 sits between the other two: taller than the
+                        // middle bar, never as tall as the first (owner, 2026-11-02).
+                        Canvas(modifier = Modifier.width(12.dp).height(30.dp)) {
                             val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
                             drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }

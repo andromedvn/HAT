@@ -111,10 +111,16 @@ fun TourStepOverlay(
     // The cutout glides between targets instead of teleporting: animate the
     // hole's edges (or its collapse when a step has no registered target).
     val hasTarget = targetRect != null && !targetRect.isEmpty
-    // While the auto-scroll moves the screen, SNAP the cutout to the moving
-    // bounds; a tween chasing a moving target is the jelly the owner saw.
+    // The cutout TWEENS only right after a step change (the glide between
+    // targets). After that it tracks the bounds 1:1: a tween chasing a
+    // moving target (scrolls, manual or auto) is the jelly the owner saw.
+    var gliding by remember(currentStep.id) { mutableStateOf(true) }
+    LaunchedEffect(currentStep.id) {
+        kotlinx.coroutines.delay(340)
+        gliding = false
+    }
     val cutoutSpec: androidx.compose.animation.core.FiniteAnimationSpec<Float> =
-        if (AppTourState.snapCutout) androidx.compose.animation.core.snap() else tween(320, easing = FastOutSlowInEasing)
+        if (AppTourState.snapCutout || !gliding) androidx.compose.animation.core.snap() else tween(320, easing = FastOutSlowInEasing)
     val pulseProgress = rememberInfiniteTransition(label = "tourPulse").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -168,9 +174,13 @@ fun TourStepOverlay(
                     )
                 }
             }
-            .pointerInput(currentStep.id, targetRect) {
-                // Tap inside the cutout = advance. Everything else passes
-                // through untouched so the screen below keeps scrolling.
+            .pointerInput(currentStep.id, targetRect, isTransition) {
+                // On a TRANSITION step a tap on the pulsing button advances
+                // (and performs that button's navigation). On every other step
+                // the overlay consumes nothing: the user can tap the chart,
+                // open a gap, scroll, all while the tour is up (owner fix,
+                // 2026-11-02: tapping the chart must not next the tour).
+                if (!isTransition) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val inCutout = targetRect?.inflate(cutoutInset)?.contains(down.position) == true
@@ -199,7 +209,7 @@ fun TourStepOverlay(
                             Icon(Icons.Default.Lightbulb, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "TOUR 0${globalIndex + 1} / 0$globalCount",
+                                "TOUR ${globalIndex + 1} / $globalCount",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = primary
                             )

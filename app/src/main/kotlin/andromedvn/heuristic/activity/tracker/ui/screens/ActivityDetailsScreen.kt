@@ -389,7 +389,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                                         Icon(Icons.Default.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
                                                         Spacer(modifier = Modifier.width(4.dp))
                                                         Text(
-                                                            if (idleSpan != null) "Possible idle session" else "Active behind the lock screen, nobody unlocked it",
+                                                            if (idleSpan != null) "No touches recorded while the app stayed in front" else "Active behind the lock screen, nobody unlocked it",
                                                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary
                                                         )
                                                     }

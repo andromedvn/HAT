@@ -167,7 +167,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                         }
                     }
                     item {
-                        DiagnosticSettingsItem("Export Raw Event Stream", "Every usage event the OS still holds, last 3 days, in the exact order and millisecond precision HAT's replays receive them. For tracing span decisions on this device.") {
+                        DiagnosticSettingsItem("Export Raw Event Stream", "Every usage event the OS still holds, last 3 days, in the exact order and millisecond precision HAT's replays receive them. For tracing the gap decisions on this device.") {
                             val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
                             rawEventLauncher.launch("HAT_Raw_Events_$stamp.txt")
                         }
