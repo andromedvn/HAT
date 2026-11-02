@@ -35,14 +35,14 @@ object DashboardTourSteps {
         TourStep("timeSelector", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Tap Day, Week, or Month. The bars follow your pick.", "timeSelector"),
         TourStep("chart", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Each bar is one hour. Tap a bar to see its apps.", "chart"),
         TourStep("statCards", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "One card counts screen time. The other counts time the screen was off.", "statCards"),
-        TourStep("appRows", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Apps appear heaviest first. Tap one to open its sessions.", "appRows"),
+        TourStep("appRows", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Apps and offline time fill this list. Tap one to open its sessions.", "appRows"),
         // Transition: the real Label Gaps button pulses; tapping it opens the screen.
         TourStep("labelGaps", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This button opens your gaps. Tap it and name the first one.", "labelGaps", transitionKey = "labelGaps"),
         // Label Gaps screen
-        TourStep("gapsScreen", SCREEN_GAPS, SCREEN_GAPS, "All the times the screen was off. I have no idea what happened. You might.", "gapsScreen"),
+        TourStep("gapsScreen", SCREEN_GAPS, SCREEN_GAPS, "Every stretch when the screen was off. The phone cannot say what happened. You can.", "gapsScreen"),
         TourStep("gapsLabel", SCREEN_GAPS, SCREEN_GAPS, "Tap a span, name it, save. HAT takes your word for it.", "gapsScreen"),
         // Transition back through the hub: the Total Apps Usage card pulses; tapping it opens the ranking.
-        TourStep("statCardsNav", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This card opens the Apps Usage ranking, heaviest first. Tap it.", "statCards", transitionKey = "statCards"),
+        TourStep("statCardsNav", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This card opens the Apps Usage ranking. Tap it.", "statCardApps", transitionKey = "statCardApps"),
         // App usage stats screen
         TourStep("statsDetail", SCREEN_STATS, SCREEN_STATS, "Tap an app to list every session and its length.", "statsScreen"),
         // Transition back through the hub: the header gear pulses; tapping it opens Settings.
@@ -62,6 +62,12 @@ object DashboardTourSteps {
 object AppTourState {
     var active by mutableStateOf(false)
     var stepIndex by mutableIntStateOf(0)
+
+    /**
+     * True while the auto-scroll is running: the cutout then tracks the moving
+     * target 1:1 (snap) instead of tween-chasing it, which read as jelly.
+     */
+    var snapCutout by mutableStateOf(false)
 
     val current: TourStep? get() = if (active) DashboardTourSteps.steps.getOrNull(stepIndex) else null
 

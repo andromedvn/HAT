@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
 import andromedvn.heuristic.activity.tracker.domain.TourStep
 
 /**
@@ -110,6 +111,10 @@ fun TourStepOverlay(
     // The cutout glides between targets instead of teleporting: animate the
     // hole's edges (or its collapse when a step has no registered target).
     val hasTarget = targetRect != null && !targetRect.isEmpty
+    // While the auto-scroll moves the screen, SNAP the cutout to the moving
+    // bounds; a tween chasing a moving target is the jelly the owner saw.
+    val cutoutSpec: androidx.compose.animation.core.FiniteAnimationSpec<Float> =
+        if (AppTourState.snapCutout) androidx.compose.animation.core.snap() else tween(320, easing = FastOutSlowInEasing)
     val pulseProgress = rememberInfiniteTransition(label = "tourPulse").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -122,19 +127,19 @@ fun TourStepOverlay(
 
     val animLeft by animateFloatAsState(
         targetValue = if (hasTarget) targetRect.left - cutoutInset else -1f,
-        animationSpec = tween(320, easing = FastOutSlowInEasing), label = "cutL"
+        animationSpec = cutoutSpec, label = "cutL"
     )
     val animTop by animateFloatAsState(
         targetValue = if (hasTarget) targetRect.top - cutoutInset else -1f,
-        animationSpec = tween(320, easing = FastOutSlowInEasing), label = "cutT"
+        animationSpec = cutoutSpec, label = "cutT"
     )
     val animRight by animateFloatAsState(
         targetValue = if (hasTarget) targetRect.right + cutoutInset else -1f,
-        animationSpec = tween(320, easing = FastOutSlowInEasing), label = "cutR"
+        animationSpec = cutoutSpec, label = "cutR"
     )
     val animBottom by animateFloatAsState(
         targetValue = if (hasTarget) targetRect.bottom + cutoutInset else -1f,
-        animationSpec = tween(320, easing = FastOutSlowInEasing), label = "cutB"
+        animationSpec = cutoutSpec, label = "cutB"
     )
 
     Box(

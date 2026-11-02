@@ -656,18 +656,12 @@ fun ThemePreviewBox(derivedColor: Color) {
                             val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
                             drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }
-                        // Bar 2 is the split mark (two segments, one gap):
-                        // the app's honesty symbol, not a data value. One
-                        // notch below the tallest bar (owner, 2026-11-01).
-                        Canvas(modifier = Modifier.width(12.dp).height(30.dp)) {
-                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val rad = CornerRadius(size.width / 2 - inset)
-                            val segH = 13.dp.toPx()
-                            val gap = 4.dp.toPx()
-                            val topY = size.height - strokeW - (segH * 2 + gap)
-                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, topY), Size(size.width - strokeW, segH), rad); drawRoundRect(derivedColor, Offset(inset, topY), Size(size.width - strokeW, segH), rad, style = Stroke(strokeW))
-                            val bottomY = size.height - strokeW - segH
-                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, bottomY), Size(size.width - strokeW, segH), rad); drawRoundRect(derivedColor, Offset(inset, bottomY), Size(size.width - strokeW, segH), rad, style = Stroke(strokeW))
+                        // Bar 2 is the middle plain bar from v1.1.1.
+                        Canvas(modifier = Modifier.width(12.dp).height(24.dp)) {
+                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
+                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }
+
                         // Bar 3 stays the small plain bar from v1.1.1.
                         Canvas(modifier = Modifier.width(12.dp).height(14.dp)) {
                             val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)

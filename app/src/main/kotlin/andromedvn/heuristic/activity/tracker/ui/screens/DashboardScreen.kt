@@ -130,7 +130,14 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
         val rect = tourRegistry.bounds[id] ?: return@LaunchedEffect
         val anchor = tourAutoScrollPx * 0.38f
         val delta = rect.center.y - anchor
-        if (kotlin.math.abs(delta) > 80f) listState.animateScrollBy(delta, tween(450, easing = FastOutSlowInEasing))
+        if (kotlin.math.abs(delta) > 80f) {
+            // The cutout snaps to the moving target while this runs (no
+            // tween-chase jelly), then the glide behavior resumes.
+            AppTourState.snapCutout = true
+            listState.animateScrollBy(delta, tween(450, easing = FastOutSlowInEasing))
+            kotlinx.coroutines.delay(80)
+            AppTourState.snapCutout = false
+        }
     }
 
     var headerTapCount by remember { mutableIntStateOf(0) }
@@ -262,7 +269,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                         }
                         
                         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max).tutorialTarget("statCards", tourRegistry), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Apps Usage", value = uiState.totalScreenTimeFormatted, badgeText = null, onClick = { navController.navigate("app_usage_stats") })
+                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight().tutorialTarget("statCardApps", tourRegistry), title = "Total Apps Usage", value = uiState.totalScreenTimeFormatted, badgeText = null, onClick = { navController.navigate("app_usage_stats") })
                             SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Offline Time", value = uiState.totalOfflineTimeFormatted, badgeText = null, onClick = { navController.navigate("offline_stats") })
                         }
                         
