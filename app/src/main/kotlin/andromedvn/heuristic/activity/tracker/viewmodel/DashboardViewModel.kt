@@ -31,8 +31,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-data class IdleSession(val packageName: String, val appName: String, val gap: UsageGap)
-
 data class DismissedSession(val packageName: String, val appName: String, val startMillis: Long, val endMillis: Long)
 
 data class DashboardUiState(
@@ -40,8 +38,8 @@ data class DashboardUiState(
     val hasNextPeriod: Boolean = false, val hasPreviousPeriod: Boolean = true, val totalScreenTimeFormatted: String = "0m", val totalAppExecutionFormatted: String = "0m", 
     val totalOfflineTimeFormatted: String = "0m", val totalCombinedTimeFormatted: String = "0m", val totalScreenTimeMillis: Long = 0L,
     val activityList: List<UnifiedActivity> = emptyList(), val appDetailChartData: List<ChartPoint> = emptyList(), val offlineDetailChartData: List<ChartPoint> = emptyList(), 
-    val majorGaps: List<UsageGap> = emptyList(), val idleSessions: List<IdleSession> = emptyList(), val lockScreenSessions: List<IdleSession> = emptyList(),
-    val dismissedIdleSessions: List<DismissedSession> = emptyList(), val dismissedScreenOffSpans: List<DismissedSession> = emptyList(), val chartData: List<ChartPoint> = emptyList(), val gapChartData: List<ChartPoint> = emptyList(),
+    val majorGaps: List<UsageGap> = emptyList(),
+    val dismissedScreenOffSpans: List<DismissedSession> = emptyList(), val chartData: List<ChartPoint> = emptyList(), val gapChartData: List<ChartPoint> = emptyList(),
     val screenOffItems: List<ScreenOffItem> = emptyList(), val totalScreenOffMillis: Long = 0L,
     val recentSuggestions: List<String> = emptyList(),
     val chartHighlight: HighlightEvent? = null, val isLoading: Boolean = false, val isStalled: Boolean = false, val isDataReliable: Boolean = true, val osRetentionDays: Int = 7,
@@ -213,8 +211,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     appDetailChartData = emptyList(),
                     offlineDetailChartData = emptyList(),
                     majorGaps = emptyList(),
-                    idleSessions = emptyList(), lockScreenSessions = emptyList(),
-                    dismissedIdleSessions = emptyList(), dismissedScreenOffSpans = emptyList(),
+                    dismissedScreenOffSpans = emptyList(),
                     chartHighlight = null,
                     animationSalt = java.util.UUID.randomUUID().toString(),
                                         isLoading = true,
@@ -268,10 +265,9 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                 val (relativeLabel, exactLabel) = getRelativeAndExactDateLabels(activeCal, range)
                 
                 val hiddenPkgs = repository.storage.getHiddenPackagesFlow().first()
-                val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
                 val pattern = if (range == TimeRangeLabel.WEEK) "EEE" else "dd"
 
-                val appUsageDef = async { heuristicEngine.getAppUsage(start, end, range, DetailLevel.ghostTriggerMinutes(settings), hiddenPkgs, ackGhosts) }
+                val appUsageDef = async { heuristicEngine.getAppUsage(start, end, range, hiddenPkgs) }
                 val gapsDef = async { if (range == TimeRangeLabel.DAY) heuristicEngine.scanForGaps(start, end, hiddenPkgs) else emptyList() }
                 val chartDataDef = async { if (range == TimeRangeLabel.DAY) heuristicEngine.getHourlyBreakdown(start, end, hiddenPkgs) else heuristicEngine.getDailyBreakdown(start, end, pattern, hiddenPkgs) }
                 val appBreakdownDef = async { heuristicEngine.getAppBreakdown(start, end, range, hiddenPkgs) }
@@ -321,24 +317,17 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                 // to explain them.
                 val majorGaps = allGaps.filter { it.durationInMillis >= minGapMillis }
 
-                val idleList = topAppsList.flatMap { app -> app.unattendedIntervals.map { gap -> IdleSession(app.packageName, app.title, gap) } }.sortedBy { it.gap.startMillis }
                 // The locked-screen projection (Lock Screen Activity in the
                 // UI): app active behind a locked phone, no unlock after.
-                val lockScreenList = topAppsList.flatMap { app -> app.ghostIntervals.map { gap -> IdleSession(app.packageName, app.title, gap) } }.sortedBy { it.gap.startMillis }
 
                 // The fourth category: apps that ran while the screen was
                 // provably dark. Computed for the viewport, dismissed spans
                 // already folded back into the usage totals by the engine.
-                val screenOffItems = if (range == TimeRangeLabel.DAY) heuristicEngine.getScreenOffActivity(start, end, DetailLevel.ghostTriggerMillis(settings)) else emptyList()
+                val screenOffItems = if (range == TimeRangeLabel.DAY) // The old Idle Minimum dial defaulted to 15 minutes and also gated this
+        // list; the dial is gone, so the same 15-minute floor stays, fixed.
+        heuristicEngine.getScreenOffActivity(start, end, 15 * 60_000L) else emptyList()
                 val totalScreenOffMillis = screenOffItems.sumOf { it.durationInMillis }
 
-                val viewportAckGhosts = ackGhosts.filter { it.startMillis < end && it.endMillis > start }
-                // Chronological, like every other timeline list (regression
-                // audit, 2026-10-21): the Restore dialog used to open with
-                // the newest entry first.
-                val dismissedList = viewportAckGhosts.map {
-                    DismissedSession(it.packageName, repository.getAppName(it.packageName), it.startMillis, it.endMillis)
-                }.sortedBy { it.startMillis }
                 // Dismissed screen-off spans get the same Restore door
                 // (2026-10-21): restoring one pulls the span back out of
                 // that app's usage and it reappears as Screen-Off Activity.
@@ -374,8 +363,8 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     totalScreenTimeFormatted = TimeUtils.formatDuration(totalAppExecution), totalAppExecutionFormatted = TimeUtils.formatDuration(totalAppExecution),
                     totalOfflineTimeFormatted = TimeUtils.formatDuration(clampedOffline), totalCombinedTimeFormatted = TimeUtils.formatDuration(clampedCombined),
                     totalScreenTimeMillis = totalAppExecution, activityList = sortedList, appDetailChartData = appDetailChartData,
-                    offlineDetailChartData = offlineDetailChartData, majorGaps = majorGaps, idleSessions = idleList, lockScreenSessions = lockScreenList,
-                    dismissedIdleSessions = dismissedList, dismissedScreenOffSpans = dismissedScreenOffList, chartData = chartData, gapChartData = gapChartData,
+                    offlineDetailChartData = offlineDetailChartData, majorGaps = majorGaps,
+                    dismissedScreenOffSpans = dismissedScreenOffList, chartData = chartData, gapChartData = gapChartData,
                     screenOffItems = screenOffItems, totalScreenOffMillis = totalScreenOffMillis,
                     recentSuggestions = repository.getSmartSuggestions(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)), isDataReliable = reliable, osRetentionDays = retention, loadSucceeded = true, lastUpdatedTimeStr = updateFormat.format(Date()), oldestDataTimestamp = oldestStamp
                 )
@@ -485,63 +474,6 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
             }
         }
         loadDashboardData(force = true, isBackgroundTick = false) 
-    }
-
-    fun convertGhostTime(pkg: String, start: Long, end: Long, label: String, iconName: String) = viewModelScope.launch { 
-        HatLogger.log("DashboardViewModel: Converting ghost time: $label")
-        var curr = start
-        while(curr < end) {
-            val cal = Calendar.getInstance().apply { timeInMillis = curr }
-            cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59); cal.set(Calendar.SECOND, 59); cal.set(Calendar.MILLISECOND, 999)
-            val chunkEnd = minOf(end, cal.timeInMillis)
-            repository.storage.addIgnoredSession(IgnoredSession(pkg, curr, chunkEnd))
-            repository.saveOfflineActivity(label, chunkEnd - curr, curr, iconName)
-            curr = chunkEnd + 1 
-        }
-        repository.forceInvalidateCache()
-        loadDashboardData(force = true, isBackgroundTick = false) 
-    }
-
-    fun convertMultipleGhostTimes(pkg: String, gaps: List<UsageGap>, label: String, iconName: String) = viewModelScope.launch { 
-        HatLogger.log("DashboardViewModel: Converting multiple ghost times: $label")
-        for (gap in gaps) {
-            var curr = gap.startMillis
-            while(curr < gap.endMillis) {
-                val cal = Calendar.getInstance().apply { timeInMillis = curr }
-                cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59); cal.set(Calendar.SECOND, 59); cal.set(Calendar.MILLISECOND, 999)
-                val chunkEnd = minOf(gap.endMillis, cal.timeInMillis)
-                repository.storage.addIgnoredSession(IgnoredSession(pkg, curr, chunkEnd))
-                repository.saveOfflineActivity(label, chunkEnd - curr, curr, iconName)
-                curr = chunkEnd + 1 
-            }
-        }
-        repository.forceInvalidateCache()
-        loadDashboardData(force = true, isBackgroundTick = false) 
-    }
-
-    fun dismissGhost(pkg: String, start: Long, end: Long) = viewModelScope.launch {
-        HatLogger.log("DashboardViewModel: Dismissing ghost time for $pkg")
-        repository.storage.addAcknowledgedGhost(AcknowledgedGhost(pkg, start, end))
-        repository.forceInvalidateCache()
-        loadDashboardData(force = true, isBackgroundTick = false)
-    }
-
-    /**
-     * Suppress an idle or lock-screen span WITHOUT reloading (2026-10-23).
-     * Naming a span (conversion) never wrote a suppression row, so the
-     * labeled span resurfaced as a card on the next load and the user had
-     * to dismiss it separately, reading as "the conversion didn't take"
-     * (found by the functional sweep: identical on the published version,
-     * wrong in both). The conversion's own reload follows immediately after
-     * the call, so this writes the row only.
-     */
-    fun acknowledgeIdleSpan(pkg: String, start: Long, end: Long) = viewModelScope.launch {
-        repository.storage.addAcknowledgedGhost(AcknowledgedGhost(pkg, start, end))
-    }
-
-    fun restoreDismissedGhost(pkg: String, start: Long, end: Long) = viewModelScope.launch {
-        repository.restoreAcknowledgedGhost(pkg, start, end)
-        loadDashboardData(force = true, isBackgroundTick = false)
     }
 
     /**

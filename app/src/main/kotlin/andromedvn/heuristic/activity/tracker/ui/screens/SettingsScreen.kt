@@ -162,7 +162,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         val hiddenPkgs = storage.getHiddenPackagesFlow().first()
                         val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
                         
-                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, DetailLevel.ghostTriggerMinutes(currentSettings!!), hiddenPkgs, ackGhosts)
+                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, hiddenPkgs)
                         val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)
                         
                         // Must be sharded against app foreground time, exactly as the
@@ -247,7 +247,6 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     when (customDialogSetting) {
                         "archive" -> updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = value))
                         "detail" -> updateSettings(currentSettings!!.copy(detailLevel = DetailLevel.CUSTOM, customDetailMinutes = value))
-                        "idle" -> updateSettings(currentSettings!!.copy(idleMinimumMinutes = value))
                     }
                     customDialogSetting = null
                 }) { Text("Save", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
@@ -319,7 +318,6 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     // default.
                     HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Recent" to SortType.RECENT, "Duration" to SortType.DURATION, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
                     HatSlidingSelector<Int>("Gap Minimum", "Quiet periods shorter than this don't appear. A gap is time where nothing ran at all.", listOf("1 min" to DetailLevel.ONE_MIN, "5 min" to DetailLevel.FIVE_MIN, "15 min" to DetailLevel.FIFTEEN_MIN, "Custom" to -1), if (currentSettings!!.detailLevel == DetailLevel.CUSTOM) currentSettings!!.customDetailMinutes else currentSettings!!.detailLevel, " min", { updateSettings(currentSettings!!.copy(detailLevel = it)) }, { customDialogSetting = "detail" })
-                    HatSlidingSelector<Int>("Idle Minimum", "Idle, lock-screen, and screen-off cards shorter than this don't ask. Question cards are born every time you set the phone down with something on screen; gaps are rare, these are not.", listOf("15 min" to 15, "30 min" to 30, "1h" to 60, "Custom" to -1), currentSettings!!.idleMinimumMinutes, " min", { updateSettings(currentSettings!!.copy(idleMinimumMinutes = it)) }, { customDialogSetting = "idle" })
                     HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to archive your usage history before Android deletes it. There is no Off: the worker is what keeps your past alive.", listOf("12h" to 12, "6h" to 6, "2h" to 2, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))

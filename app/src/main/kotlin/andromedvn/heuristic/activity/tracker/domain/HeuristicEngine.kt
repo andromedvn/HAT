@@ -65,13 +65,8 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
      * figure. Clamping it to [trueDeviceScreenTime] would silently hide real
      * split-screen overlap.
      */
-    suspend fun getAppUsage(start: Long, end: Long, range: TimeRangeLabel, ghostMins: Int, hiddenPkgs: Set<String>, ackGhosts: List<AcknowledgedGhost>): Triple<Long, Long, List<AppUsageItem>> = withContext(Dispatchers.Default) {
-        val ghostMillis = ghostThresholdMillis(ghostMins)
+    suspend fun getAppUsage(start: Long, end: Long, range: TimeRangeLabel, hiddenPkgs: Set<String>): Triple<Long, Long, List<AppUsageItem>> = withContext(Dispatchers.Default) {
         val intervalsMap = repository.getFilteredIntervals(start, end, hiddenPkgs)
-        // One drain, two idle projections: locked-screen spans and
-        // untouched-app spans. Both are filtered by the same Minimum
-        // Duration and the same acknowledgement table downstream.
-        val (rawGhosts, rawUnattended) = engine.getIdleProjections(start, end)
         var totalAppExecution = 0L
 
         // Spans the user dismissed back into usage ("this really was usage")
@@ -85,16 +80,13 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
             val merged = engine.mergeIntervals(withDismissed)
             val total = merged.sumOf { it.second - it.first }
 
-            val pkgGhosts = selectGhostGapsForPackage(rawGhosts, pkg, ghostMillis, ackGhosts)
-            val pkgUnattended = selectGhostGapsForPackage(rawUnattended, pkg, ghostMillis, ackGhosts)
-
             totalAppExecution += total
 
             val latest = merged.maxOfOrNull { it.second } ?: start
-            apps.add(AppUsageItem(pkg, repository.getAppName(pkg), total, latest, getSyncTagsForIntervals(merged, range), ghostIntervals = pkgGhosts, unattendedIntervals = pkgUnattended))
+            apps.add(AppUsageItem(pkg, repository.getAppName(pkg), total, latest, getSyncTagsForIntervals(merged, range)))
         }
-        
-        val validApps = apps.filter { it.durationInMillis > 0L || it.ghostIntervals.isNotEmpty() }.sortedByDescending { it.durationInMillis }
+
+        val validApps = apps.filter { it.durationInMillis > 0L }.sortedByDescending { it.durationInMillis }
         val trueDeviceIntervals = repository.getAllIntervalsCached(start, end).values.flatten()
         val trueDeviceScreenTime = engine.mergeIntervals(trueDeviceIntervals).sumOf { it.second - it.first }
         Triple(maxOf(trueDeviceScreenTime, 0L), maxOf(totalAppExecution, 0L), validApps)
@@ -157,8 +149,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         out.sortedBy { it.timestamp }
     }
 
-    suspend fun getAppDetail(packageName: String, start: Long, end: Long, ghostMins: Int, ackGhosts: List<AcknowledgedGhost>): AppUsageItem? = withContext(Dispatchers.Default) {
-        val ghostMillis = ghostThresholdMillis(ghostMins)
+    suspend fun getAppDetail(packageName: String, start: Long, end: Long): AppUsageItem? = withContext(Dispatchers.Default) {
         val intervalsMap = repository.getAllIntervalsCached(start, end)
         val intervals = intervalsMap[packageName] ?: emptyList()
         // Dismissed screen-off spans are usage again; add them to this app's
@@ -166,13 +157,9 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         val dismissed = repository.storage.getDismissedScreenOffSpans(start, end).filter { it.first == packageName }.map { it.second to it.third }
         val merged = engine.mergeIntervals(intervals + dismissed)
         val total = merged.sumOf { it.second - it.first }
-        val (rawGhosts, rawUnattended) = engine.getIdleProjections(start, end)
 
-        val pkgGhosts = selectGhostGapsForPackage(rawGhosts, packageName, ghostMillis, ackGhosts)
-        val pkgUnattended = selectGhostGapsForPackage(rawUnattended, packageName, ghostMillis, ackGhosts)
-
-        if (total <= 0L && pkgGhosts.isEmpty() && pkgUnattended.isEmpty()) return@withContext null
-        AppUsageItem(packageName, repository.getAppName(packageName), total, merged.maxOfOrNull { it.second } ?: start, emptySet(), ghostIntervals = pkgGhosts, unattendedIntervals = pkgUnattended)
+        if (total <= 0L) return@withContext null
+        AppUsageItem(packageName, repository.getAppName(packageName), total, merged.maxOfOrNull { it.second } ?: start, emptySet())
     }
 
     suspend fun getOfflineActivities(start: Long, end: Long, range: TimeRangeLabel): List<OfflineActivityItem> = withContext(Dispatchers.Default) {
@@ -572,53 +559,6 @@ fun clusterSessions(merged: List<Interval>, clusterThreshold: Long): List<Sessio
 
 /** [minutes] as exact milliseconds. The `60_000L` keeps the multiply in Long. */
 fun minutesToMillisExact(minutes: Int): Long = minutes.toLong() * 60_000L
-
-/**
- * The ghost minimum-duration threshold, in exact milliseconds.
- *
- * The value comes from the Minimum Duration setting (DetailLevel, presets
- * 1/5/15 minutes plus Custom 1 to 1440), the same number that governs gaps
- * and screen-off spans. The UI can no longer produce 0 or a negative value,
- * but the guard stays for defense in depth: a non-positive minute count
- * would otherwise mean "no minimum" and surface every sub-second blip,
- * so it is clamped to [Long.MAX_VALUE], the one threshold no finite
- * duration can satisfy, and the ghost list comes back empty.
- *
- * The sentinel is safe only because no real span can reach it. A genuine
- * "no minimum" option would need a DISTINCT stored value (e.g. -1) plus a
- * new selector entry - not a reinterpretation of 0.
- *
- * A large positive setting is honoured exactly: [Int.MAX_VALUE] minutes is
- * 128_849_018_820_000 ms, comfortably inside Long and unreachable by any span,
- * so an absurd threshold still returns nothing.
- */
-fun ghostThresholdMillis(ghostMins: Int): Long =
-    if (ghostMins <= 0) Long.MAX_VALUE else minutesToMillisExact(ghostMins)
-
-/**
- * The ghost spans offered for [packageName] under a [thresholdMillis] minimum,
- * minus any the user has already acknowledged.
- *
- * Acknowledgement matches (package, start) as a PREFIX (2026-10-23, the
- * growing-span fix): a span that is still growing when the user answers it
- * ("music in the pocket") keeps extending its end every minute, and an exact
- * (package, start, end) match let the grown tail resurface as a new question
- * after every check. Two spans of the same app cannot share a start
- * millisecond, so same start means same span: the answer covers it however
- * long it grows. A touch after the answer re-anchors the next span at a new
- * start, which asks again honestly. Restoring an acknowledgment removes the
- * row, so the span (grown or not) comes back either way.
- */
-fun selectGhostGapsForPackage(
-    rawGhosts: List<Triple<String, Long, Long>>,
-    packageName: String,
-    thresholdMillis: Long,
-    acknowledged: List<AcknowledgedGhost>
-): List<UsageGap> = rawGhosts
-    .filter { it.first == packageName }
-    .filter { (it.third - it.second) >= thresholdMillis }
-    .filterNot { g -> acknowledged.any { it.packageName == packageName && it.startMillis == g.second } }
-    .map { UsageGap(it.second, it.third, false) }
 
 /**
  * Distance between two positions on a dial of [dialSize] units, measured the

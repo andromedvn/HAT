@@ -49,7 +49,7 @@ class ActivityDetailsViewModel(private val repository: ActivityRepository, priva
             val settings = repository.settings.first()
             val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
             
-            val item = if (type == "app") heuristicEngine.getAppDetail(id, start, end, DetailLevel.ghostTriggerMinutes(settings), ackGhosts) else heuristicEngine.getOfflineDetail(id, start, end)
+            val item = if (type == "app") heuristicEngine.getAppDetail(id, start, end) else heuristicEngine.getOfflineDetail(id, start, end)
             val points = heuristicEngine.getActivityChartData(type, id, start, end, range)
             val sessions = if (type == "app") heuristicEngine.getAppSessions(id, start, end, DetailLevel.SESSION_MERGE_MINS) else heuristicEngine.getOfflineSessions(id, start, end, DetailLevel.SESSION_MERGE_MINS)
             

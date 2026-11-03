@@ -58,19 +58,6 @@ object DetailLevel {
     fun minDurationMillis(settings: UserSettings): Long = minDurationMinutes(settings) * 60_000L
 
     /**
-     * The minimum length of an idle, lock-screen, or screen-off span, in
-     * minutes (the Idle Minimum dial, 2026-10-23). Lived reality split the
-     * one-dial design: question cards are born every time the phone is set
-     * down with something on screen, gaps only when total silence happens,
-     * so one number flooded one or blinded the other. Plain minutes, no
-     * presets indirection: 15, 30, 60, or any custom value 1 to 1440.
-     */
-    fun ghostTriggerMinutes(settings: UserSettings): Int = settings.idleMinimumMinutes
-
-    /** The question-card threshold in milliseconds. */
-    fun ghostTriggerMillis(settings: UserSettings): Long = ghostThresholdMillis(ghostTriggerMinutes(settings))
-
-    /**
      * The largest custom value the Settings dialog accepts, in minutes.
      * One day is the longest range HAT displays, so a minimum above 1440
      * would guarantee an empty app. A visible validation rule, not a hidden

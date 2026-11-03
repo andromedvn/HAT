@@ -110,7 +110,6 @@ data class HighlightEvent(val point: ChartPoint? = null, val stackIndex: Int = -
 
 sealed class LedgerContext {
     data class StandardGap(val startMillis: Long, val endMillis: Long, val precededBy: String? = null, val followedBy: String? = null) : LedgerContext()
-    data class IdleSession(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String, val wasUnattended: Boolean = false) : LedgerContext()
     data class BatchMerge(val count: Int, val totalDurationMillis: Long) : LedgerContext()
     /** A Screen-Off Activity span: the app was resumed while the screen was provably dark. */
     data class ScreenOff(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String) : LedgerContext()
@@ -273,7 +272,6 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
     var adjustedStart by remember(ledgerContext) {
         mutableStateOf(
             when (val ctx = ledgerContext) {
-                is LedgerContext.IdleSession -> ctx.startMillis
                 is LedgerContext.StandardGap -> ctx.startMillis
                 is LedgerContext.ScreenOff -> ctx.startMillis
                 else -> -1L
@@ -306,16 +304,6 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                             Text(contextStr, style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    is LedgerContext.IdleSession -> {
-                        presenceLine?.let {
-                            Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                        val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
-                        val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
-                        Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("The app on screen: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is LedgerContext.ScreenOff -> {
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"

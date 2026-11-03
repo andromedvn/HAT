@@ -43,18 +43,6 @@ data class UserSettings(
      */
     val customDetailMinutes: Int = -1,
     /**
-     * Idle Minimum (2026-10-23, the owner's call): the second dial, covering
-     * the three question-card kinds. Idle, lock-screen, and screen-off cards
-     * shorter than this never appear. Lived reality beat the one-dial design:
-     * gaps are stretches of silence (a handful a day) while question cards are
-     * born every single time the phone is set down with something on screen,
-     * so one number either flooded the questions or blinded the gaps.
-     * Stored as plain minutes: 15 (the default for everyone, fresh and
-     * migrating alike), 30, 60, or any custom value 1 to 1440. Gap Minimum
-     * keeps carrying gaps; this dial carries the rest.
-     */
-    val idleMinimumMinutes: Int = 15,
-    /**
      * The archive cursor (2026-10-28): the last local midnight the archiver
      * has ATTEMPTED, whether or not that day produced rows. The old walk
      * restarted from MAX(start_millis) of archived rows, so a run of five or
@@ -115,7 +103,7 @@ sealed interface UnifiedActivity {
  * Duration and acknowledgement table as ghost intervals.
  */
 data class AppUsageItem(
-    val packageName: String, override val title: String, override val durationInMillis: Long, override val timestamp: Long, override val activeTimeTags: Set<String> = emptySet(), val ghostIntervals: List<UsageGap> = emptyList(), val unattendedIntervals: List<UsageGap> = emptyList()
+    val packageName: String, override val title: String, override val durationInMillis: Long, override val timestamp: Long, override val activeTimeTags: Set<String> = emptySet()
 ) : UnifiedActivity { override val uniqueKey: String get() = packageName }
 
 /**

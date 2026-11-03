@@ -55,19 +55,6 @@ class DetailLevelTest {
         assertEquals(5, DetailLevel.minDurationMinutes(settings(DetailLevel.CUSTOM, 0)))
     }
 
-    @Test
-    fun `the question-card threshold comes from the Idle Minimum dial, gaps from Gap Minimum`() {
-        // The two-dial split (2026-10-23, the owner's call): question cards
-        // (idle, lock-screen, screen-off) are born every time the phone is
-        // set down with something on screen; gaps only when total silence
-        // happens. One number flooded one or blinded the other. If these
-        // ever cross-wire again, a dial change moves the wrong cards.
-        val settings = UserSettings(detailLevel = DetailLevel.ONE_MIN, customDetailMinutes = -1, idleMinimumMinutes = 30)
-        assertEquals(1, DetailLevel.minDurationMinutes(settings))
-        assertEquals(30, DetailLevel.ghostTriggerMinutes(settings))
-        assertEquals(minOf(DetailLevel.minDurationMillis(settings), DetailLevel.ghostTriggerMillis(settings)), DetailLevel.minDurationMillis(settings))
-        assertEquals(30 * 60_000L, DetailLevel.ghostTriggerMillis(settings))
-    }
 
     @Test
     fun `unknown level falls back to five minutes`() {
