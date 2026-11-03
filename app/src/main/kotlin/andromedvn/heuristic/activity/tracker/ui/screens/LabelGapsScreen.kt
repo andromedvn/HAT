@@ -114,11 +114,12 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     var returnScrollOffset by rememberSaveable { mutableIntStateOf(0) }
 
     val todayStartMillis = getStartOfDay(Calendar.getInstance().apply { timeInMillis = uiState.startTime })
+    var dialogPresenceLine by remember { mutableStateOf<String?>(null) }
 
     // Presence evidence lines per gap card (2026-11-02): factual, sourced
     // from the persisted raw event stream. Gaps older than the field, or
     // with undecided evidence, show nothing.
-    var presenceLines by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    var presenceLines by remember { mutableStateOf<Map<Long, andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel.PresenceCopy>>(emptyMap()) }
     androidx.compose.runtime.LaunchedEffect(uiState.majorGaps, uiState.idleSessions, uiState.lockScreenSessions, uiState.screenOffItems) {
         val ranges = buildList {
             uiState.majorGaps.forEach { add(it.startMillis to it.endMillis) }
@@ -268,13 +269,14 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         }
 
         ActivityEditorDialog(
-            initialTitle = if (screenOffPkg.isNotEmpty()) "Sleep" else "", initialIconName = if(ghostPkg.isNotEmpty() || screenOffPkg.isNotEmpty()) "Sleep" else "Walk", suggestions = uiState.recentSuggestions,
+            initialTitle = "", initialIconName = "Walk", suggestions = uiState.recentSuggestions,
             ledgerContext = ledgerContext,
-            onDismiss = { showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; ghostPkg = ""; ghostAppName = ""; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L },
+            presenceLine = dialogPresenceLine,
+            onDismiss = { showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; ghostPkg = ""; ghostAppName = ""; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null },
             onSave = { outTitle, outIcon, outStart ->
                 if (screenOffPkg.isNotEmpty()) {
                     dashboardViewModel.labelScreenOffSpan(screenOffPkg, outStart, screenOffEnd, outTitle, outIcon)
-                    showDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; navController.popBackStack()
+                    showDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null; navController.popBackStack()
                 } else if (singleGapStart != -1L) {
                     scope.launch {
                         dashboardViewModel.resolveContiguousGap(outStart, singleGapEnd) { tS, tE ->
@@ -440,6 +442,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                                 singleGapStart = gap.startMillis
                                                                 singleGapEnd = gap.endMillis
                                                                 lastGapContext = gap
+                                                                dialogPresenceLine = presenceLines[gap.startMillis]?.line
                                                                 showDialog = true
                                                             }
                                                         },
@@ -452,8 +455,11 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                                                    presenceLines[gap.startMillis]?.let { line ->
-                                                        Text(line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    presenceLines[gap.startMillis]?.let { copy ->
+                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        copy.evidence?.let { ev ->
+                                                            Text(ev, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        }
                                                     }
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text(gap.contextExplainer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -482,6 +488,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                     singleGapStart = card.session.gap.startMillis
                                                     singleGapEnd = card.session.gap.endMillis
                                                     idleDialogIsUnattended = true
+                                                    dialogPresenceLine = presenceLines[card.session.gap.startMillis]?.line
                                                     showDialog = true
                                                 },
                                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha=0.05f))
@@ -489,8 +496,11 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(card.session.gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                                                    presenceLines[card.session.gap.startMillis]?.let { line ->
-                                                        Text(line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    presenceLines[card.session.gap.startMillis]?.let { copy ->
+                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        copy.evidence?.let { ev ->
+                                                            Text(ev, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        }
                                                     }
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text("${card.session.appName} was open when this gap started", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -510,6 +520,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                     singleGapStart = card.session.gap.startMillis
                                                     singleGapEnd = card.session.gap.endMillis
                                                     idleDialogIsUnattended = false
+                                                    dialogPresenceLine = presenceLines[card.session.gap.startMillis]?.line
                                                     showDialog = true
                                                 },
                                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha=0.05f))
@@ -517,8 +528,11 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(card.session.gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                                                    presenceLines[card.session.gap.startMillis]?.let { line ->
-                                                        Text(line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    presenceLines[card.session.gap.startMillis]?.let { copy ->
+                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        copy.evidence?.let { ev ->
+                                                            Text(ev, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        }
                                                     }
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text("Behind the lock screen: ${card.session.appName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)

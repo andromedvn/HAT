@@ -99,7 +99,9 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
      * the honest answer for every gap older than the raw-event field).
      * Charter rules: facts only, past tense, no em dashes.
      */
-    suspend fun presenceVerdicts(gaps: List<Pair<Long, Long>>): Map<Long, String> = withContext(Dispatchers.IO) {
+    data class PresenceCopy(val line: String, val evidence: String? = null)
+
+    suspend fun presenceVerdicts(gaps: List<Pair<Long, Long>>): Map<Long, PresenceCopy> = withContext(Dispatchers.IO) {
         if (gaps.isEmpty()) return@withContext emptyMap()
         val minStart = gaps.minOf { it.first }
         val maxEnd = gaps.maxOf { it.second }
@@ -111,17 +113,29 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         } catch (e: Exception) { 60_000L }
         val events = repository.storage.loadRawEvents(minStart - PresenceClassifier.PRE_WINDOW_MS, maxEnd + PresenceClassifier.POST_LOOKAHEAD_MS)
         if (events.isEmpty()) return@withContext emptyMap()
-        val out = HashMap<Long, String>(gaps.size)
+        val fmt = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+        val out = HashMap<Long, PresenceCopy>(gaps.size)
         for ((start, end) in gaps) {
             val verdict = PresenceClassifier.classify(events, start, end, timeoutMs)
-            val text = when (verdict.kind) {
-                PresenceClassifier.Kind.ANCHORED -> "You were using the phone during this time."
-                PresenceClassifier.Kind.CHOSE_TO_STOP -> "You locked the phone yourself."
-                PresenceClassifier.Kind.TIMEOUT -> "The screen timed out on its own. The phone sat until you came back."
-                PresenceClassifier.Kind.MEDIA_CONTINUED -> "This app kept running through the quiet."
+            val copy = when (verdict.kind) {
+                PresenceClassifier.Kind.ANCHORED -> PresenceCopy(
+                    "You were using the phone during this time.",
+                    verdict.anchorTs?.let { "First use at ${fmt.format(java.util.Date(it))}" })
+                PresenceClassifier.Kind.CHOSE_TO_STOP -> PresenceCopy(
+                    "You locked the phone yourself.",
+                    verdict.anchorTs?.let { "Locked at ${fmt.format(java.util.Date(it))}" })
+                PresenceClassifier.Kind.TIMEOUT -> PresenceCopy(
+                    // Guarded copy (arena catch): the phone sat only if a
+                    // return was actually recorded; an open gap claims less.
+                    if (verdict.resolveTs != null) "The screen timed out on its own. The phone sat until you came back."
+                    else "The screen timed out on its own.",
+                    verdict.resolveTs?.let { "Unlocked at ${fmt.format(java.util.Date(it))}" })
+                PresenceClassifier.Kind.MEDIA_CONTINUED -> PresenceCopy(
+                    "This app kept running through the quiet.",
+                    verdict.resolveTs?.let { "Screen back on at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.UNDECIDED -> null
             }
-            if (text != null) out[start] = text
+            if (copy != null) out[start] = copy
         }
         out
     }

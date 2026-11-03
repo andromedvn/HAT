@@ -22,7 +22,14 @@ object PresenceClassifier {
 
     enum class Kind { ANCHORED, CHOSE_TO_STOP, TIMEOUT, MEDIA_CONTINUED, UNDECIDED }
 
-    data class Verdict(val kind: Kind, val anchorTs: Long? = null)
+    data class Verdict(
+        val kind: Kind,
+        val anchorTs: Long? = null,
+        /** The edge that resolved the verdict: the returning unlock for
+         *  TIMEOUT, the screen-on moment for MEDIA_CONTINUED. Null = the
+         *  edge has not happened yet (an open gap) or does not exist. */
+        val resolveTs: Long? = null
+    )
 
     // Event type ints (public UsageEvents vocabulary; raw ints so minSdk 26
     // reads them without the API-29 constant names).
@@ -84,10 +91,7 @@ object PresenceClassifier {
             if (isTimeout) {
                 // 3. Resolve how long the phone sat by the next unlock.
                 val unlock = post.firstOrNull { it.type == TYPE_KEYGUARD_HIDDEN }
-                if (unlock != null && unlock.timestamp - blockEnd <= AWAY_MAX_MS) {
-                    return Verdict(Kind.TIMEOUT, screenOff.timestamp)
-                }
-                if (unlock != null) return Verdict(Kind.TIMEOUT, screenOff.timestamp)
+                if (unlock != null) return Verdict(Kind.TIMEOUT, screenOff.timestamp, unlock.timestamp)
                 // 4. Media continuation: screen back on, same app resumed
                 // fast, no unlock between - playback rode through the quiet.
                 val screenOn = post.firstOrNull { it.type == TYPE_SCREEN_INTERACTIVE }

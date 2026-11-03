@@ -265,7 +265,7 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
 }
 
 @Composable
-fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit) {
+fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceLine: String? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
     // The label's start, taken from the device's evidence. HAT saves the
@@ -286,6 +286,10 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                 when (ledgerContext) {
                     is LedgerContext.StandardGap -> {
+                        presenceLine?.let {
+                            Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
                         val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
                         // The context line: what was before and after this gap.
@@ -294,6 +298,7 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                         // in your day, and the dialog should say the same thing.
                         if (ledgerContext.precededBy != null || ledgerContext.followedBy != null) {
                             val contextStr = when {
+                                ledgerContext.precededBy != null && ledgerContext.precededBy == ledgerContext.followedBy -> "Nothing recorded here. ${ledgerContext.precededBy} was open on both sides."
                                 ledgerContext.precededBy != null && ledgerContext.followedBy != null -> "Nothing recorded between ${ledgerContext.precededBy} and ${ledgerContext.followedBy}"
                                 ledgerContext.precededBy != null -> "Nothing recorded after ${ledgerContext.precededBy}"
                                 else -> "Nothing recorded before ${ledgerContext.followedBy}"
@@ -303,15 +308,14 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                         Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is LedgerContext.IdleSession -> {
+                        presenceLine?.let {
+                            Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
                         val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
                         Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            if (ledgerContext.wasUnattended) "The screen was on and the phone was unlocked, but no touch landed the whole time"
-                            else "The phone stayed locked the whole time",
-                            style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text("The app on screen: ${ledgerContext.appName}", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is LedgerContext.ScreenOff -> {
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
