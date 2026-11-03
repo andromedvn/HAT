@@ -22,13 +22,11 @@ import andromedvn.heuristic.activity.tracker.data.UserSettings
  * hidden threshold by another name.
  *
  * A week of real use split the one dial into two (2026-10-23, the owner's
- * call): gaps are stretches of recorded silence, a handful a day, while
- * question cards (idle, lock-screen, screen-off) are born every single time
- * the phone is set down with something on screen. One number either flooded
- * the questions or blinded the gaps. Gap Minimum keeps the presets above and
- * carries gaps only; Idle Minimum (UserSettings.idleMinimumMinutes, plain
- * minutes) carries the three question-card kinds at 15 / 30 / 60 / custom.
- * Both dials are visible in Settings: no hidden thresholds.
+ * call), and r9 removed the second half again: idle and lock-screen cards
+ * are gone entirely (the app never guesses what happened while nobody was
+ * looking), so Gap Minimum is the only dial left. It keeps the presets
+ * above and gates gaps and the Screen-Off Activity list (fixed 15-minute
+ * floor, the old Idle Minimum default).
  *
  * LEVELS (stored in UserSettings.detailLevel):
  *   0 = 1 min (the fresh default),  1 = 5 min,  2 = 15 min,  3 = Custom

@@ -77,29 +77,6 @@ class UsageStatsEngine(context: Context) {
     }
 
     /**
-     * Both idle projections from ONE event drain (2026-10-21): the
-     * locked-screen spans (ghosts) and the untouched-app spans (idle
-     * sessions). The regression audit already counted three to four full
-     * stream drains per dashboard load; a fifth for the new projection was
-     * avoided by replaying both over the same collected list. The framework
-     * call stays here; everything downstream is pure and unit-tested.
-     *
-     * First list: app activity while the phone was locked or the screen was
-     * off with no unlock after (Lock Screen Activity in the UI).
-     * Second list: app in front, screen on, unlocked, no touch for a
-     * stretch (Idle Sessions in the UI, the maintainer's original feature).
-     */
-    suspend fun getIdleProjections(start: Long, end: Long): Pair<List<Triple<String, Long, Long>>, List<Triple<String, Long, Long>>> {
-        val collected = collectEvents(start - 86400000L, end)
-        val cap = minOf(end, System.currentTimeMillis())
-        val ghosts = replayGhostIntervals(collected, start, end, cap)
-            .map { Triple(it.packageName, it.start, it.end) }
-        val unattended = replayUnattendedIntervals(collected, start, end, cap)
-            .map { Triple(it.packageName, it.start, it.end) }
-        return ghosts to unattended
-    }
-
-    /**
      * Spans in which an app was resumed while the screen was provably dark:
      * background re-binds, music mode, lock-screen apps. Not usage, not
      * ghosts; the fourth category, surfaced for the user to name or dismiss.

@@ -96,11 +96,9 @@ sealed interface UnifiedActivity {
 }
 
 /**
- * Untouched-app spans for this app in the window (Idle Sessions, 2026-10-21):
- * app in front, screen on, unlocked, no touch landing for the whole stretch.
- * The span starts at the LAST touch, so labeling one "Sleep" names the exact
- * minute the user stopped using the phone. Filtered by the same Minimum
- * Duration and acknowledgement table as ghost intervals.
+ * One app's totals for the window: merged usage intervals, the display name,
+ * and the sync tags for the ledger. Idle projections are gone (r9): the app
+ * never guesses what happened while nobody was looking.
  */
 data class AppUsageItem(
     val packageName: String, override val title: String, override val durationInMillis: Long, override val timestamp: Long, override val activeTimeTags: Set<String> = emptySet()
