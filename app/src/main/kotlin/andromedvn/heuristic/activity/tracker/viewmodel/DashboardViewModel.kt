@@ -145,11 +145,6 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
     }
 
     /** The spotlight tour ended (completed or skipped): never auto-run again. */
-    fun markTourSeen() = viewModelScope.launch {
-        val currentSettings = repository.settings.first()
-        repository.storage.saveSettings(currentSettings.copy(hasSeenTour = true))
-    }
-
     fun setTimeRange(range: TimeRangeLabel) { 
         if (_uiState.value.timeRange == range) return
         HatLogger.log("DashboardViewModel: Time range changed to $range")
@@ -193,10 +188,15 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
             
             val start: Long
             val end: Long
+            // Captured BEFORE any suspension point: activeCal is a shared,
+            // mutable Calendar that day navigation can move mid-load. Reading
+            // it again later (gap chart buckets) could pair one day's buckets
+            // with another day's cards.
+            val dayStart: Long
             when (range) {
-                TimeRangeLabel.DAY -> { start = getStartOfDay(activeCal); end = getEndOfDay(activeCal) }
-                TimeRangeLabel.WEEK -> { val cal = activeCal.clone() as Calendar; cal.firstDayOfWeek = Calendar.MONDAY; while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) cal.add(Calendar.DAY_OF_YEAR, -1); start = getStartOfDay(cal); cal.add(Calendar.DAY_OF_WEEK, 6); end = getEndOfDay(cal) }
-                TimeRangeLabel.MONTH -> { val cal = activeCal.clone() as Calendar; cal.set(Calendar.DAY_OF_MONTH, 1); start = getStartOfDay(cal); cal.add(Calendar.MONTH, 1); cal.add(Calendar.DAY_OF_MONTH, -1); end = getEndOfDay(cal) }
+                TimeRangeLabel.DAY -> { start = getStartOfDay(activeCal); end = getEndOfDay(activeCal); dayStart = start }
+                TimeRangeLabel.WEEK -> { val cal = activeCal.clone() as Calendar; cal.firstDayOfWeek = Calendar.MONDAY; while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) cal.add(Calendar.DAY_OF_YEAR, -1); start = getStartOfDay(cal); cal.add(Calendar.DAY_OF_WEEK, 6); end = getEndOfDay(cal); dayStart = getStartOfDay(activeCal) }
+                TimeRangeLabel.MONTH -> { val cal = activeCal.clone() as Calendar; cal.set(Calendar.DAY_OF_MONTH, 1); start = getStartOfDay(cal); cal.add(Calendar.MONTH, 1); cal.add(Calendar.DAY_OF_MONTH, -1); end = getEndOfDay(cal); dayStart = getStartOfDay(activeCal) }
             }
 
             val cacheKey = "${range.name}_${start}_${currentSortType}"
@@ -347,7 +347,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     // never charted the last hour of a 25-hour day. The walk
                     // mirrors HeuristicEngine.buildChartPoints exactly, so the
                     // gap chart and the dashboard chart stay in lock-step.
-                    hourBucketsOfDay(getStartOfDay(activeCal)).map { bucket -> 
+                    hourBucketsOfDay(dayStart).map { bucket -> 
                         var gapTime = 0L
                         for (gap in majorGaps) { val s = maxOf(bucket.startMillis, gap.startMillis); val e = minOf(bucket.endMillis, gap.endMillis); if (e > s) gapTime += (e - s) }
                         val timeStr = TimeUtils.formatDuration(gapTime)

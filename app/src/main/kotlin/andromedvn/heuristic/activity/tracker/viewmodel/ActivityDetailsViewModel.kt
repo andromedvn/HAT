@@ -47,7 +47,6 @@ class ActivityDetailsViewModel(private val repository: ActivityRepository, priva
             _uiState.value = _uiState.value.copy(isLoading = true)
             
             val settings = repository.settings.first()
-            val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
             
             val item = if (type == "app") heuristicEngine.getAppDetail(id, start, end) else heuristicEngine.getOfflineDetail(id, start, end)
             val points = heuristicEngine.getActivityChartData(type, id, start, end, range)

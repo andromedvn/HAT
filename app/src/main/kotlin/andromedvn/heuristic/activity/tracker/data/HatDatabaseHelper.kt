@@ -31,7 +31,7 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
          * evidence. Old days stay interval-only and honestly classify as
          * UNDECIDED.
          */
-        private const val DATABASE_VERSION = 4
+        private const val DATABASE_VERSION = 5
 
         const val TABLE_OFFLINE = "offline_activities"
         const val COL_ID = "id"
@@ -58,6 +58,14 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         ensureTablesExist(db)
+        // v5: idle detection was removed entirely (r9). These two tables were
+        // its suppression record; stale rows still carved real usage out of
+        // the interval cache and manufactured phantom gaps. One deliberate
+        // wipe, then the feature is fully gone.
+        if (oldVersion < 5) {
+            try { db.execSQL("DELETE FROM ${TABLE_IGNORED}") } catch (e: Exception) { }
+            try { db.execSQL("DELETE FROM ${TABLE_ACK_GHOSTS}") } catch (e: Exception) { }
+        }
         // Legacy rows can predate the unique indexes. Repair them once, here,
         // where a destructive statement is a deliberate choice rather than a
         // side effect of something unrelated failing.

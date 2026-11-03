@@ -160,7 +160,6 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         val end = cal.timeInMillis - 1
                         
                         val hiddenPkgs = storage.getHiddenPackagesFlow().first()
-                        val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
                         
                         val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, hiddenPkgs)
                         val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)

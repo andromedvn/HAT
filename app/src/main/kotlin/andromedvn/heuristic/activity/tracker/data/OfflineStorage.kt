@@ -28,7 +28,11 @@ class OfflineStorage private constructor(private val context: Context) {
     private val SETTINGS_KEY = stringPreferencesKey("user_settings")
     private val HIDDEN_APPS_KEY = stringPreferencesKey("hidden_apps")
     
-    private val json = Json { ignoreUnknownKeys = true }
+    // encodeDefaults is REQUIRED: with kotlinx's default (false), a field set
+    // back to its data-class default (Gap Minimum "1 min" = detailLevel 0) is
+    // OMITTED from the saved JSON, the migration then re-derives the old value
+    // on the next read, and the setting reads as stuck.
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val storageScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     val dbHelper = HatDatabaseHelper(context)

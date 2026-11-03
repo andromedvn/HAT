@@ -255,8 +255,14 @@ fun PermissionsScreen(
                         if (batteryExempt) {
                             OnboardingOutlinedButton(if (reviewMode) "Done" else "See Your Dashboard") { completeSetup(!reviewMode) }
                         } else {
-                            OnboardingOutlinedButton("Exempt Battery") {
-                                try { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                // Some ROMs finish the battery handler silently. The
+                                // exemption can be granted later from Settings, so the
+                                // page must never strand the user.
+                                if (!reviewMode) Text("Skip for now", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickableNoRipple { completeSetup(false) })
+                                OnboardingOutlinedButton("Exempt Battery") {
+                                    try { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                                }
                             }
                         }
                     }

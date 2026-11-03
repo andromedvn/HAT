@@ -289,8 +289,14 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
             val interval = sanitizeTrackedRow(item.timestamp, item.durationInMillis, now)
             if (interval != null) labeled.add(Triple(item.title, interval.first, interval.second))
         }
+        for ((dPkg, dStart, dEnd) in dismissedSpans) labeled.add(Triple(repository.getAppName(dPkg), dStart, dEnd))
 
-        val combinedIntervals = appIntervals + offlineIntervals + screenOffSpans
+        // Dismissed screen-off spans are usage by the user's own answer ("it
+        // was really in use"), the same as getAppUsage treats them. Without
+        // this they vanished from the accounted set here and resurfaced as a
+        // phantom gap card plus a chart bar.
+        val dismissedAsUsage = dismissedSpans.map { it.second to it.third }
+        val combinedIntervals = appIntervals + offlineIntervals + screenOffSpans + dismissedAsUsage
         val allTracked = engine.mergeIntervals(combinedIntervals)
 
         // Nearest neighbor lookup for the explainers. A gap's "before" is the

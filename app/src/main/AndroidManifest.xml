@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- The request-ignore dialog itself: without this declaration some ROMs
+         finish the handler silently and the battery page never advances. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!--
       HAT runs no foreground service. ArchiveSyncWorker is a plain

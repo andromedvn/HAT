@@ -131,7 +131,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val actualStartDestination = remember(settings) {
-                    if (!hasUsageStatsPermission(applicationContext)) "permissions" else "dashboard"
+                    // Usage access alone is not completion: a user who escaped
+                    // onboarding (killed app, skipped battery) must land back in
+                    // onboarding, or the guided tour never arms.
+                    if (!hasUsageStatsPermission(applicationContext) || settings?.hasSeenOnboarding == false) "permissions" else "dashboard"
                 }
 
                 Box(modifier = Modifier

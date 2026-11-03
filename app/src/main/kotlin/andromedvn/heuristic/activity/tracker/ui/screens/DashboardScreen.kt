@@ -97,10 +97,6 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     // fold on a fresh screen (owner report, 2026-11-01). Declared after
     // listState below, so the scroll call has its receiver.
     val tourAutoScrollPx = with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
-    fun endTour() {
-        AppTourState.end()
-        viewModel.markTourSeen()
-    }
     // Re-check on every ON_RESUME: the user grants Usage Access in system
     // settings and comes back, and the card must disappear the moment the
     // grant is real. A stale flag made the card look permanently broken -

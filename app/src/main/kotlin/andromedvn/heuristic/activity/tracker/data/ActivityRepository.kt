@@ -184,15 +184,10 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
                 fetchedIntervals[pkg] = valid.toMutableList()
             }
 
-            val ignoredSessions = storage.getIgnoredSessionsBetween(windowStart, windowEnd)
-            if (ignoredSessions.isNotEmpty()) {
-                val ignoredByPkg = ignoredSessions.groupBy { it.packageName }
-                for (pkg in fetchedIntervals.keys.toList()) {
-                    ignoredByPkg[pkg]?.let { ignores ->
-                        fetchedIntervals[pkg] = engine.subtractIntervals(fetchedIntervals[pkg]!!, ignores.map { it.startMillis to it.endMillis }).toMutableList()
-                    }
-                }
-            }
+            // Ignored-session subtraction removed (r9): idle detection is gone,
+            // nothing writes new ignored rows, and stale rows from the idle era
+            // manufactured phantom gaps by carving real usage out of the cache.
+            // The table is cleared by the schema v5 migration.
             cachedIntervals = fetchedIntervals; cacheKey = Pair(windowStart, windowEnd); lastCacheTime = lockedNow
             clampIntervals(cachedIntervals, start, end)
         }
