@@ -198,6 +198,7 @@ data class UsageGap(
      */
     val contextExplainer: String
         get() = when {
+            precededBy != null && followedBy != null && precededBy == followedBy -> "Nothing recorded here. $precededBy was open on both sides."
             precededBy != null && followedBy != null -> "Nothing recorded between $precededBy and $followedBy"
             precededBy != null -> "Nothing recorded after $precededBy"
             followedBy != null -> "Nothing recorded before $followedBy"

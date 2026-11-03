@@ -315,7 +315,7 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
                         val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
                         Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("The app on screen: ${ledgerContext.appName}", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("The app on screen: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is LedgerContext.ScreenOff -> {
                         val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"

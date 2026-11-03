@@ -64,15 +64,25 @@ object PresenceClassifier {
     /** Post-edge look-ahead for the resolving unlock. */
     const val POST_LOOKAHEAD_MS = 24L * 60 * 60_000L
 
+    /** Events this close to the block edges are the block's own bookkeeping
+     *  (the app opening that defines the block, the pause that closes it),
+     *  not human activity inside it. The 2026-11-03 device test caught the
+     *  opening RESUMED firing ANCHORED on every gap. */
+    const val BOUNDARY_EPSILON_MS = 2_000L
+
     fun classify(events: List<RawEvent>, blockStart: Long, blockEnd: Long, screenOffTimeoutMs: Long): Verdict {
         val sorted = events.sortedBy { it.timestamp }
         val pre = sorted.filter { it.timestamp in (blockStart - PRE_WINDOW_MS) until blockStart }
         val inside = sorted.filter { it.timestamp in blockStart..blockEnd }
         val post = sorted.filter { it.timestamp in (blockEnd + 1)..(blockEnd + POST_LOOKAHEAD_MS) }
 
-        // 1. An anchor inside the block: the phone was genuinely used.
+        // 1. An anchor INSIDE the block, excluding the block's own boundary
+        //    bookkeeping: the app-open that starts the block and the pause
+        //    that ends it are not human activity mid-block.
         inside.firstOrNull {
-            it.type == TYPE_KEYGUARD_HIDDEN || it.type == TYPE_USER_INTERACTION || it.type == TYPE_ACTIVITY_RESUMED
+            it.timestamp > blockStart + BOUNDARY_EPSILON_MS &&
+                it.timestamp < blockEnd - BOUNDARY_EPSILON_MS &&
+                (it.type == TYPE_KEYGUARD_HIDDEN || it.type == TYPE_USER_INTERACTION || it.type == TYPE_ACTIVITY_RESUMED)
         }?.let { return Verdict(Kind.ANCHORED, it.timestamp) }
 
         // 2. The off-edge: did the screen go off because the user locked it?

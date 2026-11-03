@@ -129,4 +129,38 @@ class PresenceClassifierTest {
         val v = PresenceClassifier.classify(events, t0 + 60_000L, screenOff + 30_000L, timeout)
         assertEquals(PresenceClassifier.Kind.UNDECIDED, v.kind)
     }
+
+    @Test
+    fun `the app opening that defines the block never anchors it - the TikTok watch case`() {
+        // 2026-11-03 device finding: every gap read "You were using the phone"
+        // because the block's own opening RESUMED counted as an anchor. The
+        // app-resumed at blockStart is bookkeeping, not a mid-block touch.
+        val t0 = 1_000_000L
+        val blockStart = t0 + 60_000L           // gap starts; TikTok came forward right here
+        val blockEnd = blockStart + 19 * 60_000L
+        val events = listOf(
+            ev(RESUMED, t0),
+            ev(RESUMED, blockStart),            // the boundary event that must NOT anchor
+            ev(SCREEN_OFF, blockEnd),           // screen goes off at the end, no lock event
+        )
+        val v = PresenceClassifier.classify(events, blockStart, blockEnd, timeout)
+        assertEquals(PresenceClassifier.Kind.UNDECIDED, v.kind)
+    }
+
+    @Test
+    fun `a real mid-block touch still anchors`() {
+        val t0 = 1_000_000L
+        val blockStart = t0 + 60_000L
+        val blockEnd = blockStart + 19 * 60_000L
+        val touchAt = blockStart + 8 * 60_000L
+        val events = listOf(
+            ev(RESUMED, t0),
+            ev(RESUMED, blockStart),
+            ev(INTERACTION, touchAt),
+            ev(SCREEN_OFF, blockEnd),
+        )
+        val v = PresenceClassifier.classify(events, blockStart, blockEnd, timeout)
+        assertEquals(PresenceClassifier.Kind.ANCHORED, v.kind)
+        assertEquals(touchAt, v.anchorTs)
+    }
 }

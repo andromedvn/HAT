@@ -456,7 +456,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                                                     presenceLines[gap.startMillis]?.let { copy ->
-                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                         copy.evidence?.let { ev ->
                                                             Text(ev, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                         }
@@ -497,7 +497,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(card.session.gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                                                     presenceLines[card.session.gap.startMillis]?.let { copy ->
-                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                         copy.evidence?.let { ev ->
                                                             Text(ev, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                         }
@@ -529,7 +529,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(card.session.gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                                                     presenceLines[card.session.gap.startMillis]?.let { copy ->
-                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                         copy.evidence?.let { ev ->
                                                             Text(ev, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                         }
