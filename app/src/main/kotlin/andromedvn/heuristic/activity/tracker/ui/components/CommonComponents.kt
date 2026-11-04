@@ -57,7 +57,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -283,9 +286,23 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
         if (ledgerContext != null) {
             // Tour (r12d): the tour's own dialog window cutouts around this
             // content while the label-dialog step is active.
+            //
+            // Coordinates (r12i): this dialog's root is wrap-content and
+            // centered, so root coords are NOT screen coords. The tour
+            // overlay draws in its own fullscreen root, so the cutout must be
+            // registered in true screen coordinates: root bounds + the
+            // dialog view's offset on screen.
+            val tourDialogView = LocalView.current
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).then(
                 if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog")
-                    Modifier.tutorialTarget("labelDialog", AppTourRegistry) else Modifier
+                    Modifier.onGloballyPositioned { coords ->
+                        val b = coords.boundsInRoot()
+                        val loc = IntArray(2)
+                        tourDialogView.getLocationOnScreen(loc)
+                        AppTourRegistry.register("labelDialog", androidx.compose.ui.geometry.Rect(
+                            loc[0] + b.left, loc[1] + b.top, loc[0] + b.right, loc[1] + b.bottom
+                        ))
+                    } else Modifier
             )) {
                 when (ledgerContext) {
                     is LedgerContext.StandardGap -> {
