@@ -46,7 +46,7 @@ object DashboardTourSteps {
         TourStep("labelGaps", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "This button opens the unlabeled gaps screen. Tap to open it.", "labelGaps", transitionKey = "labelGaps"),
         // Gaps screen
         TourStep("gapsScreen", SCREEN_GAPS, SCREEN_GAPS, "From here you can manage each unlabeled gap however you like. First thing first: the only cards that show up here are the ones where you are not using your phone.", "gapsScreen"),
-        TourStep("gapCard", SCREEN_GAPS, SCREEN_GAPS, "Tap any gap card to open its label dialog, or long press and select other gaps to merge and label them.", "firstGapCard"),
+        TourStep("gapCard", SCREEN_GAPS, SCREEN_GAPS, "Tap any gap card to open its label dialog, or long press and select other gaps to merge and label them.", "gapCardsBlock"),
         // Transition: the first gap card pulses; tapping it opens the label dialog.
         TourStep("gapCardPulse", SCREEN_GAPS, SCREEN_GAPS, "Tap this unlabeled gap card.", "firstGapCard", transitionKey = "firstGapCard"),
         // Inside the label dialog: the dialog hosts its own tour banner.

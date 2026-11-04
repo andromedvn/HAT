@@ -264,7 +264,7 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
 }
 
 @Composable
-fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceLine: String? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, tourNext: (() -> Unit)? = null) {
+fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceLine: String? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
     // The label's start, taken from the device's evidence. HAT saves the
@@ -281,7 +281,12 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
 
     HatOutlinedDialog(onDismissRequest = onDismiss, title = "Label Activity") {
         if (ledgerContext != null) {
-            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            // Tour (r12d): the tour's own dialog window cutouts around this
+            // content while the label-dialog step is active.
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).then(
+                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog")
+                    Modifier.tutorialTarget("labelDialog", AppTourRegistry) else Modifier
+            )) {
                 when (ledgerContext) {
                     is LedgerContext.StandardGap -> {
                         presenceLine?.let {
@@ -341,31 +346,6 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
         }
         Spacer(modifier = Modifier.height(24.dp))
         DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
-        // The tour's label-dialog step (r12): the dialog is its own window, so
-        // the tour banner lives here, inside it. Next dismisses the dialog and
-        // hands back to the main overlay for the settings-gear step.
-        if (tourNext != null && andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
-            Spacer(modifier = Modifier.height(16.dp))
-            // Smooth entrance (owner: seamless handoff): fast fade with the
-            // dialog's own window animation.
-            androidx.compose.animation.AnimatedVisibility(
-                visible = true,
-                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) + androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(150))
-            ) {
-            // Styled like the main tour card: same radius, border, kicker.
-            Column(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)).padding(16.dp)) {
-                Text("TOUR ${andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex + 1}/${andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.copy ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { andromedvn.heuristic.activity.tracker.domain.AppTourState.end(); onDismiss() }) { Text("Skip tour", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Button(onClick = { tourNext() }, shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))) { Text("Next", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
-                }
-            }
-            }
-        }
     }
 }
 
