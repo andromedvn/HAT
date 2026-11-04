@@ -1,5 +1,7 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -66,6 +68,17 @@ import java.util.Locale
 fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardViewModel) {
     val context = LocalContext.current
     val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
+    // Tour target (r12c): the gap-card step spotlights the first few cards as
+    // one block, matching the "tap any gap card" copy.
+    val gapCardRects = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
+    fun registerGapCardBlock() {
+        if (gapCardRects.isEmpty()) return
+        val left = gapCardRects.values.minOf { it.left }
+        val top = gapCardRects.values.minOf { it.top }
+        val right = gapCardRects.values.maxOf { it.right }
+        val bottom = gapCardRects.values.maxOf { it.bottom }
+        tourRegistry.register("firstGapCard", androidx.compose.ui.geometry.Rect(left, top, right, bottom))
+    }
     val uiState by dashboardViewModel.uiState.collectAsState()
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
@@ -424,7 +437,10 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                         val isSelected = selectedGaps.contains(gap)
                                         Card(
                                             modifier = Modifier.weight(1f).padding(bottom = 12.dp).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
-                                                    .then(if (index == 0) Modifier.tutorialTarget("firstGapCard", tourRegistry) else Modifier)
+                                                    .then(if (index < 4) Modifier.onGloballyPositioned { coords ->
+                                                        gapCardRects[index] = coords.boundsInRoot()
+                                                        registerGapCardBlock()
+                                                    } else Modifier)
                                                     .combinedClickable(
                                                         onClick = {
                                                             if (selectedGaps.isNotEmpty()) {

@@ -1,5 +1,9 @@
 package andromedvn.heuristic.activity.tracker
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
+import andromedvn.heuristic.activity.tracker.domain.TourStep
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -227,6 +231,17 @@ class MainActivity : ComponentActivity() {
                     // main overlay stays hidden for that step.
                     val tourStep = AppTourState.current
                     val tourInDialog = tourStep?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG
+                    // Keep the last rendered step so the fade-out has content,
+                    // then crossfade the overlay in ~150ms (owner: seamless
+                    // handoff into the dialog window).
+                    var lastTourStep by remember { mutableStateOf<TourStep?>(null) }
+                    if (tourStep != null) lastTourStep = tourStep
+                    val overlayVisible = AppTourState.active && !tourInDialog
+                    val overlayAlpha by animateFloatAsState(
+                        targetValue = if (overlayVisible) 1f else 0f,
+                        animationSpec = tween(150),
+                        label = "tourOverlayAlpha"
+                    )
                     androidx.activity.compose.BackHandler(enabled = AppTourState.active && !tourInDialog) {
                         val prev = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex - 1)
                         if (prev != null && prev.route != (tourStep?.route ?: "")) {
@@ -242,11 +257,13 @@ class MainActivity : ComponentActivity() {
                             AppTourState.stepIndex = (AppTourState.stepIndex - 1).coerceAtLeast(0)
                         }
                     }
-                    if (!tourInDialog) TourStepOverlay(
+                    if (overlayAlpha > 0.02f && lastTourStep != null) TourStepOverlay(
                         registry = AppTourRegistry,
-                        currentStep = tourStep,
-                        globalIndex = AppTourState.stepIndex,
+                        currentStep = lastTourStep,
+                        globalIndex = AppTourState.stepIndex.coerceAtMost(DashboardTourSteps.steps.size - 1),
                         globalCount = DashboardTourSteps.steps.size,
+                        inputEnabled = overlayVisible,
+                        modifier = Modifier.alpha(overlayAlpha),
                         onNext = {
                             val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
                             if (next == null) {

@@ -346,6 +346,12 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
         // hands back to the main overlay for the settings-gear step.
         if (tourNext != null && andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
             Spacer(modifier = Modifier.height(16.dp))
+            // Smooth entrance (owner: seamless handoff): fast fade with the
+            // dialog's own window animation.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = true,
+                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) + androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(150))
+            ) {
             // Styled like the main tour card: same radius, border, kicker.
             Column(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)).padding(16.dp)) {
                 Text("TOUR ${andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex + 1}/${andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -357,6 +363,7 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                     Spacer(modifier = Modifier.width(12.dp))
                     Button(onClick = { tourNext() }, shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))) { Text("Next", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
                 }
+            }
             }
         }
     }

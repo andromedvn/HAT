@@ -95,7 +95,9 @@ fun TourStepOverlay(
     globalCount: Int,
     onNext: () -> Unit,
     onBack: () -> Unit,
-    onSkip: () -> Unit
+    onSkip: () -> Unit,
+    inputEnabled: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     if (currentStep == null) return
     val primary = MaterialTheme.colorScheme.primary
@@ -149,7 +151,7 @@ fun TourStepOverlay(
     )
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawBehind {
@@ -174,13 +176,13 @@ fun TourStepOverlay(
                     )
                 }
             }
-            .pointerInput(currentStep.id, targetRect, isTransition) {
+            .pointerInput(currentStep.id, targetRect, isTransition, inputEnabled) {
                 // On a TRANSITION step a tap on the pulsing button advances
                 // (and performs that button's navigation). On every other step
                 // the overlay consumes nothing: the user can tap the chart,
                 // open a gap, scroll, all while the tour is up (owner fix,
                 // 2026-11-02: tapping the chart must not next the tour).
-                if (!isTransition) return@pointerInput
+                if (!isTransition || !inputEnabled) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val inCutout = targetRect?.inflate(cutoutInset)?.contains(down.position) == true
@@ -218,7 +220,7 @@ fun TourStepOverlay(
                                 "Skip tour",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = onSurface.copy(alpha = 0.6f),
-                                modifier = Modifier.clickableNoRipple(onSkip)
+                                modifier = Modifier.then(if (inputEnabled) Modifier.clickableNoRipple(onSkip) else Modifier)
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
@@ -239,7 +241,7 @@ fun TourStepOverlay(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = onSurface.copy(alpha = 0.6f),
                                 modifier = Modifier
-                                    .clickableNoRipple { if (globalIndex > 0) onBack() }
+                                    .then(if (inputEnabled) Modifier.clickableNoRipple { if (globalIndex > 0) onBack() } else Modifier)
                                     .padding(vertical = 8.dp)
                             )
                             // On a transition step the pulsing button is the
@@ -250,7 +252,7 @@ fun TourStepOverlay(
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = primary,
                                 modifier = Modifier
-                                    .then(if (isTransition) Modifier else Modifier.clickableNoRipple { onNext() })
+                                    .then(if (isTransition || !inputEnabled) Modifier else Modifier.clickableNoRipple { onNext() })
                                     .padding(vertical = 8.dp)
                             )
                         }
