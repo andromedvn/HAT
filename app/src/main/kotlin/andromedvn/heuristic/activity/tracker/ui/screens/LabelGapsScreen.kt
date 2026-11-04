@@ -309,11 +309,20 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                 dismissOnClickOutside = false
             )
         ) {
+            // Kill the tour dialog's built-in window dim (owner: the label
+            // dialog must stay at its normal brightness in the background;
+            // the tour card alone floats on top).
+            val tourWindow = (androidx.compose.ui.platform.LocalView.current.parent
+                as? androidx.compose.ui.window.DialogWindowProvider)?.window
+            LaunchedEffect(Unit) { tourWindow?.setDimAmount(0f) }
             andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay(
                 registry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry,
                 currentStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current,
                 globalIndex = andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex,
                 globalCount = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.size,
+                // No scrim here (owner): the label dialog stays at its normal
+                // brightness in the background; only the tour card floats on top.
+                scrimEnabled = false,
                 onNext = {
                     tourDismiss()
                     navController.popBackStack()

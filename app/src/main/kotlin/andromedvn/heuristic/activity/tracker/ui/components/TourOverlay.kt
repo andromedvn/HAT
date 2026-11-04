@@ -97,6 +97,7 @@ fun TourStepOverlay(
     onBack: () -> Unit,
     onSkip: () -> Unit,
     inputEnabled: Boolean = true,
+    scrimEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (currentStep == null) return
@@ -153,8 +154,9 @@ fun TourStepOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .graphicsLayer { compositingStrategy = if (scrimEnabled) CompositingStrategy.Offscreen else CompositingStrategy.Auto }
             .drawBehind {
+                if (!scrimEnabled) return@drawBehind
                 drawScrimWithCutout(
                     hasCutout = hasTarget && animLeft >= 0f,
                     left = animLeft, top = animTop, right = animRight, bottom = animBottom,
