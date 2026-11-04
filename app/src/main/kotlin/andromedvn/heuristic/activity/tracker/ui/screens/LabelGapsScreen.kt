@@ -301,12 +301,11 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         if (unaccountedCards.isEmpty()) {
             dashboardViewModel.jumpToDate(uiState.startTime - 86_400_000L)
         } else {
-            val firstKey = unaccountedCards.first().key
-            val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == firstKey }
-            if (visible == null || visible.offset + visible.size > listState.layoutInfo.viewportEndOffset) {
-                val firstCardIndex = listState.layoutInfo.totalItemsCount - unaccountedCards.size
-                if (firstCardIndex >= 0) listState.scrollToItem(firstCardIndex)
-            }
+            // Always land the first card at the top of the viewport: the tour
+            // card sits at the bottom, and an off-center card ended up hidden
+            // behind it.
+            val firstCardIndex = listState.layoutInfo.totalItemsCount - unaccountedCards.size
+            if (firstCardIndex >= 0) listState.scrollToItem(firstCardIndex)
         }
     }
                 LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
@@ -435,6 +434,13 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                                 singleGapStart = gap.startMillis
                                                                 singleGapEnd = gap.endMillis
                                                                 lastGapContext = gap
+                                                                // Tour (r12): opening a label dialog from
+                                                                // any gap-card step continues the tour
+                                                                // inside the dialog instead of dropping it.
+                                                                val tourNow = andromedvn.heuristic.activity.tracker.domain.AppTourState.current
+                                                                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.active && tourNow?.screen == andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.SCREEN_GAPS && tourNow.id != "labelDialog") {
+                                                                    andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == "labelDialog" }
+                                                                }
                                                                 dialogPresenceLine = presenceLines[gap.startMillis]?.let { copy ->
                                                                     if (copy.evidence != null) copy.line + "\n" + copy.evidence else copy.line
                                                                 }

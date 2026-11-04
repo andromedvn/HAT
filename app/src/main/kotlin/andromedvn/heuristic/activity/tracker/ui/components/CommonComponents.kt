@@ -346,15 +346,16 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
         // hands back to the main overlay for the settings-gear step.
         if (tourNext != null && andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
             Spacer(modifier = Modifier.height(16.dp))
-            Column(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)).padding(12.dp)) {
+            // Styled like the main tour card: same radius, border, kicker.
+            Column(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)).padding(16.dp)) {
                 Text("TOUR ${andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex + 1}/${andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.copy ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { andromedvn.heuristic.activity.tracker.domain.AppTourState.end(); onDismiss() }) { Text("Skip tour", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { tourNext() }) { Text("Next", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)) }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Button(onClick = { tourNext() }, shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))) { Text("Next", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
                 }
             }
         }

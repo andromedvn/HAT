@@ -65,6 +65,8 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import andromedvn.heuristic.activity.tracker.ui.components.TourRegistry
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
 import andromedvn.heuristic.activity.tracker.domain.AppTourState
 import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
@@ -85,6 +87,18 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
     // recomposes with startTour still true - without the guard the whole tour
     // restarted on return (owner report, 2026-11-01).
     val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
+    // Tour target (r12): the session-list step spotlights the first few cards
+    // as one block, not a single row. The cards report their root bounds and
+    // the block registers their union.
+    val appRowRects = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
+    fun registerAppRowsBlock() {
+        if (appRowRects.isEmpty()) return
+        val left = appRowRects.values.minOf { it.left }
+        val top = appRowRects.values.minOf { it.top }
+        val right = appRowRects.values.maxOf { it.right }
+        val bottom = appRowRects.values.maxOf { it.bottom }
+        tourRegistry.register("appRows", androidx.compose.ui.geometry.Rect(left, top, right, bottom))
+    }
     var tourLaunched by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(startTour) {
         if (startTour && !tourLaunched) {
@@ -123,6 +137,13 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
         if (tourStepHere < 0) return@LaunchedEffect
         kotlinx.coroutines.delay(120)
         val id = DashboardTourSteps.steps.getOrNull(tourStepHere)?.targetKey ?: return@LaunchedEffect
+        if (id == "settingsGear") {
+            // The header lives in item 0: after the session-list steps the
+            // list is scrolled down and the gear is off-screen, leaving the
+            // pulse floating on stale bounds. Bring the list home first.
+            listState.scrollToItem(0)
+            return@LaunchedEffect
+        }
         val rect = tourRegistry.bounds[id] ?: return@LaunchedEffect
         val anchor = tourAutoScrollPx * 0.38f
         val delta = rect.center.y - anchor
@@ -301,7 +322,12 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                             }
                         }
 
-                        Box(modifier = Modifier.padding(horizontal = 20.dp).let { if (itemIndex == 0) it.tutorialTarget("appRows", tourRegistry) else it }) {
+                        Box(modifier = Modifier.padding(horizontal = 20.dp).let {
+                            if (itemIndex < 4) it.onGloballyPositioned { coords ->
+                                appRowRects[itemIndex] = coords.boundsInRoot()
+                                registerAppRowsBlock()
+                            } else it
+                        }) {
                             when (item) {
                                 is AppUsageItem -> RealActivityListItem(navController = navController, app = item, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onLongClick = { onLongPress(0) })
                                 is OfflineActivityItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { navController.navigate(NavRouteCodec.offlineDetailsRoute(item.id)) }, onLongClick = { onLongPress(1) })

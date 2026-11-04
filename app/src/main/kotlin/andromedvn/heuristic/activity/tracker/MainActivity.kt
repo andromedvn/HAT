@@ -235,7 +235,12 @@ class MainActivity : ComponentActivity() {
                             AppTourState.end()
                             lifecycleScope.launch { storage.saveSettings(storage.settings.first().copy(hasSeenTour = true)) }
                         }
+                        // The dialog step has no overlay of its own in this
+                        // window; back must never land on it.
                         AppTourState.stepIndex = (AppTourState.stepIndex - 1).coerceAtLeast(0)
+                        if (AppTourState.current?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG) {
+                            AppTourState.stepIndex = (AppTourState.stepIndex - 1).coerceAtLeast(0)
+                        }
                     }
                     if (!tourInDialog) TourStepOverlay(
                         registry = AppTourRegistry,
@@ -258,6 +263,9 @@ class MainActivity : ComponentActivity() {
                                 navController.popBackStack(prev.route, false)
                             }
                             AppTourState.stepIndex--
+                            if (AppTourState.current?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG) {
+                                AppTourState.stepIndex--
+                            }
                         },
                         onSkip = {
                             AppTourState.end()
