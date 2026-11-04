@@ -257,7 +257,15 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             initialTitle = "", initialIconName = "Walk", suggestions = uiState.recentSuggestions,
             ledgerContext = ledgerContext,
             presenceLine = dialogPresenceLine,
-            onDismiss = { showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null },
+            onDismiss = {
+                // Tour fallback (r12e): the label dialog dismissed while the
+                // tour sits on its step returns to the pulse instead of
+                // leaving the tour invisible.
+                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
+                    andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == "gapCardPulse" }
+                }
+                showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null
+            },
             onSave = { outTitle, outIcon, outStart ->
                 if (screenOffPkg.isNotEmpty()) {
                     dashboardViewModel.labelScreenOffSpan(screenOffPkg, outStart, screenOffEnd, outTitle, outIcon)
@@ -340,11 +348,6 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     // cards, jump to yesterday so the pulse has something to pulse on; when a
     // card exists, scroll it into view (the tour card sits at the bottom).
     val tourStepId = if (andromedvn.heuristic.activity.tracker.domain.AppTourState.active) andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id else null
-    LaunchedEffect(tourStepId, showDialog) {
-        if (tourStepId == "labelDialog" && !showDialog) {
-            andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == "gapCardPulse" }
-        }
-    }
     LaunchedEffect(tourStepId, unaccountedCards.size) {
         if (tourStepId != "gapCard" && tourStepId != "gapCardPulse") return@LaunchedEffect
         if (unaccountedCards.isEmpty()) {
