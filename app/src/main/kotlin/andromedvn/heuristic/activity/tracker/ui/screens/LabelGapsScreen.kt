@@ -121,6 +121,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             uiState.majorGaps.forEach { add(it.startMillis to it.endMillis) }
         }
         if (ranges.isNotEmpty()) presenceLines = dashboardViewModel.presenceVerdicts(ranges)
+
     }
 
     LaunchedEffect(uiState.timeRange, uiState.dateLabelRelative) {
@@ -167,6 +168,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                 // until now "Count as usage" on a screen-off span was
                 // permanent. Restoring one pulls the span back out of
                 // usage and it returns to the Screen-Off Activity list.
+
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     item {
                         Column(modifier = Modifier.padding(top = 8.dp)) {
@@ -222,7 +224,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             val sStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(screenOffStart)
             val eStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(screenOffEnd)
             val durationStr = TimeUtils.formatDuration(screenOffEnd - screenOffStart)
-            Text("$screenOffAppName ran from $sStr to $eStr ($durationStr) while the screen was off. That's not screen time. What was it?", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("$screenOffAppName ran from $sStr to $eStr ($durationStr) with the screen off. Name what it actually was, or count the time as usage instead.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(24.dp))
             // Same stacking as the idle dialog: full width never wraps.
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -267,13 +269,46 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                     selectedGaps.clear()
                     showDialog = false; navController.popBackStack()
                 }
-            }
+            },
+            tourNext = if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
+                {
+                    showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null
+                    navController.popBackStack()
+                    andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex++
+                }
+            } else null
         )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets(0,0,0,0)) { innerPadding ->
             Column(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()).fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).pointerInput(Unit) { detectTapGestures(onTap = { chartHighlight = null; returnScrollIndex = -1; returnScrollOffset = 0 }) }.verticalFadingEdges(listState.canScrollBackward, listState.canScrollForward)) {
+
+    // One unaccounted timeline: gaps and screen-off spans in one
+    // chronological list (2026-10-22, the owner's call). Hoisted out of the
+    // list builder so the tour logic can read it.
+    val unaccountedCards = (
+        uiState.majorGaps.map { UnaccountedCard.Gap(it) } +
+        uiState.screenOffItems.flatMap { item -> item.spans.map { UnaccountedCard.ScreenOff(item, it) } }
+    ).sortedBy { it.startTime }
+
+    // The tour's gap-card steps (r12): land on a real card. When today has no
+    // cards, jump to yesterday so the pulse has something to pulse on; when a
+    // card exists, scroll it into view (the tour card sits at the bottom).
+    val tourStepId = if (andromedvn.heuristic.activity.tracker.domain.AppTourState.active) andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id else null
+    LaunchedEffect(tourStepId, unaccountedCards.size) {
+        if (tourStepId != "gapCard" && tourStepId != "gapCardPulse") return@LaunchedEffect
+        if (unaccountedCards.isEmpty()) {
+            dashboardViewModel.jumpToDate(uiState.startTime - 86_400_000L)
+        } else {
+            val firstKey = unaccountedCards.first().key
+            val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == firstKey }
+            if (visible == null || visible.offset + visible.size > listState.layoutInfo.viewportEndOffset) {
+                val firstCardIndex = listState.layoutInfo.totalItemsCount - unaccountedCards.size
+                if (firstCardIndex >= 0) listState.scrollToItem(firstCardIndex)
+            }
+        }
+    }
                 LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
                     item {
                         Column(modifier = Modifier.padding(horizontal = 20.dp).tutorialTarget("gapsScreen", tourRegistry)) {
@@ -344,15 +379,12 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                     // hours); the evidence belongs on the card, not in the
                     // header. One chronological list, each card states what
                     // HAT knows, each card keeps its own resolution flow.
-                    val unaccountedCards = (
-                        uiState.majorGaps.map { UnaccountedCard.Gap(it) } +
-                        uiState.screenOffItems.flatMap { item -> item.spans.map { UnaccountedCard.ScreenOff(item, it) } }
-                    ).sortedBy { it.startTime }
+
 
                     if (unaccountedCards.isNotEmpty()) {
                         item {
                             Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                                Text("UNACCOUNTED TIME (${unaccountedCards.size}) · ${TimeUtils.formatDuration(unaccountedCards.sumOf { it.durationMillis })}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text("Unlabeled Gaps: ${unaccountedCards.size} (${TimeUtils.formatDuration(unaccountedCards.sumOf { it.durationMillis })} total)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 Spacer(modifier = Modifier.height(12.dp))
                             }
                         }
@@ -372,8 +404,8 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                         // here would flash a lie for a second (regression
                                                         // audit, 2026-10-21). Say nothing until it lands.
                                                         uiState.isLoading -> { }
-                                                        uiState.loadSucceeded -> EmptyStateCard(Icons.Default.CheckCircle, "All Accounted For", "Every minute is accounted for. No gaps found today.")
-                                                        else -> EmptyStateCard(Icons.Outlined.Warning, "HAT could not read your data", "HAT could not load your activity. This list is not complete. Reopen the app or tap refresh to try again.")
+                                                        uiState.loadSucceeded -> EmptyStateCard(Icons.Default.CheckCircle, "Nothing needs labeling at the moment", "Surprise surprise, seems like everything is already labeled.")
+                                                        else -> EmptyStateCard(Icons.Outlined.Warning, "HAT could not load your data", "HAT could not load your activity. This list is not complete. Reopen the app or tap refresh to try again.")
                                                     }
                                                 }
                                             }
@@ -393,6 +425,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                         val isSelected = selectedGaps.contains(gap)
                                         Card(
                                             modifier = Modifier.weight(1f).padding(bottom = 12.dp).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
+                                                    .then(if (index == 0) Modifier.tutorialTarget("firstGapCard", tourRegistry) else Modifier)
                                                     .combinedClickable(
                                                         onClick = {
                                                             if (selectedGaps.isNotEmpty()) {
@@ -402,7 +435,9 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                                 singleGapStart = gap.startMillis
                                                                 singleGapEnd = gap.endMillis
                                                                 lastGapContext = gap
-                                                                dialogPresenceLine = presenceLines[gap.startMillis]?.line
+                                                                dialogPresenceLine = presenceLines[gap.startMillis]?.let { copy ->
+                                                                    if (copy.evidence != null) copy.line + "\n" + copy.evidence else copy.line
+                                                                }
                                                                 showDialog = true
                                                             }
                                                         },
@@ -415,18 +450,10 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text(gap.timeRangeFormatted, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                                                    presenceLines[gap.startMillis]?.let { copy ->
-                                                        Text(copy.line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                                        copy.evidence?.let { ev ->
-                                                            Text(ev, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                        }
-                                                    }
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text(gap.contextExplainer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                                        if (gap.hasHiddenAppFootprint) {
-                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                    if (gap.hasHiddenAppFootprint) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
                                                             Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
-                                                            Spacer(modifier = Modifier.width(2.dp))
+                                                            Spacer(modifier = Modifier.width(4.dp))
                                                             Text("Contains hidden app", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                         }
                                                     }
@@ -452,9 +479,6 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                     Text("${sdf.format(Date(card.span.first))} - ${sdf.format(Date(card.span.second))}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text("Ran with the screen off: ${card.item.title}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                                    }
                                                 }
                                                 Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha=0.15f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp)) { Text(TimeUtils.formatDuration(card.span.second - card.span.first), style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false) }
                                             }

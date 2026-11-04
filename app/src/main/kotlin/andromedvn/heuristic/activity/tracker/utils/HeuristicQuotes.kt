@@ -48,21 +48,21 @@ object HeuristicQuotes {
         if (isFuture) {
             val isHeavyScreenTime = totalScreenTimeMillis > 4L * 60L * 60L * 1000L
             return if (isHeavyScreenTime) {
-                "Yours to live, not to scroll.\nWhat do you plan to do with it?"
+                "You are looking at hours that have not happened yet.\nWhat do you plan to do with it?"
             } else {
-                "Hasn't happened yet.\nHAT writes it down the moment it does."
+                "These hours have not happened yet. HAT records them as they do."
             }
         }
 
         // 3. Week / Month Overviews (Past)
         if (!isDayView) {
-            return "This day has no records.\nThe phone was off or dead, Usage access was off, or Android cleared what little there was. If you remember it, the Gaps screen can still log the time."
+            return "This day has no records.\nThe phone was off or dead, Usage access was off, or Android cleared the data. The Gaps screen can still log it."
         }
 
         // 4. The Past (Day View)
         return when (chartMode) {
-            ChartMode.GAPS -> "All accounted for.\nApp time and labeled offline time cover this whole period. Nothing here needs a name."
-            ChartMode.APP_USAGE -> "No app used the screen this hour.\nOffline time does not show here. The Gaps chart has the full picture."
+            ChartMode.GAPS -> "All accounted for.\nApp time and labeled offline time cover this whole period. Nothing needs a labeling here."
+            ChartMode.APP_USAGE -> "Hmm... No apps were present this hour.\nView the unlabeled gaps instead."
             ChartMode.OFFLINE -> "Nothing here.\nGaps is where this time gets named."
             else -> "No screen activity or manual logs here\nTap View Unlabeled Gaps below and tell HAT what really happened."
         }

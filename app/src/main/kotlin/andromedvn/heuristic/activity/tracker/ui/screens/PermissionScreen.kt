@@ -188,7 +188,7 @@ fun PermissionsScreen(
                             Spacer(modifier = Modifier.height(24.dp))
                             PrivacyPoint(Icons.Default.Splitscreen, "Active apps and empty gaps are shown exactly as they happened.")
                             Spacer(modifier = Modifier.height(24.dp))
-                            PrivacyPoint(Icons.Default.Edit, "Label the offline time or leave it empty.")
+                            PrivacyPoint(Icons.Default.Edit, "Label offline gaps or leave them empty, you decide.")
                             Spacer(modifier = Modifier.height(24.dp))
                             PrivacyPoint(Icons.Default.Security, "No internet permission. Nothing can leave this phone.")
                         }
@@ -199,26 +199,26 @@ fun PermissionsScreen(
                             Spacer(modifier = Modifier.height(32.dp))
                             Text("Usage Access Required", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("HAT reads app activity states only. It never reads your messages, photos, or personal data.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Text("HAT reads app activity states only (foreground/background). It never reads your messages, photos, or personal data.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(48.dp))
                             PrivacyPoint(Icons.Default.Security, "Android requires \"Usage Access\" so HAT can see when apps move to the foreground or background.")
                             Spacer(modifier = Modifier.height(24.dp))
                             PrivacyPoint(Icons.Default.OfflineBolt, "This allows HAT to detect when your screen was active and when it was off.")
                             Spacer(modifier = Modifier.height(24.dp))
-                            PrivacyPoint(Icons.Default.Security, "All data is processed entirely on your device. HAT does not have internet permissions and cannot upload your timeline.")
+                            PrivacyPoint(Icons.Default.Security, "Everything is processed on this device. Without the internet permission, uploading is impossible.")
                         }
                         2 -> {
                             Box(modifier = Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
                                 Icon(Icons.Default.BatterySaver, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
                             }
                             Spacer(modifier = Modifier.height(32.dp))
-                            Text("Keep the Archive Running", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
+                            Text("Keeping the archive working", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("Android deletes old usage records after a few days. HAT saves them to its own archive first.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Text("Android deletes old usage records after a few days. HAT copies them into its own archive before that happens.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(48.dp))
-                            PrivacyPoint(Icons.Default.OfflineBolt, "Battery savers can stop the archive mid-run. Any day it misses cannot be recovered.")
+                            PrivacyPoint(Icons.Default.OfflineBolt, "Battery savers can stop that copy job midway. A day it misses stays deleted forever.")
                             Spacer(modifier = Modifier.height(24.dp))
-                            PrivacyPoint(Icons.Default.BatterySaver, "Exempting HAT is a normal Android setting. It does not disable battery saving for anything else.")
+                            PrivacyPoint(Icons.Default.BatterySaver, "This is a standard Android setting. It does not change battery behavior for any other app.")
                         }
                     }
                     Spacer(modifier = Modifier.height(32.dp))
@@ -239,7 +239,7 @@ fun PermissionsScreen(
                     0 -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             if (!reviewMode) Text("Skip", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickableNoRipple { completeSetup(false) })
-                            OnboardingOutlinedButton("Next") { goNext() }
+                            OnboardingOutlinedButton("Continue") { goNext() }
                         }
                     }
                     1 -> {
@@ -253,14 +253,14 @@ fun PermissionsScreen(
                     }
                     else -> {
                         if (batteryExempt) {
-                            OnboardingOutlinedButton(if (reviewMode) "Done" else "See Your Dashboard") { completeSetup(!reviewMode) }
+                            OnboardingOutlinedButton("Continue") { completeSetup(!reviewMode) }
                         } else {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 // Some ROMs finish the battery handler silently. The
                                 // exemption can be granted later from Settings, so the
                                 // page must never strand the user.
                                 if (!reviewMode) Text("Skip for now", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickableNoRipple { completeSetup(false) })
-                                OnboardingOutlinedButton("Exempt Battery") {
+                                OnboardingOutlinedButton("Exempt") {
                                     try { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:${context.packageName}") }) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
                                 }
                             }

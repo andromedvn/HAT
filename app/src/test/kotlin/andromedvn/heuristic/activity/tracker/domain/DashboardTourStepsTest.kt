@@ -6,22 +6,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The tour curriculum is copy the owner ratified (2026-11-01: "make the user
- * familiar with every screen"). Eleven steps across four real screens; the
- * charter bans em dashes and hype words in every user-facing string, so the
- * test enforces that here, where the strings live, instead of trusting review.
+ * The tour curriculum is copy the owner ratified (2026-11-04: ten steps,
+ * ending on the settings gear, with the label dialog toured from inside its
+ * own window). The charter bans em dashes and hype words in every user-facing
+ * string, so the test enforces that here, where the strings live, instead of
+ * trusting review.
  */
 class DashboardTourStepsTest {
 
     @Test
-    fun `tour covers four screens in the ratified order`() {
+    fun `tour covers its screens in the ratified order`() {
         val screens = DashboardTourSteps.steps.map { it.screen }.distinct()
         assertEquals(
             listOf(
                 DashboardTourSteps.SCREEN_DASHBOARD,
                 DashboardTourSteps.SCREEN_GAPS,
-                DashboardTourSteps.SCREEN_STATS,
-                DashboardTourSteps.SCREEN_SETTINGS
+                DashboardTourSteps.SCREEN_LABEL_DIALOG
             ),
             screens
         )
@@ -40,17 +40,22 @@ class DashboardTourStepsTest {
     }
 
     @Test
-    fun `exactly one step completes the tour and it is the last`() {
-        val completing = DashboardTourSteps.steps.filter { it.completesTour }
-        assertEquals(1, completing.size)
-        assertEquals(DashboardTourSteps.steps.last().id, completing.first().id)
-        assertEquals(DashboardTourSteps.SCREEN_SETTINGS, completing.first().screen)
+    fun `the tour ends on the settings gear`() {
+        val last = DashboardTourSteps.steps.last()
+        assertEquals("settingsGear", last.id)
+        assertTrue(last.transitionKey != null)
+        assertEquals(DashboardTourSteps.SCREEN_DASHBOARD, last.screen)
     }
 
     @Test
-    fun `every screen's steps share that screen's route`() {
+    fun `every screen's steps share that screen's route except the dialog step`() {
         DashboardTourSteps.steps.forEach { step ->
-            assertEquals("step ${step.id} route mismatch", step.screen, step.route)
+            if (step.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG) {
+                // The dialog lives on the gaps route; the banner renders there.
+                assertEquals(DashboardTourSteps.SCREEN_GAPS, step.route)
+            } else {
+                assertEquals("step ${step.id} route mismatch", step.screen, step.route)
+            }
         }
     }
 

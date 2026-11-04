@@ -161,13 +161,13 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                         DiagnosticSettingsItem("Archive Coverage", coverageText) { }
                     }
                     item {
-                        DiagnosticSettingsItem("Export Total Unbounded Matrix", "Exports every app interval the system still holds, for all apps and events. JSON array dump.") {
+                        DiagnosticSettingsItem("Export Total Unbounded Matrix", "Exports every app interval the system still holds, for all apps, as JSON.") {
                             val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
                             diagMatrixLauncher.launch("HAT_Calculated_Matrix_$date.json")
                         }
                     }
                     item {
-                        DiagnosticSettingsItem("Export Raw Event Stream", "Every usage event the OS still holds, last 3 days, in the exact order and millisecond precision HAT's replays receive them. For tracing the gap decisions on this device.") {
+                        DiagnosticSettingsItem("Export Raw Event Stream", "Exports the last 3 days of raw usage events in original order, to the millisecond, for tracing gap decisions.") {
                             val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
                             rawEventLauncher.launch("HAT_Raw_Events_$stamp.txt")
                         }
@@ -190,7 +190,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                         }
                     }
                     item {
-                        DiagnosticSettingsItem("Simulate Fatal Crash", "Trigger a deliberate crash to test the error recovery.") {
+                        DiagnosticSettingsItem("Simulate Fatal Crash", "Deliberately crashes the app to test error recovery.") {
                             confirmSimulateCrash = true
                         }
                     }
@@ -200,7 +200,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
 
     if (confirmClearLogs) {
         HatOutlinedDialog(onDismissRequest = { confirmClearLogs = false }, title = "Delete all logs?") {
-            Text("This permanently deletes every stored crash report and diagnostic log. It cannot be undone.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text("Permanently deletes all stored crash and diagnostic logs. This cannot be undone.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { confirmClearLogs = false }) { Text("Cancel") }

@@ -221,9 +221,13 @@ class MainActivity : ComponentActivity() {
 
                     // The app tour: ONE overlay above the whole navigation
                     // (2026-11-01). It reads the global step and the global
-                    // registry, so screen handoffs can never drop it.
+                    // registry, so screen handoffs can never drop it. The
+                    // label-dialog step is the exception: the dialog is its
+                    // own window, so it hosts its own banner (r12) and the
+                    // main overlay stays hidden for that step.
                     val tourStep = AppTourState.current
-                    androidx.activity.compose.BackHandler(enabled = AppTourState.active) {
+                    val tourInDialog = tourStep?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG
+                    androidx.activity.compose.BackHandler(enabled = AppTourState.active && !tourInDialog) {
                         val prev = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex - 1)
                         if (prev != null && prev.route != (tourStep?.route ?: "")) {
                             navController.popBackStack(prev.route, false)
@@ -233,7 +237,7 @@ class MainActivity : ComponentActivity() {
                         }
                         AppTourState.stepIndex = (AppTourState.stepIndex - 1).coerceAtLeast(0)
                     }
-                    TourStepOverlay(
+                    if (!tourInDialog) TourStepOverlay(
                         registry = AppTourRegistry,
                         currentStep = tourStep,
                         globalIndex = AppTourState.stepIndex,

@@ -266,7 +266,7 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                         
                         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max).tutorialTarget("statCards", tourRegistry), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight().tutorialTarget("statCardApps", tourRegistry), title = "Total Apps Usage", value = uiState.totalScreenTimeFormatted, badgeText = null, onClick = { navController.navigate("app_usage_stats") })
-                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Offline Time", value = uiState.totalOfflineTimeFormatted, badgeText = null, onClick = { navController.navigate("offline_stats") })
+                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Offline Activity", value = uiState.totalOfflineTimeFormatted, badgeText = null, onClick = { navController.navigate("offline_stats") })
                         }
                         
                         Spacer(modifier = Modifier.height(24.dp))

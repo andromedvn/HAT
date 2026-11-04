@@ -299,7 +299,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     Text("DATA CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     SettingsItem("Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
-                    SettingsItem("Keep the Archive Running", "Exempt HAT from battery optimization. Battery managers can otherwise stop the archive mid-run.") {
+                    SettingsItem("Battery Optimization", "Keep the archive running by exempting HAT from battery optimization. Tap this if the onboarding battery exemption button does not work.") {
                         try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     }
                     SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
@@ -324,7 +324,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 // GROUP 4: SUPPORT (donations handled entirely on an external page)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("SUPPORT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    SettingsItem("Support Development", "HAT is free, no ads, no subscriptions. Supporting it means one developer can keep building full-time.") { context.openExternalWebLink(SPONSOR_URL) }
+                    SettingsItem("Support Development", "HAT is free and has no ads or subscriptions. Support keeps one developer building full-time.") { context.openExternalWebLink(SPONSOR_URL) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
@@ -334,8 +334,8 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }
                     SettingsItem("Terms of Service", "Conditions of use and liability limitations.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/TERMS.html") }
                     SettingsItem("Open Source Licenses", "Third-party software attributions.") { navController.navigate("licenses") }
-                    SettingsItem("How HAT Works", "Review the onboarding screens: welcome, usage access, and battery.") { navController.navigate("permissions?review=true") }
-                    SettingsItem("Replay the tour", "Walk every screen again with the spotlight tour, ending in Settings.") { navController.navigate("dashboard?startTour=true") }
+                    SettingsItem("How HAT Works", "Shows the onboarding screens again.") { navController.navigate("permissions?review=true") }
+                    SettingsItem("Tutorial", "Replay the tour guide.") { navController.navigate("dashboard?startTour=true") }
                     
                     Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
                         Text("HAT Engine v$appVersion", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
