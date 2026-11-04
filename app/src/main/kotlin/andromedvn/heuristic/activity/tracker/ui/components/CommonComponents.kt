@@ -344,8 +344,13 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                 Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(30)).background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(30)).clickable { selectedIconName = preset.iconName }, contentAlignment = Alignment.Center) { Icon(preset.icon, contentDescription = null, tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
-        Spacer(modifier = Modifier.height(24.dp))
-        DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
+        // The tour's label-dialog step hides Save: the tour card sits where
+        // Save would be, and saving mid-tour is not the flow (Next is).
+        val tourDialogStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog"
+        if (!tourDialogStep) {
+            Spacer(modifier = Modifier.height(24.dp))
+            DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
+        }
     }
 }
 
