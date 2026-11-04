@@ -252,7 +252,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                         item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(icon = if (type == "app") Icons.Default.Smartphone else Icons.AutoMirrored.Filled.DirectionsWalk, title = "No Activity", subtitle = "No sessions or offline logs for this on the selected date.") } }
                     } else if (!uiState.isLoading) {
                         if (renderList.isEmpty()) {
-                            item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.Default.Splitscreen, "No Session Data", "Detailed sessions data are not found for this activity") } }
+                            item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.Default.Splitscreen, "No Session Data", "No sessions recorded for this activity") } }
                         } else {
                             itemsIndexed(renderList, key = { _, session -> "${session.startTime}_${session.endTime}" }) { index, session ->
                                 val isLast = index == renderList.lastIndex

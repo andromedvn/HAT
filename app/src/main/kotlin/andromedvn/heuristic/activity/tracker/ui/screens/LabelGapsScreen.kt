@@ -372,8 +372,8 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                         // here would flash a lie for a second (regression
                                                         // audit, 2026-10-21). Say nothing until it lands.
                                                         uiState.isLoading -> { }
-                                                        uiState.loadSucceeded -> EmptyStateCard(Icons.Default.CheckCircle, "Timeline Complete", "Your timeline is fully tracked! No significant gaps found today.")
-                                                        else -> EmptyStateCard(Icons.Outlined.Warning, "Couldn't Read Your Data", "HAT could not load your activity this time, so this is NOT a complete picture of your day. Reopen the app or tap refresh to try again.")
+                                                        uiState.loadSucceeded -> EmptyStateCard(Icons.Default.CheckCircle, "All Accounted For", "Every minute is accounted for. No gaps found today.")
+                                                        else -> EmptyStateCard(Icons.Outlined.Warning, "HAT could not read your data", "HAT could not load your activity. This list is not complete. Reopen the app or tap refresh to try again.")
                                                     }
                                                 }
                                             }

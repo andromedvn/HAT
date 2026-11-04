@@ -120,16 +120,15 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     "You were using the phone during this time.",
                     verdict.anchorTs?.let { "First use at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.CHOSE_TO_STOP -> PresenceCopy(
-                    "You locked the phone yourself.",
+                    "You locked the phone.",
                     verdict.anchorTs?.let { "Locked at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.TIMEOUT -> PresenceCopy(
                     // Guarded copy (arena catch): the phone sat only if a
                     // return was actually recorded; an open gap claims less.
-                    if (verdict.resolveTs != null) "The screen timed out on its own. The phone sat until you came back."
-                    else "The screen timed out on its own.",
+                    "The screen timed out on its own.",
                     verdict.resolveTs?.let { "Unlocked at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.MEDIA_CONTINUED -> PresenceCopy(
-                    "This app kept running through the quiet.",
+                    "This app was playing media the whole time.",
                     verdict.resolveTs?.let { "Screen back on at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.UNDECIDED -> null
             }
@@ -237,7 +236,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
 
                         // HONESTY FIX (2026-10-01): this launch block had no catch at all. A query
                         // that threw killed the coroutine, leaving every list empty, and the gap
-                        // screen then rendered "Your timeline is fully tracked!" - celebrating a
+                        // screen then rendered "All Accounted For" - celebrating a
                         // failure as success. Wrap the body so a failure is reported as a failure.
                         try {
                         val spinnerJob = launch {

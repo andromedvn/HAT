@@ -299,7 +299,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     Text("DATA CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     SettingsItem("Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
-                    SettingsItem("Keep My History Safe", "Exempt HAT from battery optimization so aggressive battery managers cannot stop the archiver that saves your history before Android deletes it.") {
+                    SettingsItem("Keep the Archive Running", "Exempt HAT from battery optimization. Battery managers can otherwise stop the archive mid-run.") {
                         try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     }
                     SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
@@ -317,7 +317,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     // default.
                     HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Recent" to SortType.RECENT, "Duration" to SortType.DURATION, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
                     HatSlidingSelector<Int>("Gap Minimum", "Quiet periods shorter than this don't appear. A gap is time where nothing ran at all.", listOf("1 min" to DetailLevel.ONE_MIN, "5 min" to DetailLevel.FIVE_MIN, "15 min" to DetailLevel.FIFTEEN_MIN, "Custom" to -1), if (currentSettings!!.detailLevel == DetailLevel.CUSTOM) currentSettings!!.customDetailMinutes else currentSettings!!.detailLevel, " min", { updateSettings(currentSettings!!.copy(detailLevel = it)) }, { customDialogSetting = "detail" })
-                    HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to archive your usage history before Android deletes it. There is no Off: the worker is what keeps your past alive.", listOf("12h" to 12, "6h" to 6, "2h" to 2, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
+                    HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to copy your usage history before Android deletes it. There is no Off: Android deletes old records, the archive keeps them.", listOf("12h" to 12, "6h" to 6, "2h" to 2, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
@@ -334,7 +334,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }
                     SettingsItem("Terms of Service", "Conditions of use and liability limitations.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/TERMS.html") }
                     SettingsItem("Open Source Licenses", "Third-party software attributions.") { navController.navigate("licenses") }
-                    SettingsItem("How HAT Works", "Review the two onboarding screens: welcome and the one permission.") { navController.navigate("permissions?review=true") }
+                    SettingsItem("How HAT Works", "Review the onboarding screens: welcome, usage access, and battery.") { navController.navigate("permissions?review=true") }
                     SettingsItem("Replay the tour", "Walk every screen again with the spotlight tour, ending in Settings.") { navController.navigate("dashboard?startTour=true") }
                     
                     Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {

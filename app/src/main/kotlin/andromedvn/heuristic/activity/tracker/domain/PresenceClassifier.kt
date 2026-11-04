@@ -11,7 +11,7 @@ package andromedvn.heuristic.activity.tracker.domain
  * - screen-off landing one screen-timeout after the last human event means
  *   the phone timed out on its own, and the next unlock says how long it sat;
  * - the same app resuming right after the screen comes back, with no unlock
- *   between, means playback continued through the quiet.
+ *   between, means media playback continued without a new touch.
  * Anything else is UNDECIDED, and an UNDECIDED block claims nothing.
  *
  * Constants are conservative on purpose: an UNDECIDED verdict is honest,
@@ -103,7 +103,7 @@ object PresenceClassifier {
                 val unlock = post.firstOrNull { it.type == TYPE_KEYGUARD_HIDDEN }
                 if (unlock != null) return Verdict(Kind.TIMEOUT, screenOff.timestamp, unlock.timestamp)
                 // 4. Media continuation: screen back on, same app resumed
-                // fast, no unlock between - playback rode through the quiet.
+                // fast, no unlock between: media playback continued without a new touch.
                 val screenOn = post.firstOrNull { it.type == TYPE_SCREEN_INTERACTIVE }
                 if (screenOn != null) {
                     val resumed = post.firstOrNull { it.type == TYPE_ACTIVITY_RESUMED && it.timestamp <= screenOn.timestamp + QUICK_RESUME_MS }

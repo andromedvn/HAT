@@ -161,7 +161,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                         DiagnosticSettingsItem("Archive Coverage", coverageText) { }
                     }
                     item {
-                        DiagnosticSettingsItem("Export Total Unbounded Matrix", "Exports every pair of <start, end> coordinates retained over the system's lifetime for all apps and events. JSON encoded array dump.") {
+                        DiagnosticSettingsItem("Export Total Unbounded Matrix", "Exports every app interval the system still holds, for all apps and events. JSON array dump.") {
                             val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
                             diagMatrixLauncher.launch("HAT_Calculated_Matrix_$date.json")
                         }
@@ -190,7 +190,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                         }
                     }
                     item {
-                        DiagnosticSettingsItem("Simulate Fatal Crash", "Trigger a deliberate runtime exception to natively test the disaster recovery hatch.") {
+                        DiagnosticSettingsItem("Simulate Fatal Crash", "Trigger a deliberate crash to test the error recovery.") {
                             confirmSimulateCrash = true
                         }
                     }
@@ -200,7 +200,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
 
     if (confirmClearLogs) {
         HatOutlinedDialog(onDismissRequest = { confirmClearLogs = false }, title = "Delete all logs?") {
-            Text("This permanently deletes every stored crash report and diagnostic log. It cannot be undone, and the information cannot be recovered from the app afterwards.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text("This permanently deletes every stored crash report and diagnostic log. It cannot be undone.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { confirmClearLogs = false }) { Text("Cancel") }

@@ -188,7 +188,7 @@ fun PermissionsScreen(
                             Spacer(modifier = Modifier.height(24.dp))
                             PrivacyPoint(Icons.Default.Splitscreen, "Active apps and empty gaps are shown exactly as they happened.")
                             Spacer(modifier = Modifier.height(24.dp))
-                            PrivacyPoint(Icons.Default.Edit, "Label the offline moments or leave them empty. It's your call.")
+                            PrivacyPoint(Icons.Default.Edit, "Label the offline time or leave it empty.")
                             Spacer(modifier = Modifier.height(24.dp))
                             PrivacyPoint(Icons.Default.Security, "No internet permission. Nothing can leave this phone.")
                         }
@@ -199,7 +199,7 @@ fun PermissionsScreen(
                             Spacer(modifier = Modifier.height(32.dp))
                             Text("Usage Access Required", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("HAT reads activity states only. We never access your messages, content, or personal data.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Text("HAT reads app activity states only. It never reads your messages, photos, or personal data.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(48.dp))
                             PrivacyPoint(Icons.Default.Security, "Android requires \"Usage Access\" so HAT can see when apps move to the foreground or background.")
                             Spacer(modifier = Modifier.height(24.dp))
@@ -212,11 +212,11 @@ fun PermissionsScreen(
                                 Icon(Icons.Default.BatterySaver, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
                             }
                             Spacer(modifier = Modifier.height(32.dp))
-                            Text("Keep Your History Safe", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
+                            Text("Keep the Archive Running", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("Android deletes old usage records after a few days. HAT archives them first so your history survives.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Text("Android deletes old usage records after a few days. HAT saves them to its own archive first.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(48.dp))
-                            PrivacyPoint(Icons.Default.OfflineBolt, "Battery savers can stop that archive mid-save. When it stops, days of history are gone for good.")
+                            PrivacyPoint(Icons.Default.OfflineBolt, "Battery savers can stop the archive mid-run. Any day it misses cannot be recovered.")
                             Spacer(modifier = Modifier.height(24.dp))
                             PrivacyPoint(Icons.Default.BatterySaver, "Exempting HAT is a normal Android setting. It does not disable battery saving for anything else.")
                         }
@@ -280,7 +280,7 @@ private fun OnboardingOutlinedButton(text: String, onClick: () -> Unit) {
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-    ) { Text(text, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) }
+    ) { Text(text, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, maxLines = 1, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) }
 }
 
 /** The v1.1.1 PrivacyPoint row, verbatim. */

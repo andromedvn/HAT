@@ -32,15 +32,15 @@ object HeuristicQuotes {
             if (!hasSeenHistoryLimitWarning) {
                 val cause = "It keeps about ~$osRetentionDays days of history, and HAT was not installed yet, so nothing saved them."
                 return if (isBatteryExempt) {
-                    "Android already deleted this.\n$cause Got a backup? Restoring brings the old days back. From here on, the archive protects everything."
+                    "Android already deleted this.\n$cause Got a backup? Restore it to recover these days. The archive keeps the rest from now on."
                 } else {
-                    "Android already deleted this.\n$cause Battery saving can stop HAT's archive too. Exempt HAT so this never happens again."
+                    "Android already deleted this.\n$cause Battery saving can stop HAT's archive too. Exempt HAT to keep the rest."
                 }
             }
             return if (isBatteryExempt) {
-                "Deleted before HAT could save it.\nNothing to recover here. The archive prevents it from now on."
+                "Deleted before HAT could save it.\nNothing to recover here. The archive keeps the rest from now on."
             } else {
-                "Deleted before HAT could save it.\nNothing to recover here. With battery saving on, the archive can be stopped too. Exempt HAT to keep the rest safe."
+                "Deleted before HAT could save it.\nNothing to recover here. With battery saving on, the archive can be stopped too. Exempt HAT to keep the rest."
             }
         }
 
