@@ -231,12 +231,15 @@ class MainActivity : ComponentActivity() {
                     // main overlay stays hidden for that step.
                     val tourStep = AppTourState.current
                     val tourInDialog = tourStep?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG
-                    // Keep the last rendered step so the fade-out has content,
-                    // then crossfade the overlay in ~150ms (owner: seamless
-                    // handoff into the dialog window).
+                    // Keep the last rendered step so the fade-out has content.
+                    // The overlay STAYS MOUNTED while the tour is on the
+                    // label-dialog step (r12f): it simply sits behind the two
+                    // dialog windows, so the tour never vanishes between the
+                    // tap and the dialog appearing. The fade is only for the
+                    // end of the tour.
                     var lastTourStep by remember { mutableStateOf<TourStep?>(null) }
                     if (tourStep != null) lastTourStep = tourStep
-                    val overlayVisible = AppTourState.active && !tourInDialog
+                    val overlayVisible = AppTourState.active
                     val overlayAlpha by animateFloatAsState(
                         targetValue = if (overlayVisible) 1f else 0f,
                         animationSpec = tween(150),
