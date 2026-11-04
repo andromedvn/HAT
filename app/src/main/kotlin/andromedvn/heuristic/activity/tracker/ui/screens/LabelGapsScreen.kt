@@ -348,6 +348,22 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     // cards, jump to yesterday so the pulse has something to pulse on; when a
     // card exists, scroll it into view (the tour card sits at the bottom).
     val tourStepId = if (andromedvn.heuristic.activity.tracker.domain.AppTourState.active) andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id else null
+    // The pulse tap advances the tour through the overlay's gesture handler,
+    // which consumes the up-event before the card's own onClick can fire, so
+    // the label dialog never opens on that path. When the tour lands on the
+    // dialog step with no dialog open, open it for the pulsed card here.
+    LaunchedEffect(tourStepId) {
+        if (tourStepId != "labelDialog" || showDialog || singleGapStart != -1L || selectedGaps.isNotEmpty()) return@LaunchedEffect
+        val firstGap = unaccountedCards.firstOrNull { it is UnaccountedCard.Gap } as? UnaccountedCard.Gap ?: return@LaunchedEffect
+        dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = firstGap.gap.startMillis }.get(Calendar.HOUR_OF_DAY))
+        singleGapStart = firstGap.gap.startMillis
+        singleGapEnd = firstGap.gap.endMillis
+        lastGapContext = firstGap.gap
+        dialogPresenceLine = presenceLines[firstGap.gap.startMillis]?.let { copy ->
+            if (copy.evidence != null) copy.line + "\n" + copy.evidence else copy.line
+        }
+        showDialog = true
+    }
     LaunchedEffect(tourStepId, unaccountedCards.size) {
         if (tourStepId != "gapCard" && tourStepId != "gapCardPulse") return@LaunchedEffect
         if (unaccountedCards.isEmpty()) {
