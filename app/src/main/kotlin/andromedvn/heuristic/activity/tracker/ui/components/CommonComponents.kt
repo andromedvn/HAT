@@ -179,13 +179,18 @@ fun PromptOutlineButton(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun HatOutlinedDialog(onDismissRequest: () -> Unit, title: String, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = onDismissRequest) {
-        Card(modifier = Modifier.fillMaxWidth().border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text(text = title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(16.dp))
-                content()
+fun HatOutlinedDialog(onDismissRequest: () -> Unit, title: String, bottomGap: Dp = 0.dp, content: @Composable ColumnScope.() -> Unit) {
+    Dialog(onDismissRequest = onDismissRequest, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        // bottomGap (r12l): dialog awareness - when another dialog or the
+        // tour card owns the bottom of the screen, this dialog shifts up and
+        // leaves a clear gap instead of overlapping it.
+        Box(modifier = Modifier.fillMaxSize().padding(bottom = bottomGap), contentAlignment = Alignment.Center) {
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text(text = title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    content()
+                }
             }
         }
     }
@@ -267,7 +272,7 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
 }
 
 @Composable
-fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceLine: String? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit) {
+fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceLine: String? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, bottomGap: Dp = 0.dp) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
     // The label's start, taken from the device's evidence. HAT saves the
@@ -282,7 +287,7 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
         )
     }
 
-    HatOutlinedDialog(onDismissRequest = onDismiss, title = "Label Activity") {
+    HatOutlinedDialog(bottomGap = bottomGap, onDismissRequest = onDismiss, title = "Label Activity") {
         if (ledgerContext != null) {
             // Tour (r12d): the tour's own dialog window cutouts around this
             // content while the label-dialog step is active.

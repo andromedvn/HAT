@@ -254,6 +254,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         }
 
         ActivityEditorDialog(
+            bottomGap = if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") 150.dp else 0.dp,
             initialTitle = "", initialIconName = "Walk", suggestions = uiState.recentSuggestions,
             ledgerContext = ledgerContext,
             presenceLine = dialogPresenceLine,
