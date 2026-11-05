@@ -177,19 +177,6 @@ data class UsageGap(
     val timeRangeFormatted: String get() { val sdf = SimpleDateFormat("h:mm a", Locale.getDefault()); return "${sdf.format(startMillis)} - ${sdf.format(endMillis)}" }
     val durationFormatted: String get() = TimeUtils.formatDuration(durationInMillis)
 
-    /**
-     * The one-line explainer the gap cards show. Says only what HAT actually
-     * knows, in the app's own voice: its empty states say "Nothing recorded
-     * here", so the cards say the same thing with the neighbors attached.
-     */
-    val contextExplainer: String
-        get() = when {
-            precededBy != null && followedBy != null && precededBy == followedBy -> "Nothing recorded here. $precededBy was open on both sides."
-            precededBy != null && followedBy != null -> "Nothing recorded between $precededBy and $followedBy"
-            precededBy != null -> "Nothing recorded after $precededBy"
-            followedBy != null -> "Nothing recorded before $followedBy"
-            else -> "Nothing recorded around this time"
-        }
 }
 
 data class SessionItem(

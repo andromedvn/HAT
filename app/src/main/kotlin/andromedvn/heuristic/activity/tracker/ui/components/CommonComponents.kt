@@ -271,6 +271,15 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
     }
 }
 
+// Bento (r12n): the mono kicker above each bounded record block in the
+// label dialog; the same labelSmall uppercase treatment as the settings
+// group headers.
+@Composable
+fun DialogBlockHeader(text: String) {
+    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp), color = MaterialTheme.colorScheme.primary)
+    Spacer(modifier = Modifier.height(8.dp))
+}
+
 @Composable
 fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceLine: String? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, bottomGap: Dp = 0.dp) {
     var title by remember { mutableStateOf(initialTitle) }
@@ -309,69 +318,94 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                         ))
                     } else Modifier
             )) {
-                when (ledgerContext) {
-                    is LedgerContext.StandardGap -> {
-                        presenceLine?.let {
-                            Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                        val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
-                        val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
-                        // The context line: what was before and after this gap.
-                        // The user asked for this back (2026-10-20). The gap
-                        // explainer on the card tells you where the time sits
-                        // in your day, and the dialog should say the same thing.
-                        if (ledgerContext.precededBy != null || ledgerContext.followedBy != null) {
-                            val contextStr = when {
-                                ledgerContext.precededBy != null && ledgerContext.precededBy == ledgerContext.followedBy -> "Nothing recorded here. ${ledgerContext.precededBy} was open on both sides."
-                                ledgerContext.precededBy != null && ledgerContext.followedBy != null -> "Nothing recorded between ${ledgerContext.precededBy} and ${ledgerContext.followedBy}"
-                                ledgerContext.precededBy != null -> "Nothing recorded after ${ledgerContext.precededBy}"
-                                else -> "Nothing recorded before ${ledgerContext.followedBy}"
+                // Bento (r12n, owner pick from the 10-school arena): the
+                // record splits into two bounded groups with mono kickers.
+                // WHAT HAPPENED carries the verdict, its proof and the
+                // neighbors; THE GAP carries the bounds. Every string is the
+                // owner's picked copy; nothing is invented here.
+                val recordLines = presenceLine?.split('\n') ?: emptyList()
+                val showWhatHappened = recordLines.isNotEmpty() || ledgerContext is LedgerContext.ScreenOff
+                if (showWhatHappened) {
+                    DialogBlockHeader("What happened")
+                    SettingsGroupParentCard {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            recordLines.getOrNull(0)?.let {
+                                Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
                             }
-                            Text(contextStr, style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            recordLines.getOrNull(1)?.let {
+                                Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (ledgerContext is LedgerContext.StandardGap && (ledgerContext.precededBy != null || ledgerContext.followedBy != null)) {
+                                // The context line: what was before and after
+                                // this gap. Owner-dictated lines (r12n).
+                                val contextStr = when {
+                                    ledgerContext.precededBy != null && ledgerContext.precededBy == ledgerContext.followedBy -> "${ledgerContext.precededBy} was used right before and after this gap."
+                                    ledgerContext.precededBy != null && ledgerContext.followedBy != null -> "${ledgerContext.precededBy} was used before this gap, then ${ledgerContext.followedBy} right after."
+                                    ledgerContext.precededBy != null -> "${ledgerContext.precededBy} was used before this gap, then no app usage right after."
+                                    else -> "There was no app usage before this gap, then ${ledgerContext.followedBy} was used right after."
+                                }
+                                Text(contextStr, style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (ledgerContext is LedgerContext.ScreenOff) {
+                                Text("The screen was off the whole time", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
-                        Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    is LedgerContext.ScreenOff -> {
-                        val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
-                        val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
-                        Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("The screen was off the whole time", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    is LedgerContext.BatchMerge -> {
-                        Text("Merging ${ledgerContext.count} gaps into one label", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Total: ${TimeUtils.formatDuration(ledgerContext.totalDurationMillis)}. App usage between them stays untouched.", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                DialogBlockHeader("The gap")
+                SettingsGroupParentCard {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        when (ledgerContext) {
+                            is LedgerContext.StandardGap -> {
+                                val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
+                                val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
+                                Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            is LedgerContext.ScreenOff -> {
+                                val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
+                                val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
+                                Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            is LedgerContext.BatchMerge -> {
+                                Text("Merging ${ledgerContext.count} gaps into one label", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Total: ${TimeUtils.formatDuration(ledgerContext.totalDurationMillis)}. App usage between them stays untouched.", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
             }
         }
-        
-        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Activity Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)))
-        Spacer(modifier = Modifier.height(16.dp))
-        if (suggestions.isNotEmpty()) {
-            Text("Suggested for this hour", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(suggestions) { suggestion -> SuggestionChip(onClick = { title = suggestion; val match = AVAILABLE_ICONS.find { it.iconName.contains(suggestion, ignoreCase = true) || suggestion.contains(it.iconName, ignoreCase = true) }; if (match != null) selectedIconName = match.iconName }, label = { Text(suggestion) }, border = SuggestionChipDefaults.suggestionChipBorder(true, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))) }
+        DialogBlockHeader("Your label")
+        SettingsGroupParentCard {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Activity Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)))
+                Spacer(modifier = Modifier.height(16.dp))
+                if (suggestions.isNotEmpty()) {
+                    // Header cut (r12n): the engine serves recent labels, so
+                    // the chips speak for themselves.
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(suggestions) { suggestion -> SuggestionChip(onClick = { title = suggestion; val match = AVAILABLE_ICONS.find { it.iconName.contains(suggestion, ignoreCase = true) || suggestion.contains(it.iconName, ignoreCase = true) }; if (match != null) selectedIconName = match.iconName }, label = { Text(suggestion) }, border = SuggestionChipDefaults.suggestionChipBorder(true, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))) }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                Text("Icon", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(AVAILABLE_ICONS) { preset ->
+                        val isSelected = selectedIconName == preset.iconName
+                        Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(30)).background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(30)).clickable { selectedIconName = preset.iconName }, contentAlignment = Alignment.Center) { Icon(preset.icon, contentDescription = null, tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+                // The tour's label-dialog step hides Save: the tour card sits
+                // where Save would be, and saving mid-tour is not the flow.
+                val tourDialogStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog"
+                if (!tourDialogStep) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        Text("Icon", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        Spacer(modifier = Modifier.height(8.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(AVAILABLE_ICONS) { preset ->
-                val isSelected = selectedIconName == preset.iconName
-                Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(30)).background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(30)).clickable { selectedIconName = preset.iconName }, contentAlignment = Alignment.Center) { Icon(preset.icon, contentDescription = null, tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-        }
-        // The tour's label-dialog step hides Save: the tour card sits where
-        // Save would be, and saving mid-tour is not the flow (Next is).
-        val tourDialogStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog"
-        if (!tourDialogStep) {
-            Spacer(modifier = Modifier.height(24.dp))
-            DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
         }
     }
 }

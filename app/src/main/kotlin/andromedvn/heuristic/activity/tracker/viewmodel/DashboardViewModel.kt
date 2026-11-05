@@ -115,21 +115,28 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         val out = HashMap<Long, PresenceCopy>(gaps.size)
         for ((start, end) in gaps) {
             val verdict = PresenceClassifier.classify(events, start, end, timeoutMs)
+            // Copy picks (r12n label-dialog overhaul): the owner's picked
+            // lines. The lock and timeout verdicts carry their recorded edge
+            // time (anchorTs is the recorded screen-off / lock event), so the
+            // separate evidence line is skipped when the verdict already has
+            // the time. UNDECIDED renders nothing.
             val copy = when (verdict.kind) {
                 PresenceClassifier.Kind.ANCHORED -> PresenceCopy(
-                    "You were using the phone during this time.",
+                    "Phone use is recorded inside this block.",
                     verdict.anchorTs?.let { "First use at ${fmt.format(java.util.Date(it))}" })
-                PresenceClassifier.Kind.CHOSE_TO_STOP -> PresenceCopy(
-                    "You locked the phone.",
-                    verdict.anchorTs?.let { "Locked at ${fmt.format(java.util.Date(it))}" })
-                PresenceClassifier.Kind.TIMEOUT -> PresenceCopy(
-                    // Guarded copy (arena catch): the phone sat only if a
-                    // return was actually recorded; an open gap claims less.
-                    "The screen timed out on its own.",
-                    verdict.resolveTs?.let { "Unlocked at ${fmt.format(java.util.Date(it))}" })
+                PresenceClassifier.Kind.CHOSE_TO_STOP -> if (verdict.anchorTs != null) PresenceCopy(
+                    "The phone locked at ${fmt.format(java.util.Date(verdict.anchorTs))}.")
+                else PresenceCopy(
+                    "You locked the phone.")
+                PresenceClassifier.Kind.TIMEOUT -> if (verdict.anchorTs != null) PresenceCopy(
+                    "The screen turned off on its own at ${fmt.format(java.util.Date(verdict.anchorTs))}.",
+                    verdict.resolveTs?.let { "The phone was unlocked at ${fmt.format(java.util.Date(it))}" })
+                else PresenceCopy(
+                    "The screen turned off on its own.",
+                    verdict.resolveTs?.let { "The phone was unlocked at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.MEDIA_CONTINUED -> PresenceCopy(
                     "This app was playing media the whole time.",
-                    verdict.resolveTs?.let { "Screen back on at ${fmt.format(java.util.Date(it))}" })
+                    verdict.anchorTs?.let { "The screen was turned on at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.UNDECIDED -> null
             }
             if (copy != null) out[start] = copy
