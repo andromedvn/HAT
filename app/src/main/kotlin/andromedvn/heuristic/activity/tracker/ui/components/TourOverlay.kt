@@ -202,6 +202,13 @@ fun TourStepOverlay(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 16.dp)
+                // Publish the card's top edge (r12o): stacked dialogs read
+                // AppTourState.tourCardTopPx and yield a gap so they never
+                // slide under the tour card.
+                .onGloballyPositioned {
+                    andromedvn.heuristic.activity.tracker.domain.AppTourState.tourCardTopPx =
+                        it.boundsInRoot().top.toInt()
+                }
                 .border(1.dp, primary, RoundedCornerShape(24.dp)),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
             shape = RoundedCornerShape(24.dp),

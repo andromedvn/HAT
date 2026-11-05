@@ -319,16 +319,15 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                     } else Modifier
             )) {
                 // Bento (r12n, owner pick from the 10-school arena): the
-                // record splits into two bounded groups with mono kickers.
-                // WHAT HAPPENED carries the verdict, its proof and the
-                // neighbors; THE GAP carries the bounds. Every string is the
-                // owner's picked copy; nothing is invented here.
+                // record splits into three kicker-led groups. The owner
+                // removed the bordered boxes (r12o): grouping is the kicker
+                // and the spacing, nothing else. Every string is the owner's
+                // picked copy; nothing is invented here.
                 val recordLines = presenceLine?.split('\n') ?: emptyList()
                 val showWhatHappened = recordLines.isNotEmpty() || ledgerContext is LedgerContext.ScreenOff
                 if (showWhatHappened) {
                     DialogBlockHeader("What happened")
-                    SettingsGroupParentCard {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                             recordLines.getOrNull(0)?.let {
                                 Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
                             }
@@ -349,13 +348,11 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                             if (ledgerContext is LedgerContext.ScreenOff) {
                                 Text("The screen was off the whole time", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 DialogBlockHeader("The gap")
-                SettingsGroupParentCard {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                         when (ledgerContext) {
                             is LedgerContext.StandardGap -> {
                                 val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
@@ -372,14 +369,12 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                                 Text("Merging ${ledgerContext.count} gaps into one label", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("Total: ${TimeUtils.formatDuration(ledgerContext.totalDurationMillis)}. App usage between them stays untouched.", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        }
                     }
                 }
             }
         }
         DialogBlockHeader("Your label")
-        SettingsGroupParentCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Activity Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)))
                 Spacer(modifier = Modifier.height(16.dp))
                 if (suggestions.isNotEmpty()) {
@@ -406,7 +401,6 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                     DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
                 }
             }
-        }
     }
 }
 

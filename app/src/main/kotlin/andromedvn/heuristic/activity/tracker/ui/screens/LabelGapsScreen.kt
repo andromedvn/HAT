@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -254,7 +255,21 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         }
 
         ActivityEditorDialog(
-            bottomGap = if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") 150.dp else 0.dp,
+            // Dynamic dialog awareness (r12o): the tour card publishes its
+            // top edge; the dialog yields whatever gap that requires instead
+            // of a hardcoded shift. Falls back to 150dp until the card has
+            // measured (one frame).
+            bottomGap = run {
+                val isTourStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog"
+                if (!isTourStep) 0.dp
+                else {
+                    val density = LocalDensity.current
+                    val screenHpx = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+                    val tourTop = andromedvn.heuristic.activity.tracker.domain.AppTourState.tourCardTopPx
+                    if (tourTop == Int.MAX_VALUE || tourTop >= screenHpx) 150.dp
+                    else with(density) { (screenHpx - tourTop).toDp() } + 12.dp
+                }
+            },
             initialTitle = "", initialIconName = "Walk", suggestions = uiState.recentSuggestions,
             ledgerContext = ledgerContext,
             presenceLine = dialogPresenceLine,
@@ -316,6 +331,10 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             val tourWindow = (androidx.compose.ui.platform.LocalView.current.parent
                 as? androidx.compose.ui.window.DialogWindowProvider)?.window
             LaunchedEffect(Unit) { tourWindow?.setDimAmount(0f) }
+            // Nothing is published once the tour dialog is gone.
+            DisposableEffect(Unit) {
+                onDispose { andromedvn.heuristic.activity.tracker.domain.AppTourState.tourCardTopPx = Int.MAX_VALUE }
+            }
             andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay(
                 registry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry,
                 currentStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current,

@@ -74,6 +74,13 @@ object AppTourState {
      */
     var snapCutout by mutableStateOf(false)
 
+    /**
+     * The tour card's top edge in screen pixels, published by the overlay
+     * while the tour renders (r12o). Stacked dialogs read it to yield a gap
+     * so they never slide under the card; MAX_VALUE = nothing published.
+     */
+    var tourCardTopPx by mutableStateOf(Int.MAX_VALUE)
+
     val current: TourStep? get() = if (active) DashboardTourSteps.steps.getOrNull(stepIndex) else null
 
     fun start() {
