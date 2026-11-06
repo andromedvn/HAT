@@ -7,7 +7,9 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import andromedvn.heuristic.activity.tracker.domain.Interval
 import andromedvn.heuristic.activity.tracker.domain.IntervalOverlapIndex
+import andromedvn.heuristic.activity.tracker.domain.subtractIntervals
 import andromedvn.heuristic.activity.tracker.domain.SettingsMigration
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
 import kotlinx.coroutines.CoroutineScope
@@ -191,22 +193,27 @@ class OfflineStorage private constructor(private val context: Context) {
                     // SQL saw the table grow as it merged, so each new row had to
                     // become visible to the next row's check. Omitting that is a
                     // correctness bug, not just a lost optimisation.
-                    val overlapIndex = IntervalOverlapIndex.build(
-                        currentDb.query(
-                            HatDatabaseHelper.TABLE_OFFLINE,
-                            arrayOf(HatDatabaseHelper.COL_TIMESTAMP, HatDatabaseHelper.COL_DURATION),
-                            null, null, null, null, null
-                        ).use { c ->
-                            val sIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_TIMESTAMP)
-                            val dIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_DURATION)
-                            buildList {
-                                while (c.moveToNext()) {
-                                    val s = c.getLong(sIdx)
-                                    add(s to (s + c.getLong(dIdx)))
-                                }
+                    val existingIntervals = currentDb.query(
+                        HatDatabaseHelper.TABLE_OFFLINE,
+                        arrayOf(HatDatabaseHelper.COL_TIMESTAMP, HatDatabaseHelper.COL_DURATION),
+                        null, null, null, null, null
+                    ).use { c ->
+                        val sIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_TIMESTAMP)
+                        val dIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_DURATION)
+                        buildList {
+                            while (c.moveToNext()) {
+                                val s = c.getLong(sIdx)
+                                add(s to (s + c.getLong(dIdx)))
                             }
                         }
-                    )
+                    }
+                    val overlapIndex = IntervalOverlapIndex.build(existingIntervals)
+                    // The same intervals as a plain list: the sharding path
+                    // (r12p) subtracts them from each colliding import row, so
+                    // a restore keeps the surviving fragments instead of
+                    // discarding the whole label.
+                    val accounted = mutableListOf<Interval>()
+                    accounted.addAll(existingIntervals)
                     currentDb.beginTransaction()
                     try {
                         while (it.moveToNext()) {
@@ -216,35 +223,53 @@ class OfflineStorage private constructor(private val context: Context) {
 
                             val hasOverlap = overlapIndex.overlapsAny(ts, end)
 
-                            if (!hasOverlap) {
-                                val cv = ContentValues().apply {
-                                    // BUG (fixed 2026-09-30, audit F3): the source primary key was
-                                    // copied verbatim, so CONFLICT_IGNORE dropped any imported row
-                                    // whose id happened to exist here for an UNRELATED reason. Row ids
-                                    // are dense and restart at 1 per install, so restoring a vault from
-                                    // another phone onto a phone that already has labels collided on
-                                    // almost every row - they were silently discarded while still being
-                                    // counted as merged, so the UI reported success.
-                                    //
-                                    // Verified: 4 non-overlapping imported rows against a 3-row
-                                    // destination -> 0 rows landed, 4 counted. Ids are per-install
-                                    // bookkeeping, not identity; (title, timestamp, duration, icon) is.
-                                    // Letting SQLite assign the id removes the collision entirely.
-                                    put(HatDatabaseHelper.COL_TITLE, it.getString(titleIdx))
-                                    put(HatDatabaseHelper.COL_DURATION, dur)
-                                    put(HatDatabaseHelper.COL_TIMESTAMP, ts)
-                                    put(HatDatabaseHelper.COL_ICON, it.getString(iconIdx))
-                                }
-                                val inserted = currentDb.insertWithOnConflict(HatDatabaseHelper.TABLE_OFFLINE, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
-                                if (inserted != -1L) {
-                                    overlapIndex.add(ts, end)
-                                    count++
-                                } else {
-                                    HatLogger.logError("OfflineStorage", "Vault Merge: Imported offline activity was rejected on write; not counted as merged.")
+                            // Sharding (r12p, ported from HAT Pro's cross-vault
+                            // collision handling): a colliding import row is
+                            // geometrically cut against what this device already
+                            // accounts, and the surviving fragments land as rows.
+                            // The old behavior skipped the WHOLE label on any
+                            // overlap, silently discarding the valid parts.
+                            val fragments = if (hasOverlap) {
+                                val kept = subtractIntervals(listOf(ts to end), accounted)
+                                kept.filter { it.second > it.first }
+                            } else {
+                                listOf(ts to end)
+                            }
+
+                            if (fragments.isNotEmpty()) {
+                                for ((fragStart, fragEnd) in fragments) {
+                                    val cv = ContentValues().apply {
+                                        // BUG (fixed 2026-09-30, audit F3): the source primary key was
+                                        // copied verbatim, so CONFLICT_IGNORE dropped any imported row
+                                        // whose id happened to exist here for an UNRELATED reason. Row ids
+                                        // are dense and restart at 1 per install, so restoring a vault from
+                                        // another phone onto a phone that already has labels collided on
+                                        // almost every row - they were silently discarded while still being
+                                        // counted as merged, so the UI reported success.
+                                        //
+                                        // Verified: 4 non-overlapping imported rows against a 3-row
+                                        // destination -> 0 rows landed, 4 counted. Ids are per-install
+                                        // bookkeeping, not identity; (title, timestamp, duration, icon) is.
+                                        // Letting SQLite assign the id removes the collision entirely.
+                                        // Sharding (r12p): each fragment keeps the label and gets its
+                                        // own surviving bounds.
+                                        put(HatDatabaseHelper.COL_TITLE, it.getString(titleIdx))
+                                        put(HatDatabaseHelper.COL_DURATION, fragEnd - fragStart)
+                                        put(HatDatabaseHelper.COL_TIMESTAMP, fragStart)
+                                        put(HatDatabaseHelper.COL_ICON, it.getString(iconIdx))
+                                    }
+                                    val inserted = currentDb.insertWithOnConflict(HatDatabaseHelper.TABLE_OFFLINE, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
+                                    if (inserted != -1L) {
+                                        overlapIndex.add(fragStart, fragEnd)
+                                        accounted.add(fragStart to fragEnd)
+                                        count++
+                                    } else {
+                                        HatLogger.logError("OfflineStorage", "Vault Merge: Imported offline activity was rejected on write; not counted as merged.")
+                                    }
                                 }
                             } else {
                                 skipped++
-                                HatLogger.logError("OfflineStorage", "Vault Merge: Skipped imported offline activity due to temporal overlap.")
+                                HatLogger.logError("OfflineStorage", "Vault Merge: Imported label fully overlapped existing time; nothing survived to shard.")
                             }
 
                             if (count % 500 == 0) {

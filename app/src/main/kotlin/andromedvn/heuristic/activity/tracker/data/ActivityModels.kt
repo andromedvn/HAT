@@ -23,6 +23,11 @@ data class UserSettings(
     val installDateMillis: Long = System.currentTimeMillis(),
     val bypassHistoryLimit: Boolean = false,
     val archiveSyncIntervalHours: Int = 12,
+    // Rolling Vault (r12p, ported from HAT Pro): a background worker
+    // re-exports the encrypted vault to the user-picked SAF folder on a
+    // schedule, overwriting HAT_AutoBackup.zip in place. 0 = off.
+    val autoBackupUri: String = "",
+    val autoBackupIntervalHours: Int = 0,
     /**
      * Gap Minimum (2026-10-18, split from the question dial 2026-10-23):
      * stretches of recorded silence shorter than this never appear.

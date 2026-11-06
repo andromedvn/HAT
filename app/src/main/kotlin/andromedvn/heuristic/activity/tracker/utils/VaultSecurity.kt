@@ -17,6 +17,7 @@ object VaultSecurity {
     // Note: This is an integrity key, not cryptographic security against the device owner.
     // Tying this to hardware IDs would permanently break cross-device vault migration.
     private const val SECRET_KEY = "HAT_HEURISTIC_VAULT_SECURE_KEY_V1"
+    const val AUTO_BACKUP_NAME = "HAT_AutoBackup.zip"
     private const val ALGORITHM = "HmacSHA256"
 
     private fun getMac(): Mac {
@@ -50,6 +51,43 @@ object VaultSecurity {
             val signature = Base64.encodeToString(mac.doFinal(), Base64.NO_WRAP)
             zos.write(signature.toByteArray(Charsets.UTF_8))
             zos.closeEntry()
+        }
+    }
+
+    /**
+     * Rolling Vault (r12p): open (or create) HAT_AutoBackup.zip inside the
+     * user-picked SAF tree and hand the caller its output stream. The same
+     * document is reused every run, so a schedule overwrites one file instead
+     * of accumulating them. Returns null when the tree is gone (user deleted
+     * the folder or revoked the permission) or anything fails.
+     */
+    fun openAutoBackupStream(context: android.content.Context, treeUriString: String): OutputStream? {
+        return try {
+            val treeUri = android.net.Uri.parse(treeUriString)
+            val docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            val dirUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            val resolver = context.contentResolver
+            val children = resolver.query(
+                android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId),
+                arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null, null, null
+            )
+            var docUri: android.net.Uri? = null
+            children?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(1) == AUTO_BACKUP_NAME) {
+                        docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0))
+                        break
+                    }
+                }
+            }
+            val target = docUri ?: android.provider.DocumentsContract.createDocument(
+                resolver, dirUri, "application/zip", AUTO_BACKUP_NAME)
+            target?.let { resolver.openOutputStream(it, "wt") }
+        } catch (e: Exception) {
+            HatLogger.logError("VaultSecurity", "Rolling Vault open failed: ${e.message}")
+            null
         }
     }
 

@@ -4,6 +4,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import andromedvn.heuristic.activity.tracker.domain.RawEvent
+import andromedvn.heuristic.activity.tracker.domain.replayDeviceScreenOffIntervals
 import andromedvn.heuristic.activity.tracker.domain.replayGhostIntervals
 import andromedvn.heuristic.activity.tracker.domain.replayScreenOffIntervals
 import andromedvn.heuristic.activity.tracker.domain.replayUnattendedIntervals
@@ -81,6 +82,17 @@ class UsageStatsEngine(context: Context) {
      * background re-binds, music mode, lock-screen apps. Not usage, not
      * ghosts; the fourth category, surfaced for the user to name or dismiss.
      */
+    /**
+     * The device's merged dark windows (r12p): screen-off to screen-on, no
+     * app attached. Answers "was the screen dark in this stretch" even when
+     * no app resumed through it.
+     */
+    suspend fun getDeviceScreenOffIntervals(start: Long, end: Long): List<Pair<Long, Long>> {
+        val collected = collectEvents(start - 86400000L, end)
+        val cap = minOf(end, System.currentTimeMillis())
+        return replayDeviceScreenOffIntervals(collected, start, end, cap)
+    }
+
     suspend fun getScreenOffIntervals(start: Long, end: Long): Map<String, List<Pair<Long, Long>>> {
         val collected = collectEvents(start - 86400000L, end)
         val cap = minOf(end, System.currentTimeMillis())

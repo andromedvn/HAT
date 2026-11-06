@@ -29,6 +29,14 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     private val engine = UsageStatsEngine(context)
     
     private val appNameCache = LruCache<String, String>(500)
+
+    // ProcessCategory (r12p, ported from HAT Pro): one lazy PackageManager
+    // query classifies every package as SELF/LAUNCHER/SYSTEM_UI/STANDARD and
+    // memoizes it, so thousands of interval lookups never hit IPC again.
+    // Infrastructure only: no caller changes behavior until the gap-explainer
+    // wording work lands.
+    private val categoryCache = LruCache<String, ProcessCategory>(500)
+    @Volatile private var launcherPackages: Set<String>? = null
     
     private val cacheMutex = Mutex()
     private val oldestDataMutex = Mutex()
@@ -130,6 +138,45 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
         } finally { isArchiverRunning.set(false) }
     }
 
+    /**
+     * The package's process category. SYSTEM_UI covers the Android SystemUi
+     * and input-method packages; LAUNCHER anything answering CATEGORY_HOME;
+     * SELF this app; everything else STANDARD.
+     */
+    fun getAppCategory(pkg: String): ProcessCategory {
+        categoryCache.get(pkg)?.let { return it }
+        val category = computeCategory(pkg)
+        categoryCache.put(pkg, category)
+        return category
+    }
+
+    fun isSystemApp(pkg: String): Boolean =
+        getAppCategory(pkg) == ProcessCategory.SYSTEM_UI || getAppCategory(pkg) == ProcessCategory.LAUNCHER
+
+    private fun computeCategory(pkg: String): ProcessCategory {
+        if (pkg == context.packageName) return ProcessCategory.SELF
+        if (pkg == "com.android.systemui" || pkg.startsWith("com.android.inputmethod")) {
+            return ProcessCategory.SYSTEM_UI
+        }
+        try {
+            val pm = context.packageManager
+            val info = pm.getApplicationInfo(pkg, android.content.pm.PackageManager.MATCH_UNINSTALLED_PACKAGES)
+            val isSystem = (info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            val launchers = launcherPackages ?: synchronized(this) {
+                launcherPackages ?: run {
+                    val home = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME)
+                    val found = pm.queryIntentActivities(home, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                        .mapTo(mutableSetOf()) { it.activityInfo.packageName }
+                    launcherPackages = found
+                    found
+                }
+            }
+            if (pkg in launchers) return ProcessCategory.LAUNCHER
+            if (isSystem) return ProcessCategory.SYSTEM_UI
+        } catch (_: Exception) { }
+        return ProcessCategory.STANDARD
+    }
+
     fun getAppName(pkg: String): String {
         val cached = appNameCache.get(pkg)
         if (cached != null) return cached
@@ -200,6 +247,22 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     
     suspend fun clearAllData() { storage.clearAllData() }
     
+    /**
+     * Rolling Vault (r12p): the scheduled backup. Same checkpoint-then-export
+     * discipline as the manual vault (a busy WAL aborts rather than writing an
+     * incomplete vault), but the target is the user-picked SAF folder and the
+     * run is silent.
+     */
+    suspend fun performAutoBackup(uriString: String): Boolean = withContext(Dispatchers.IO) {
+        yield()
+        val stream = VaultSecurity.openAutoBackupStream(context, uriString)
+        if (stream == null) {
+            HatLogger.logError("Vault", "Rolling Vault aborted: the backup folder is unavailable.")
+            return@withContext false
+        }
+        stream.use { exportSecureVault(it) }
+    }
+
     suspend fun exportSecureVault(outputStream: OutputStream): Boolean = withContext(Dispatchers.IO) {
         // The checkpoint must fully flush the WAL before the file is copied, because
         // only hat_heuristic.db is archived - never -wal/-shm. A partial checkpoint

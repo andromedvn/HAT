@@ -120,6 +120,38 @@ fun replayUsageIntervals(
  * mirroring the ghost replay's switch rule; a same-package re-resume keeps the
  * original start.
  */
+/**
+ * Device-level dark windows: every stretch between SCREEN_NON_INTERACTIVE
+ * and the next SCREEN_INTERACTIVE or DEVICE_SHUTDOWN, per device rather than
+ * per app. Answers "was the screen dark between t1 and t2" without naming an
+ * app, which the per-app projection cannot do (no app may have resumed).
+ * Pure: the same event list the other projections consume.
+ */
+fun replayDeviceScreenOffIntervals(
+    events: List<RawEvent>,
+    start: Long,
+    end: Long,
+    cap: Long = Long.MAX_VALUE
+): List<Interval> {
+    if (events.isEmpty()) return emptyList()
+    val out = mutableListOf<Interval>()
+    var darkFrom = -1L
+    fun close(at: Long) {
+        if (darkFrom >= 0 && at > darkFrom && at - darkFrom <= cap) out.add(darkFrom to at)
+        darkFrom = -1
+    }
+    for (event in events.sortedBy { it.timestamp }) {
+        when (event.type) {
+            EventCode.SCREEN_NON_INTERACTIVE -> if (darkFrom < 0) darkFrom = event.timestamp
+            EventCode.SCREEN_INTERACTIVE -> close(event.timestamp)
+            EventCode.DEVICE_SHUTDOWN -> close(event.timestamp)
+        }
+    }
+    // An unclosed dark window runs to the end of the requested window.
+    if (darkFrom >= 0) close(maxOf(darkFrom, minOf(end, cap)))
+    return out
+}
+
 fun replayScreenOffIntervals(
     events: List<RawEvent>,
     start: Long,

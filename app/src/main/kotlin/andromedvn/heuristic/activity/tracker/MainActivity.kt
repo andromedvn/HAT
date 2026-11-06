@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
                         if (event == Lifecycle.Event.ON_RESUME) {
                             HatLogger.log("MainActivity: ON_RESUME (Global Propagation)")
                             repository.forceInvalidateCache()
-                            WorkerScheduler.updateWorkers(applicationContext, settings!!.archiveSyncIntervalHours)
+                            WorkerScheduler.updateWorkers(applicationContext, settings!!.archiveSyncIntervalHours, settings!!.autoBackupIntervalHours)
                             dashboardViewModel.triggerBackgroundArchiveSync()
                             
                             if (isFirstLaunch) {

@@ -94,6 +94,19 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         }
     }
 
+    // Rolling Vault (r12p): picking the folder grants persistable write
+    // permission; the schedule then overwrites HAT_AutoBackup.zip in place.
+    val backupFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(
+                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            updateSettings(currentSettings!!.copy(autoBackupUri = uri.toString()))
+            andromedvn.heuristic.activity.tracker.worker.WorkerScheduler.updateWorkers(context, currentSettings!!.archiveSyncIntervalHours, if (currentSettings!!.autoBackupIntervalHours > 0) currentSettings!!.autoBackupIntervalHours else 0)
+            Toast.makeText(context, "Backup folder set. HAT_AutoBackup.zip will be written there on schedule.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
@@ -304,6 +317,19 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     }
                     SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
                     SettingsItem("Restore Master Vault", "Import a previously saved master vault.") { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
+                    HatSlidingSelector<Int>("Automatic Backup", "Re-writes an encrypted backup of everything to the folder below on a schedule. Same file, always overwritten.", listOf("Off" to 0, "12h" to 12, "24h" to 24), currentSettings!!.autoBackupIntervalHours, "", { hours ->
+                        updateSettings(currentSettings!!.copy(autoBackupIntervalHours = hours))
+                        if (hours > 0 && currentSettings!!.autoBackupUri.isBlank()) {
+                            Toast.makeText(context, "Pick a backup folder next.", Toast.LENGTH_LONG).show()
+                            backupFolderLauncher.launch(null)
+                        }
+                        andromedvn.heuristic.activity.tracker.worker.WorkerScheduler.updateWorkers(context, currentSettings!!.archiveSyncIntervalHours, hours)
+                    }, null)
+                    SettingsItem(
+                        if (currentSettings!!.autoBackupUri.isBlank()) "Backup Folder" else "Backup Folder: set",
+                        if (currentSettings!!.autoBackupUri.isBlank()) "Choose where the automatic backup file lives. It can be a cloud-synced folder."
+                        else "HAT_AutoBackup.zip is overwritten in this folder on schedule. Tap to change it."
+                    ) { backupFolderLauncher.launch(null) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
