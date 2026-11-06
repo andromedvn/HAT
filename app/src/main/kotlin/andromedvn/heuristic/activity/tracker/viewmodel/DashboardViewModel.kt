@@ -115,31 +115,28 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         val out = HashMap<Long, PresenceCopy>(gaps.size)
         for ((start, end) in gaps) {
             val verdict = PresenceClassifier.classify(events, start, end, timeoutMs)
-            // Copy picks (r12n label-dialog overhaul): the owner's picked
-            // lines. The lock and timeout verdicts carry their recorded edge
-            // time (anchorTs is the recorded screen-off / lock event), so the
-            // separate evidence line is skipped when the verdict already has
-            // the time. UNDECIDED renders nothing.
+            // Court verdict r12s (6-0): THE FACT LINE. One provable line,
+            // no evidence line anywhere, no playback claim, silence for
+            // undecided. The media line names the app and states only the
+            // foreground fact; a package that resolves to no human-readable
+            // name renders the generic recorded-use line instead.
             val copy = when (verdict.kind) {
                 PresenceClassifier.Kind.ANCHORED -> PresenceCopy(
-                    "Phone use is recorded inside this block.",
-                    verdict.anchorTs?.let { "First use at ${fmt.format(java.util.Date(it))}" })
+                    "Phone use is recorded inside this block.")
                 PresenceClassifier.Kind.CHOSE_TO_STOP -> if (verdict.anchorTs != null) PresenceCopy(
                     "The phone locked at ${fmt.format(java.util.Date(verdict.anchorTs))}.")
                 else PresenceCopy(
                     "You locked the phone.")
-                PresenceClassifier.Kind.TIMEOUT -> if (verdict.anchorTs != null) PresenceCopy(
-                    "The screen turned off on its own at ${fmt.format(java.util.Date(verdict.anchorTs))}.",
-                    verdict.resolveTs?.let { "The phone was unlocked at ${fmt.format(java.util.Date(it))}" })
-                else PresenceCopy(
-                    "The screen turned off on its own.",
-                    verdict.resolveTs?.let { "The phone was unlocked at ${fmt.format(java.util.Date(it))}" })
-                PresenceClassifier.Kind.MEDIA_CONTINUED -> PresenceCopy(
-                    // The package is the app whose own resume resolved the
-                    // verdict, so the copy names it instead of "this app".
-                    verdict.pkg?.let { "${repository.getAppName(it)} was playing media the whole time." }
-                        ?: "An app was playing media the whole time.",
-                    verdict.anchorTs?.let { "The screen was turned on at ${fmt.format(java.util.Date(it))}" })
+                PresenceClassifier.Kind.TIMEOUT -> PresenceCopy(
+                    if (verdict.anchorTs != null) "The screen turned off on its own at ${fmt.format(java.util.Date(verdict.anchorTs))}."
+                    else "The screen turned off on its own.")
+                PresenceClassifier.Kind.MEDIA_CONTINUED -> {
+                    val label = verdict.pkg?.let { repository.getAppName(it) }
+                    if (label != null && label != verdict.pkg) PresenceCopy(
+                        "$label took the foreground right when the screen came back - no unlock in between.")
+                    else PresenceCopy(
+                        "Phone use is recorded inside this block.")
+                }
                 PresenceClassifier.Kind.UNDECIDED -> null
             }
             if (copy != null) out[start] = copy

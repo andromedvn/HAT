@@ -60,10 +60,6 @@ object PresenceClassifier {
     /** Past this unlock latency the phone is treated as parked. */
     const val AWAY_MAX_MS = 30L * 60_000L
 
-    /** Same-app resume this fast after screen-on, with no unlock between,
-     *  is playback continuing. */
-    const val QUICK_RESUME_MS = 3_000L
-
     /** Post-edge look-ahead for the resolving unlock. */
     const val POST_LOOKAHEAD_MS = 24L * 60 * 60_000L
 
@@ -79,16 +75,35 @@ object PresenceClassifier {
         val inside = sorted.filter { it.timestamp in blockStart..blockEnd }
         val post = sorted.filter { it.timestamp in (blockEnd + 1)..(blockEnd + POST_LOOKAHEAD_MS) }
 
-        // 1. An anchor INSIDE the block, excluding the block's own boundary
-        //    bookkeeping: the app-open that starts the block and the pause
-        //    that ends it are not human activity mid-block.
-        inside.firstOrNull {
-            it.timestamp > blockStart + BOUNDARY_EPSILON_MS &&
-                it.timestamp < blockEnd - BOUNDARY_EPSILON_MS &&
-                (it.type == TYPE_KEYGUARD_HIDDEN || it.type == TYPE_USER_INTERACTION || it.type == TYPE_ACTIVITY_RESUMED)
-        }?.let { return Verdict(Kind.ANCHORED, it.timestamp) }
+        // Court media rule (r12s, 6-0 verdict): this app's resume is the
+        // FIRST foreground event after screen-on, and the log contains ZERO
+        // KEYGUARD_HIDDEN events between the opening screen-off and the
+        // resume - scanned across the WHOLE event list, not one window, so
+        // the absence of an unlock is proof, not a timing heuristic. The
+        // 1.5s window is permanently dead. The camera gesture still fires
+        // this signature; the rendered wording states only the foreground
+        // fact, never playback.
+        fun mediaAfterScreenOn(): Verdict? {
+            // The opening: the block's own edge screen-off (within 5s of the
+            // start) or the last screen-off logged inside the block or after
+            // it - the spec reads "the block contains" the sequence, so an
+            // interior screen-off qualifies too.
+            val opening = pre.lastOrNull { it.type == TYPE_SCREEN_NON_INTERACTIVE && it.timestamp >= blockStart - 5_000L }
+                ?: (inside + post).lastOrNull { it.type == TYPE_SCREEN_NON_INTERACTIVE }
+                ?: return null
+            val screenOn = post.firstOrNull { it.type == TYPE_SCREEN_INTERACTIVE && it.timestamp > opening.timestamp } ?: return null
+            val resumed = post.firstOrNull { it.type == TYPE_ACTIVITY_RESUMED && it.timestamp > screenOn.timestamp } ?: return null
+            val unlockedBetween = sorted.any {
+                it.type == TYPE_KEYGUARD_HIDDEN && it.timestamp > opening.timestamp && it.timestamp < resumed.timestamp
+            }
+            if (unlockedBetween) return null
+            return Verdict(Kind.MEDIA_CONTINUED, opening.timestamp, pkg = resumed.packageName)
+        }
 
-        // 2. The off-edge: did the screen go off because the user locked it?
+        // Court precedence (r12s, 6-0 verdict): lock > timeout > media >
+        // recorded-use. One provable line wins; silence when nothing does.
+
+        // 1. The off-edge: did the screen go off because the user locked it?
         val screenOff = pre.lastOrNull { it.type == TYPE_SCREEN_NON_INTERACTIVE && it.timestamp >= blockStart - 5_000L }
         if (screenOff != null) {
             val keyguardShown = pre.lastOrNull { it.type == TYPE_KEYGUARD_SHOWN }
@@ -105,27 +120,30 @@ object PresenceClassifier {
                 // 3. Resolve how long the phone sat by the next unlock.
                 val unlock = post.firstOrNull { it.type == TYPE_KEYGUARD_HIDDEN }
                 if (unlock != null) return Verdict(Kind.TIMEOUT, screenOff.timestamp, unlock.timestamp)
-                // 4. Media continuation: screen back on, same app resumed
-                // fast, no unlock between: media playback continued without a new touch.
-                val screenOn = post.firstOrNull { it.type == TYPE_SCREEN_INTERACTIVE }
-                if (screenOn != null) {
-                    val resumed = post.firstOrNull { it.type == TYPE_ACTIVITY_RESUMED && it.timestamp <= screenOn.timestamp + QUICK_RESUME_MS }
-                    val unlockedBetween = post.any { it.type == TYPE_KEYGUARD_HIDDEN && it.timestamp < resumed?.timestamp ?: Long.MAX_VALUE }
-                    if (resumed != null && !unlockedBetween) return Verdict(Kind.MEDIA_CONTINUED, screenOn.timestamp, pkg = resumed.packageName)
-                }
+                mediaAfterScreenOn()?.let { return it }
                 return Verdict(Kind.TIMEOUT, screenOff.timestamp)
             }
-        }
 
-        // 5. The screen never went off at the block start (video / reading
-        // case): only an immediate same-app resume without an unlock is
-        // decidable; everything else is honestly unknown.
-        val screenOn = post.firstOrNull { it.type == TYPE_SCREEN_INTERACTIVE }
-        if (screenOn != null) {
-            val resumed = post.firstOrNull { it.type == TYPE_ACTIVITY_RESUMED && it.timestamp <= screenOn.timestamp + QUICK_RESUME_MS }
-            val unlockedBetween = post.any { it.type == TYPE_KEYGUARD_HIDDEN && it.timestamp < (resumed?.timestamp ?: Long.MAX_VALUE) }
-            if (resumed != null && !unlockedBetween) return Verdict(Kind.MEDIA_CONTINUED, screenOn.timestamp, pkg = resumed.packageName)
+            // Not a timeout: the screen-off had a human cause the log cannot
+            // name. The media signature still applies (court spec: the media
+            // line renders when no lock/timeout line did).
         }
+        mediaAfterScreenOn()?.let { return it }
+
+        // 4. Recorded use (the anchor check, demoted per the court
+        // precedence): an anchor INSIDE the block, excluding the block's own
+        // boundary bookkeeping. Renders the generic fallback line; the
+        // specific lines above always win.
+        inside.firstOrNull {
+            it.timestamp > blockStart + BOUNDARY_EPSILON_MS &&
+                it.timestamp < blockEnd - BOUNDARY_EPSILON_MS &&
+                (it.type == TYPE_KEYGUARD_HIDDEN || it.type == TYPE_USER_INTERACTION || it.type == TYPE_ACTIVITY_RESUMED)
+        }?.let { return Verdict(Kind.ANCHORED, it.timestamp) }
+
+        // 6. No screen-off edge at the block start and no anchors: honestly
+        // unknown. The old branch-5 media classification is dead - without a
+        // logged screen-off/lock opening, the "no unlock in between" claim
+        // has no proven interval and renders nothing.
         return Verdict(Kind.UNDECIDED)
     }
 }
