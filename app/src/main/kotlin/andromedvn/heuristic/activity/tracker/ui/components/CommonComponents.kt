@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.AppUsageItem
+import andromedvn.heuristic.activity.tracker.data.GapNeighbor
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
 import andromedvn.heuristic.activity.tracker.ui.theme.argbToStoredLong
 import andromedvn.heuristic.activity.tracker.ui.theme.formatHexColor
@@ -112,7 +113,7 @@ val AVAILABLE_ICONS = ICON_REGISTRY.map { PresetIcon(it.key, it.value) }
 data class HighlightEvent(val point: ChartPoint? = null, val stackIndex: Int = -1, val timestamp: Long = System.currentTimeMillis(), val isLongPress: Boolean = false, val isFromChart: Boolean = true, val sourceKey: String = "", val activeTags: Set<String> = emptySet())
 
 sealed class LedgerContext {
-    data class StandardGap(val startMillis: Long, val endMillis: Long, val precededBy: String? = null, val followedBy: String? = null) : LedgerContext()
+    data class StandardGap(val startMillis: Long, val endMillis: Long, val precededBy: GapNeighbor? = null, val followedBy: GapNeighbor? = null) : LedgerContext()
     data class BatchMerge(val count: Int, val totalDurationMillis: Long) : LedgerContext()
     /** A Screen-Off Activity span: the app was resumed while the screen was provably dark. */
     data class ScreenOff(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String) : LedgerContext()
@@ -324,30 +325,44 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                 // and the spacing, nothing else. Every string is the owner's
                 // picked copy; nothing is invented here.
                 val recordLines = presenceLine?.split('\n') ?: emptyList()
-                val showWhatHappened = recordLines.isNotEmpty() || ledgerContext is LedgerContext.ScreenOff
+                // Never silent (r12q, Pro's rule): a StandardGap ALWAYS has a
+                // context sentence, because unknown sides get honest
+                // placeholders instead of disappearing. ScreenOff states its
+                // one fact; BatchMerge carries no record block.
+                val showWhatHappened = ledgerContext !is LedgerContext.BatchMerge
                 if (showWhatHappened) {
                     DialogBlockHeader("What happened")
                     Column(modifier = Modifier.fillMaxWidth()) {
-                            recordLines.getOrNull(0)?.let {
-                                Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
+                        recordLines.getOrNull(0)?.let {
+                            Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        recordLines.getOrNull(1)?.let {
+                            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (ledgerContext is LedgerContext.StandardGap) {
+                            // The context line: what was before and after
+                            // this gap. Owner-dictated grammar (r12n) plus
+                            // the typed placeholders (r12q).
+                            val pre = ledgerContext.precededBy
+                            val post = ledgerContext.followedBy
+                            val contextStr = when {
+                                pre != null && post != null && post.ongoing ->
+                                    if (pre.screenOff) "The screen was off before this gap, and it is still running."
+                                    else "${pre.name} was used before this gap, and it is still running."
+                                pre != null && post != null && pre.screenOff && post.screenOff -> "The screen was off before and after this gap."
+                                pre != null && post != null && pre.screenOff -> "The screen was off before this gap, then ${post.name} right after."
+                                pre != null && post != null && post.screenOff -> "${pre.name} was used before this gap, then the screen was off."
+                                pre != null && post != null && pre.name == post.name -> "${pre.name} was used right before and after this gap."
+                                pre != null && post != null -> "${pre.name} was used before this gap, then ${post.name} right after."
+                                pre == null && post != null -> "There was no app usage before this gap, then ${post.name} was used right after."
+                                pre != null && post == null -> "${pre.name} was used before this gap, then no app usage right after."
+                                else -> "No recorded use before this gap, and nothing after it yet."
                             }
-                            recordLines.getOrNull(1)?.let {
-                                Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (ledgerContext is LedgerContext.StandardGap && (ledgerContext.precededBy != null || ledgerContext.followedBy != null)) {
-                                // The context line: what was before and after
-                                // this gap. Owner-dictated lines (r12n).
-                                val contextStr = when {
-                                    ledgerContext.precededBy != null && ledgerContext.precededBy == ledgerContext.followedBy -> "${ledgerContext.precededBy} was used right before and after this gap."
-                                    ledgerContext.precededBy != null && ledgerContext.followedBy != null -> "${ledgerContext.precededBy} was used before this gap, then ${ledgerContext.followedBy} right after."
-                                    ledgerContext.precededBy != null -> "${ledgerContext.precededBy} was used before this gap, then no app usage right after."
-                                    else -> "There was no app usage before this gap, then ${ledgerContext.followedBy} was used right after."
-                                }
-                                Text(contextStr, style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (ledgerContext is LedgerContext.ScreenOff) {
-                                Text("The screen was off the whole time", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                            Text(contextStr, style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (ledgerContext is LedgerContext.ScreenOff) {
+                            Text("The screen was off the whole time", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                 }

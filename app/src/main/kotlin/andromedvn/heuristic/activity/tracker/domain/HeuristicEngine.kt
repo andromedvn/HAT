@@ -273,9 +273,9 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         // the user chose. Screen-off spans stay in the accounted set above so
         // they suppress gaps, but they are NOT gap neighbors by name: they
         // sit in their own section right above, with their own explainers.
-        val labeled = mutableListOf<Triple<String, Long, Long>>()
+        val labeled = mutableListOf<GapNeighbor>()
         for ((pkg, ivs) in repository.getFilteredIntervals(start, end, hiddenPkgs)) {
-            for ((s, e) in ivs) labeled.add(Triple(repository.getAppName(pkg), s, e))
+            for ((s, e) in ivs) labeled.add(GapNeighbor(repository.getAppName(pkg), s, e))
         }
         // Pair each label with ITS OWN sanitized interval, never with
         // offlineIntervals[i]: sanitization can drop rows (non-positive
@@ -287,9 +287,9 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         // and interval can never drift apart.
         for (item in offlineItems) {
             val interval = sanitizeTrackedRow(item.timestamp, item.durationInMillis, now)
-            if (interval != null) labeled.add(Triple(item.title, interval.first, interval.second))
+            if (interval != null) labeled.add(GapNeighbor(item.title, interval.first, interval.second))
         }
-        for ((dPkg, dStart, dEnd) in dismissedSpans) labeled.add(Triple(repository.getAppName(dPkg), dStart, dEnd))
+        for ((dPkg, dStart, dEnd) in dismissedSpans) labeled.add(GapNeighbor(repository.getAppName(dPkg), dStart, dEnd))
 
         // Dismissed screen-off spans are usage by the user's own answer ("it
         // was really in use"), the same as getAppUsage treats them. Without
@@ -299,23 +299,34 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         val combinedIntervals = appIntervals + offlineIntervals + screenOffSpans + dismissedAsUsage
         val allTracked = engine.mergeIntervals(combinedIntervals)
 
+        // Provable screen-off time as a neighbor (r12q, the never-silent
+        // context rule): the device's dark windows, minus everything already
+        // accounted (app sessions, labels, screen-off spans) and minus the
+        // dismissed spans (they are named by their app above), so a dark
+        // fragment is named only where nothing else sits.
+        val darkOnly = mergeIntervals(
+            subtractIntervals(
+                subtractIntervals(repository.getDeviceScreenOffIntervals(start, end), allTracked),
+                dismissedSpans.map { it.second to it.third }
+            )
+        )
+        for ((ds, de) in darkOnly) labeled.add(GapNeighbor("The screen was off", ds, de, screenOff = true))
+
         // Nearest neighbor lookup for the explainers. A gap's "before" is the
         // latest named span ending at or before the gap's start; its "after"
         // is the earliest named span starting at or after the gap's end. When
         // several spans coalesced into one merged interval, the nearest real
         // named thing on each side is what the user experienced there.
-        val byEnd = labeled.sortedByDescending { it.third }
-        val byStart = labeled.sortedBy { it.second }
+        val byEnd = labeled.sortedByDescending { it.endMillis }
+        val byStart = labeled.sortedBy { it.startMillis }
 
-        fun nearestBefore(t: Long): String? {
+        fun nearestBefore(t: Long): GapNeighbor? {
             // Latest interval whose end is <= t (+1s: the walk's coalescing
             // tolerance, so a span ending exactly at the boundary counts).
-            val hit = byEnd.firstOrNull { it.third <= t + 1000L }
-            return hit?.first
+            return byEnd.firstOrNull { it.endMillis <= t + 1000L }
         }
-        fun nearestAfter(t: Long): String? {
-            val hit = byStart.firstOrNull { it.second >= t - 1000L }
-            return hit?.first
+        fun nearestAfter(t: Long): GapNeighbor? {
+            return byStart.firstOrNull { it.startMillis >= t - 1000L }
         }
 
         val gaps = mutableListOf<UsageGap>()
@@ -330,7 +341,9 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         }
         if (end > current) {
             val hasHidden = mergedHidden.any { it.first < end && it.second > current }
-            gaps.add(UsageGap(current, end, hasHidden, nearestBefore(current), null))
+            // The trailing gap runs to the window edge: its "after" side is
+            // the present, and the dialog says so (ongoing).
+            gaps.add(UsageGap(current, end, hasHidden, nearestBefore(current), GapNeighbor("", end, end, ongoing = true)))
         }
 
         gaps.filter { it.startMillis < now }.map { UsageGap(it.startMillis, minOf(it.endMillis, now), it.hasHiddenAppFootprint, it.precededBy, it.followedBy) }

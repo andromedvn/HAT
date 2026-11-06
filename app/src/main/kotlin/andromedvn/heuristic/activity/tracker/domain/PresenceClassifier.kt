@@ -28,7 +28,10 @@ object PresenceClassifier {
         /** The edge that resolved the verdict: the returning unlock for
          *  TIMEOUT, the screen-on moment for MEDIA_CONTINUED. Null = the
          *  edge has not happened yet (an open gap) or does not exist. */
-        val resolveTs: Long? = null
+        val resolveTs: Long? = null,
+        /** The package that proved a MEDIA_CONTINUED verdict (the app that
+         *  resumed when the screen came back), so the copy can name it. */
+        val pkg: String? = null
     )
 
     // Event type ints (public UsageEvents vocabulary; raw ints so minSdk 26
@@ -108,7 +111,7 @@ object PresenceClassifier {
                 if (screenOn != null) {
                     val resumed = post.firstOrNull { it.type == TYPE_ACTIVITY_RESUMED && it.timestamp <= screenOn.timestamp + QUICK_RESUME_MS }
                     val unlockedBetween = post.any { it.type == TYPE_KEYGUARD_HIDDEN && it.timestamp < resumed?.timestamp ?: Long.MAX_VALUE }
-                    if (resumed != null && !unlockedBetween) return Verdict(Kind.MEDIA_CONTINUED, screenOn.timestamp)
+                    if (resumed != null && !unlockedBetween) return Verdict(Kind.MEDIA_CONTINUED, screenOn.timestamp, pkg = resumed.packageName)
                 }
                 return Verdict(Kind.TIMEOUT, screenOff.timestamp)
             }
@@ -121,7 +124,7 @@ object PresenceClassifier {
         if (screenOn != null) {
             val resumed = post.firstOrNull { it.type == TYPE_ACTIVITY_RESUMED && it.timestamp <= screenOn.timestamp + QUICK_RESUME_MS }
             val unlockedBetween = post.any { it.type == TYPE_KEYGUARD_HIDDEN && it.timestamp < (resumed?.timestamp ?: Long.MAX_VALUE) }
-            if (resumed != null && !unlockedBetween) return Verdict(Kind.MEDIA_CONTINUED, screenOn.timestamp)
+            if (resumed != null && !unlockedBetween) return Verdict(Kind.MEDIA_CONTINUED, screenOn.timestamp, pkg = resumed.packageName)
         }
         return Verdict(Kind.UNDECIDED)
     }

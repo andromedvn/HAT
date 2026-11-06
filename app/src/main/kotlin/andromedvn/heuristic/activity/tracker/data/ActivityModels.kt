@@ -10,6 +10,19 @@ enum class ThemeType { DYNAMIC, STATIC }
 enum class SortType { RECENT, CHRONOLOGICAL, DURATION }
 enum class ProcessCategory { STANDARD, SYSTEM_UI, LAUNCHER, SELF }
 
+/**
+ * A named thing sitting on one side of a gap (r12q): an app, a saved label,
+ * or provable screen-off time. Ongoing marks the trailing gap that runs to
+ * now, so the dialog can say so instead of guessing.
+ */
+data class GapNeighbor(
+    val name: String,
+    val startMillis: Long,
+    val endMillis: Long,
+    val screenOff: Boolean = false,
+    val ongoing: Boolean = false
+)
+
 @Serializable
 data class UserSettings(
     val themeType: ThemeType = ThemeType.STATIC,
@@ -173,10 +186,12 @@ data class UsageGap(
      * gives the user the exact context that triggers "oh right, I went for a
      * walk after lunch" - evidence the engine already holds, previously
      * thrown away. Null at day boundaries where no tracked interval exists on
-     * that side. Never invented: a null neighbor stays null.
+     * that side. Never invented: a null neighbor stays null. Typed (r12q):
+     * the name plus its kind, so the dialog can say "the screen was off"
+     * where a plain string could only lie.
      */
-    val precededBy: String? = null,
-    val followedBy: String? = null
+    val precededBy: GapNeighbor? = null,
+    val followedBy: GapNeighbor? = null
 ) {
     val durationInMillis: Long get() = endMillis - startMillis
     val timeRangeFormatted: String get() { val sdf = SimpleDateFormat("h:mm a", Locale.getDefault()); return "${sdf.format(startMillis)} - ${sdf.format(endMillis)}" }

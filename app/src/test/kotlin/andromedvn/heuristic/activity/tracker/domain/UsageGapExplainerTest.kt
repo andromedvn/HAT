@@ -27,7 +27,7 @@ class UsageGapExplainerTest {
 
     @Test
     fun `duration and range formats are unchanged by the explainer fields`() {
-        val gap = UsageGap(0L, 3_600_000L, false, "A", "B")
+        val gap = UsageGap(0L, 3_600_000L, false, andromedvn.heuristic.activity.tracker.data.GapNeighbor("A", 0L, 1L), andromedvn.heuristic.activity.tracker.data.GapNeighbor("B", 3_600_000L, 3_600_001L))
         assertEquals(3_600_000L, gap.durationInMillis)
         assertEquals("1h", gap.durationFormatted)
         // Timezone-independent: the range renders "start - end" with a

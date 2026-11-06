@@ -143,6 +143,10 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
      * and input-method packages; LAUNCHER anything answering CATEGORY_HOME;
      * SELF this app; everything else STANDARD.
      */
+    /** The device's dark windows (r12q): the gap walk names them as neighbors. */
+    suspend fun getDeviceScreenOffIntervals(start: Long, end: Long): List<Pair<Long, Long>> =
+        engine.getDeviceScreenOffIntervals(start, end)
+
     fun getAppCategory(pkg: String): ProcessCategory {
         categoryCache.get(pkg)?.let { return it }
         val category = computeCategory(pkg)

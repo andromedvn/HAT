@@ -135,7 +135,10 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     "The screen turned off on its own.",
                     verdict.resolveTs?.let { "The phone was unlocked at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.MEDIA_CONTINUED -> PresenceCopy(
-                    "This app was playing media the whole time.",
+                    // The package is the app whose own resume resolved the
+                    // verdict, so the copy names it instead of "this app".
+                    verdict.pkg?.let { "${repository.getAppName(it)} was playing media the whole time." }
+                        ?: "An app was playing media the whole time.",
                     verdict.anchorTs?.let { "The screen was turned on at ${fmt.format(java.util.Date(it))}" })
                 PresenceClassifier.Kind.UNDECIDED -> null
             }
