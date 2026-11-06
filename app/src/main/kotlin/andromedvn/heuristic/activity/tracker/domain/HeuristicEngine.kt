@@ -275,6 +275,10 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         // sit in their own section right above, with their own explainers.
         val labeled = mutableListOf<GapNeighbor>()
         for ((pkg, ivs) in repository.getFilteredIntervals(start, end, hiddenPkgs)) {
+            // Pro's neighbor rule (r12r): system UI, the launcher and HAT
+            // itself never name a gap neighbor. Going home is not app usage,
+            // and "System UI" as a neighbor is noise.
+            if (repository.getAppCategory(pkg) != ProcessCategory.STANDARD) continue
             for ((s, e) in ivs) labeled.add(GapNeighbor(repository.getAppName(pkg), s, e))
         }
         // Pair each label with ITS OWN sanitized interval, never with
