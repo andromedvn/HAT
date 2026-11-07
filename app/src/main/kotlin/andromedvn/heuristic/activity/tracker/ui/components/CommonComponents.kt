@@ -341,6 +341,13 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                             LedgerRow("START", fmt.format(ledgerContext.startMillis))
                             LedgerRow("END", fmt.format(ledgerContext.endMillis))
                             LedgerRow("DURATION", TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis))
+                            // Neighbor rows (r12u, owner call): the named thing
+                            // the log recorded on each side - an app, a label,
+                            // or screen-off time. The row renders only when a
+                            // named neighbor exists; a side that is another
+                            // unlabeled gap or the day's edge stays off.
+                            ledgerContext.precededBy?.let { LedgerRow("BEFORE", it.name) }
+                            ledgerContext.followedBy?.let { if (!it.ongoing) LedgerRow("AFTER", it.name) }
                             presenceRows.forEach { (label, value) -> LedgerRow(label, value) }
                         }
                         is LedgerContext.ScreenOff -> {

@@ -139,7 +139,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     if (label != null && label != verdict.pkg) rows.add("ON SCREEN" to label)
                 }
                 PresenceClassifier.Kind.ANCHORED -> verdict.anchorTs?.let {
-                    rows.add("FIRST USE" to fmt.format(java.util.Date(it)))
+                    rows.add("PHONE WOKE" to fmt.format(java.util.Date(it)))
                 }
                 PresenceClassifier.Kind.UNDECIDED -> { }
             }
