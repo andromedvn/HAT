@@ -97,7 +97,13 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
      * the honest answer for every gap older than the raw-event field).
      * Charter rules: facts only, past tense, no em dashes.
      */
-    data class PresenceCopy(val line: String, val evidence: String? = null)
+    /**
+     * The ledger fact rows for one gap (r12t, owner verdict): label/value
+     * pairs of provable events only. No sentences anywhere - the owner
+     * removed the verdict line and the context; what the log proves becomes
+     * a row, what it cannot prove stays off the ledger.
+     */
+    data class PresenceCopy(val rows: List<Pair<String, String>> = emptyList())
 
     suspend fun presenceVerdicts(gaps: List<Pair<Long, Long>>): Map<Long, PresenceCopy> = withContext(Dispatchers.IO) {
         if (gaps.isEmpty()) return@withContext emptyMap()
@@ -115,31 +121,29 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         val out = HashMap<Long, PresenceCopy>(gaps.size)
         for ((start, end) in gaps) {
             val verdict = PresenceClassifier.classify(events, start, end, timeoutMs)
-            // Court verdict r12s (6-0): THE FACT LINE. One provable line,
-            // no evidence line anywhere, no playback claim, silence for
-            // undecided. The media line names the app and states only the
-            // foreground fact; a package that resolves to no human-readable
-            // name renders the generic recorded-use line instead.
-            val copy = when (verdict.kind) {
-                PresenceClassifier.Kind.ANCHORED -> PresenceCopy(
-                    "Phone use is recorded inside this block.")
-                PresenceClassifier.Kind.CHOSE_TO_STOP -> if (verdict.anchorTs != null) PresenceCopy(
-                    "The phone locked at ${fmt.format(java.util.Date(verdict.anchorTs))}.")
-                else PresenceCopy(
-                    "You locked the phone.")
-                PresenceClassifier.Kind.TIMEOUT -> PresenceCopy(
-                    if (verdict.anchorTs != null) "The screen turned off on its own at ${fmt.format(java.util.Date(verdict.anchorTs))}."
-                    else "The screen turned off on its own.")
+            // Ledger (r12t, owner verdict): the court's fact line becomes
+            // rows. Same provable facts, same precedence (lock > timeout >
+            // media > first use), zero verbs.
+            val rows = mutableListOf<Pair<String, String>>()
+            when (verdict.kind) {
+                PresenceClassifier.Kind.CHOSE_TO_STOP -> verdict.anchorTs?.let {
+                    rows.add("LOCKED" to fmt.format(java.util.Date(it)))
+                }
+                PresenceClassifier.Kind.TIMEOUT -> {
+                    verdict.anchorTs?.let { rows.add("SCREEN OFF" to fmt.format(java.util.Date(it))) }
+                    verdict.resolveTs?.let { rows.add("UNLOCKED" to fmt.format(java.util.Date(it))) }
+                }
                 PresenceClassifier.Kind.MEDIA_CONTINUED -> {
                     val label = verdict.pkg?.let { repository.getAppName(it) }
-                    if (label != null && label != verdict.pkg) PresenceCopy(
-                        "$label took the foreground right when the screen came back - no unlock in between.")
-                    else PresenceCopy(
-                        "Phone use is recorded inside this block.")
+                    verdict.anchorTs?.let { rows.add("SCREEN ON" to fmt.format(java.util.Date(it))) }
+                    if (label != null && label != verdict.pkg) rows.add("ON SCREEN" to label)
                 }
-                PresenceClassifier.Kind.UNDECIDED -> null
+                PresenceClassifier.Kind.ANCHORED -> verdict.anchorTs?.let {
+                    rows.add("FIRST USE" to fmt.format(java.util.Date(it)))
+                }
+                PresenceClassifier.Kind.UNDECIDED -> { }
             }
-            if (copy != null) out[start] = copy
+            if (rows.isNotEmpty()) out[start] = PresenceCopy(rows)
         }
         out
     }

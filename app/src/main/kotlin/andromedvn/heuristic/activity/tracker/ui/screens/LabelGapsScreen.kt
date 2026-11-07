@@ -124,7 +124,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     var returnScrollOffset by rememberSaveable { mutableIntStateOf(0) }
 
     val todayStartMillis = getStartOfDay(Calendar.getInstance().apply { timeInMillis = uiState.startTime })
-    var dialogPresenceLine by remember { mutableStateOf<String?>(null) }
+    var dialogPresenceRows by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
 
     // Presence evidence lines per gap card (2026-11-02): factual, sourced
     // from the persisted raw event stream. Gaps older than the field, or
@@ -272,7 +272,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             },
             initialTitle = "", initialIconName = "Walk", suggestions = uiState.recentSuggestions,
             ledgerContext = ledgerContext,
-            presenceLine = dialogPresenceLine,
+            presenceRows = dialogPresenceRows,
             onDismiss = {
                 // Tour fallback (r12e): the label dialog dismissed while the
                 // tour sits on its step returns to the pulse instead of
@@ -280,12 +280,12 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                 if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
                     andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == "gapCardPulse" }
                 }
-                showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null
+                showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceRows = emptyList()
             },
             onSave = { outTitle, outIcon, outStart ->
                 if (screenOffPkg.isNotEmpty()) {
                     dashboardViewModel.labelScreenOffSpan(screenOffPkg, outStart, screenOffEnd, outTitle, outIcon)
-                    showDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null; navController.popBackStack()
+                    showDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceRows = emptyList(); navController.popBackStack()
                 } else if (singleGapStart != -1L) {
                     scope.launch {
                         dashboardViewModel.resolveContiguousGap(outStart, singleGapEnd) { tS, tE ->
@@ -315,7 +315,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     // background, dimmed.
     if (showDialog && andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
         val tourDismiss = {
-            showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceLine = null
+            showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceRows = emptyList()
         }
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { },
@@ -388,9 +388,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         singleGapStart = firstGap.gap.startMillis
         singleGapEnd = firstGap.gap.endMillis
         lastGapContext = firstGap.gap
-        dialogPresenceLine = presenceLines[firstGap.gap.startMillis]?.let { copy ->
-            if (copy.evidence != null) copy.line + "\n" + copy.evidence else copy.line
-        }
+        dialogPresenceRows = presenceLines[firstGap.gap.startMillis]?.rows ?: emptyList()
         showDialog = true
     }
     LaunchedEffect(tourStepId, unaccountedCards.size) {
@@ -542,9 +540,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                                 if (andromedvn.heuristic.activity.tracker.domain.AppTourState.active && tourNow?.id == "gapCard") {
                                                                     andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == "labelDialog" }
                                                                 }
-                                                                dialogPresenceLine = presenceLines[gap.startMillis]?.let { copy ->
-                                                                    if (copy.evidence != null) copy.line + "\n" + copy.evidence else copy.line
-                                                                }
+                                                                dialogPresenceRows = presenceLines[gap.startMillis]?.rows ?: emptyList()
                                                                 showDialog = true
                                                             }
                                                         },

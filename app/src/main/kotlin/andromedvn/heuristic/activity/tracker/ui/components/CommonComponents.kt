@@ -272,6 +272,16 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
     }
 }
 
+// Ledger (r12t): one mono label-value row of the gap's fact table. The
+// label is the signage voice; the value is the logged fact. No verbs.
+@Composable
+fun LedgerRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(110.dp))
+        Text(value, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
 // Bento (r12n): the mono kicker above each bounded record block in the
 // label dialog; the same labelSmall uppercase treatment as the settings
 // group headers.
@@ -282,7 +292,7 @@ fun DialogBlockHeader(text: String) {
 }
 
 @Composable
-fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceLine: String? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, bottomGap: Dp = 0.dp) {
+fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceRows: List<Pair<String, String>> = emptyList(), onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, bottomGap: Dp = 0.dp) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
     // The label's start, taken from the device's evidence. HAT saves the
@@ -319,36 +329,32 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                         ))
                     } else Modifier
             )) {
-                // Court verdict r12s (6-0): THE FACT LINE. The WHAT HAPPENED
-                // kicker, the context sentences, the evidence line and the
-                // screen-off extras are all deleted. At most ONE provable
-                // fact line renders where the block stood; undecided and
-                // anchored gaps render nothing at all.
-                val recordLines = presenceLine?.split('\n') ?: emptyList()
-                recordLines.getOrNull(0)?.let {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
+                // Ledger (r12t, owner verdict): no sentences at all. THE GAP
+                // is a mono label-value table - base bounds always, provable
+                // event rows when the log supports them, merge rows in the
+                // batch flow. Nothing here narrates.
                 DialogBlockHeader("The gap")
                 Column(modifier = Modifier.fillMaxWidth()) {
-                        when (ledgerContext) {
-                            is LedgerContext.StandardGap -> {
-                                val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
-                                val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
-                                Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            is LedgerContext.ScreenOff -> {
-                                val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
-                                val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
-                                Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            is LedgerContext.BatchMerge -> {
-                                Text("Merging ${ledgerContext.count} gaps into one label", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("Total: ${TimeUtils.formatDuration(ledgerContext.totalDurationMillis)}. App usage between them stays untouched.", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                    when (ledgerContext) {
+                        is LedgerContext.StandardGap -> {
+                            val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                            LedgerRow("START", fmt.format(ledgerContext.startMillis))
+                            LedgerRow("END", fmt.format(ledgerContext.endMillis))
+                            LedgerRow("DURATION", TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis))
+                            presenceRows.forEach { (label, value) -> LedgerRow(label, value) }
+                        }
+                        is LedgerContext.ScreenOff -> {
+                            val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                            LedgerRow("START", fmt.format(ledgerContext.startMillis))
+                            LedgerRow("END", fmt.format(ledgerContext.endMillis))
+                            LedgerRow("DURATION", TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis))
+                            LedgerRow("ON SCREEN", "${ledgerContext.appName} (${ledgerContext.pkgName})")
+                        }
+                        is LedgerContext.BatchMerge -> {
+                            LedgerRow("MERGING", "${ledgerContext.count} gaps")
+                            LedgerRow("TOTAL", TimeUtils.formatDuration(ledgerContext.totalDurationMillis))
+                            LedgerRow("BETWEEN", "usage stays untouched")
+                        }
                     }
                 }
             }
