@@ -19,7 +19,6 @@ data class GapNeighbor(
     val name: String,
     val startMillis: Long,
     val endMillis: Long,
-    val screenOff: Boolean = false,
     val ongoing: Boolean = false
 )
 
@@ -36,6 +35,7 @@ data class UserSettings(
     val installDateMillis: Long = System.currentTimeMillis(),
     val bypassHistoryLimit: Boolean = false,
     val archiveSyncIntervalHours: Int = 12,
+    val sessionMergeMinutes: Int = 1,
     // Rolling Vault (r12p, ported from HAT Pro): a background worker
     // re-exports the encrypted vault to the user-picked SAF folder on a
     // schedule, overwriting HAT_AutoBackup.zip in place. 0 = off.
@@ -61,15 +61,10 @@ data class UserSettings(
      */
     val customDetailMinutes: Int = -1,
     /**
-     * The archive cursor (2026-10-28): the last local midnight the archiver
-     * has ATTEMPTED, whether or not that day produced rows. The old walk
-     * restarted from MAX(start_millis) of archived rows, so a run of five or
-     * more empty days (dead battery, airplane weekend) re-queried the same
-     * empty days forever and everything after them was lost to Android's
-     * retention window when it finally arrived. The cursor advances on empty
-     * days too, so the walk can never wedge. 0 = unset: installs predating
-     * this field fall back to the watermark-based start until the first
-     * cursor write.
+     * The archive cursor: the last local midnight the archiver has ATTEMPTED,
+     * whether or not that day produced rows (why: ArchiveCursor's doc).
+     * 0 = unset; installs predating this field fall back to the
+     * watermark-based start until the first cursor write.
      */
     val archiveCursorMillis: Long = 0,
     // --- Legacy fields: kept for old-vault deserialization, no longer read ---
@@ -87,7 +82,7 @@ data class CombinedPreferences(
 )
 
 @Serializable
-data class OfflineActivityEntity(val id: Long = 0L, val title: String, val durationInMillis: Long, val timestamp: Long, val colorHex: Long = 0, val iconName: String = "Walk")
+data class OfflineActivityEntity(val id: Long = 0L, val title: String, val durationInMillis: Long, val timestamp: Long, val iconName: String = "Walk")
 
 @Serializable
 data class IgnoredSession(val packageName: String, val startMillis: Long, val endMillis: Long)
@@ -194,7 +189,7 @@ data class UsageGap(
     val followedBy: GapNeighbor? = null
 ) {
     val durationInMillis: Long get() = endMillis - startMillis
-    val timeRangeFormatted: String get() { val sdf = SimpleDateFormat("h:mm a", Locale.getDefault()); return "${sdf.format(startMillis)} - ${sdf.format(endMillis)}" }
+    val timeRangeFormatted: String get() = "${TimeUtils.formatTime(startMillis)} - ${TimeUtils.formatTime(endMillis)}"
     val durationFormatted: String get() = TimeUtils.formatDuration(durationInMillis)
 
 }
@@ -218,23 +213,12 @@ data class SessionItem(
      */
     val displayedDuration: Long get() = activeDuration
     fun getTimeRangeStr(range: TimeRangeLabel): String {
-        val sdfTime = SimpleDateFormat("h:mm a", Locale.getDefault())
         return when (range) {
-            TimeRangeLabel.DAY -> "${sdfTime.format(startTime)} - ${sdfTime.format(endTime)}"
-            TimeRangeLabel.WEEK -> "${SimpleDateFormat("EEE", Locale.getDefault()).format(startTime)}, ${sdfTime.format(startTime)}"
-            TimeRangeLabel.MONTH -> "${SimpleDateFormat("MMM d", Locale.getDefault()).format(startTime)}, ${sdfTime.format(startTime)}"
+            TimeRangeLabel.DAY -> "${TimeUtils.formatTime(startTime)} - ${TimeUtils.formatTime(endTime)}"
+            TimeRangeLabel.WEEK -> "${SimpleDateFormat("EEE", Locale.getDefault()).format(startTime)}, ${TimeUtils.formatTime(startTime)}"
+            TimeRangeLabel.MONTH -> "${SimpleDateFormat("MMM d", Locale.getDefault()).format(startTime)}, ${TimeUtils.formatTime(startTime)}"
         }
     }
     val activeDurationStr: String get() = TimeUtils.formatDuration(activeDuration)
 }
 
-/**
- * Rows that cover the SAME stretch of time and would render as two entries for one gap.
- * Reported to the user; removal is always an explicit user action on a visible row.
- */
-data class DuplicateLabelGroup(
-    val startMillis: Long,
-    val endMillis: Long,
-    val rowIds: List<Long>,
-    val title: String
-)

@@ -24,7 +24,6 @@ fun LicensesScreen(navController: NavController) {
                 .padding(bottom = innerPadding.calculateBottomPadding())
                 .windowInsetsPadding(WindowInsets.statusBars)
         ) {
-            // FIXED: Separated horizontal and top padding
             Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) {
                 HatDynamicHeader(title = "Licenses", subtitle = "Open Source") {
                     IconButton(onClick = { navController.popBackStack() }) {

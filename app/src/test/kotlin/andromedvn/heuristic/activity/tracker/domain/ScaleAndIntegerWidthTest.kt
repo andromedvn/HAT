@@ -184,17 +184,16 @@ class ScaleAndIntegerWidthTest {
     }
 
     @Test
-    fun `replayGhostIntervals handles a long unattended stretch without inventing ghosts`() {
+    fun `a long dark stretch closes at the cap without overflow`() {
         // Screen goes off, an app resumes and is never paused, then the day ends.
-        // (2026-10-16) A dark-screen resume is Screen-Off Activity now, so the
-        // ghost replay must claim nothing; the span belongs to the screen-off
-        // walk, which must still close it at the cap without any overflow.
+        // (2026-10-16) A dark-screen resume is Screen-Off Activity: the span
+        // belongs to the screen-off walk, which must still close it at the cap
+        // without any overflow.
         val events = listOf(
             RawEvent(EventCode.SCREEN_NON_INTERACTIVE, 0L, ""),
             RawEvent(EventCode.ACTIVITY_RESUMED, 1_000L, "com.a", "A")
         )
 
-        assertEquals(0, replayGhostIntervals(events, 0L, 86_400_000L, cap = 86_400_000L).size)
         assertEquals(
             mapOf("com.a" to listOf(1_000L to 86_400_000L)),
             replayScreenOffIntervals(events, 0L, 86_400_000L, cap = 86_400_000L)

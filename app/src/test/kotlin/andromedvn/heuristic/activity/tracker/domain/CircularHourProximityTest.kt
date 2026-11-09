@@ -10,7 +10,7 @@ import java.util.TimeZone
 /**
  * Hour-of-day proximity, measured around the clock.
  *
- * `ActivityRepository.getSmartSuggestions` (line 241) weighted each stored
+ * `ActivityRepository.getSmartSuggestions` once weighted each stored
  * activity by
  *
  *     abs(Calendar.getInstance().apply { timeInMillis = act.timestamp }

@@ -97,7 +97,6 @@ HAT stores your preferences using Android's **Jetpack DataStore** library, in a 
 - Theme choice (Dynamic, Static, or a custom accent color)
 - Dashboard sort order
 - Gap Minimum (stretches of recorded silence shorter than this don't appear)
-- Idle Minimum (idle, lock-screen, and screen-off cards shorter than this don't ask)
 - Background archive sync interval in hours
 - The list of applications you have hidden from your dashboard
 - Timestamps of ghost sessions you have dismissed or acknowledged

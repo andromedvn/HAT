@@ -3,11 +3,10 @@ package andromedvn.heuristic.activity.tracker.utils
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import andromedvn.heuristic.activity.tracker.domain.REPLAY_PRE_BUFFER_MILLIS
 import andromedvn.heuristic.activity.tracker.domain.RawEvent
 import andromedvn.heuristic.activity.tracker.domain.replayDeviceScreenOffIntervals
-import andromedvn.heuristic.activity.tracker.domain.replayGhostIntervals
 import andromedvn.heuristic.activity.tracker.domain.replayScreenOffIntervals
-import andromedvn.heuristic.activity.tracker.domain.replayUnattendedIntervals
 import andromedvn.heuristic.activity.tracker.domain.replayUsageIntervals
 import kotlinx.coroutines.yield
 import java.util.Calendar
@@ -68,7 +67,7 @@ class UsageStatsEngine(context: Context) {
     suspend fun collectRawEventsForExport(start: Long, end: Long): List<RawEvent> = collectEvents(start, end)
 
     suspend fun getUsageIntervals(start: Long, end: Long, hiddenApps: Set<String>): Map<String, List<Pair<Long, Long>>> {
-        val collected = collectEvents(start - 86400000L, end)
+        val collected = collectEvents(start - REPLAY_PRE_BUFFER_MILLIS, end)
         val cap = minOf(end, System.currentTimeMillis())
         // Filtering the completed map is stricter than skipping hidden events
         // mid-replay: an app that was already resumed when the user hid it
@@ -88,13 +87,13 @@ class UsageStatsEngine(context: Context) {
      * no app resumed through it.
      */
     suspend fun getDeviceScreenOffIntervals(start: Long, end: Long): List<Pair<Long, Long>> {
-        val collected = collectEvents(start - 86400000L, end)
+        val collected = collectEvents(start - REPLAY_PRE_BUFFER_MILLIS, end)
         val cap = minOf(end, System.currentTimeMillis())
         return replayDeviceScreenOffIntervals(collected, start, end, cap)
     }
 
     suspend fun getScreenOffIntervals(start: Long, end: Long): Map<String, List<Pair<Long, Long>>> {
-        val collected = collectEvents(start - 86400000L, end)
+        val collected = collectEvents(start - REPLAY_PRE_BUFFER_MILLIS, end)
         val cap = minOf(end, System.currentTimeMillis())
         return replayScreenOffIntervals(collected, start, end, cap)
     }

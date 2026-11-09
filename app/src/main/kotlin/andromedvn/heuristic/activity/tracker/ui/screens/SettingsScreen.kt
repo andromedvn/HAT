@@ -10,14 +10,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -38,11 +36,14 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
 import andromedvn.heuristic.activity.tracker.domain.DetailLevel
+import andromedvn.heuristic.activity.tracker.domain.startOfLocalDay
+import andromedvn.heuristic.activity.tracker.domain.nextLocalMidnight
 import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
 import andromedvn.heuristic.activity.tracker.domain.shouldShowSupportPrompt
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.ui.theme.argbToStoredLong
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
+import andromedvn.heuristic.activity.tracker.utils.restoreVaultAndRestart
 import andromedvn.heuristic.activity.tracker.utils.SPONSOR_URL
 import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
@@ -90,7 +91,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
     val updateSettings: (UserSettings) -> Unit = { newSet -> 
         scope.launch {
             storage.saveSettings(newSet)
-            WorkerScheduler.updateWorkers(context, newSet.archiveSyncIntervalHours)
+            WorkerScheduler.updateWorkers(context, newSet.archiveSyncIntervalHours, newSet.autoBackupIntervalHours)
         }
     }
 
@@ -126,30 +127,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val report = context.contentResolver.openInputStream(uri)?.use { repository.restoreSecureVault(it, context.cacheDir) }
-                    withContext(Dispatchers.Main) {
-                        if (report != null && report.success) {
-                            Toast.makeText(context, "Vault Restored. ${report.offlineMerged} label(s) merged, ${report.offlineSkipped} skipped as overlapping existing ones. Restarting safely...", Toast.LENGTH_LONG).show()
-                            delay(1000)
-                            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-                            val componentName = intent?.component
-                            val restartIntent = Intent.makeRestartActivityTask(componentName)
-                            context.startActivity(restartIntent)
-                            Runtime.getRuntime().exit(0)
-                        } else {
-                            // mergeDatabase only ever INSERTs (CONFLICT_IGNORE),
-                            // so nothing existing was deleted - but some tables may
-                            // have merged before the failure. Do not claim the file
-                            // was tampered with: an incomplete merge is a different
-                            // failure and the user needs to know which they hit.
-                            val counts = report?.let { " (${it.offlineMerged} label(s) merged, ${it.offlineSkipped} skipped)" } ?: ""
-                            Toast.makeText(context, "Restore incomplete: some data could not be restored. Nothing was deleted, but the vault was not fully applied.$counts", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }
-            }
+            scope.launch { restoreVaultAndRestart(context, repository, uri) }
         }
     }
 
@@ -166,15 +144,12 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     try {
                         val engine = HeuristicEngine(repository, UsageStatsEngine(context))
                         
-                        val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
-                        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                        val start = cal.timeInMillis
-                        cal.add(Calendar.DAY_OF_YEAR, 1)
-                        val end = cal.timeInMillis - 1
+                        val start = startOfLocalDay(selectedDateMillis)
+                        val end = nextLocalMidnight(selectedDateMillis) - 1
                         
                         val hiddenPkgs = storage.getHiddenPackagesFlow().first()
                         
-                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, hiddenPkgs)
+                        val (_, screenTime, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, hiddenPkgs)
                         val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)
                         
                         // Must be sharded against app foreground time, exactly as the
@@ -186,9 +161,9 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         val totalOfflineMillis = engine
                             .getShardedOfflineIntervals(start, end)
                             .sumOf { it.second - it.first }
-                        val totalCombinedRaw = rawScreenTime + totalOfflineMillis
+                        val totalCombinedRaw = screenTime + totalOfflineMillis
                         val clampedCombined = minOf(totalCombinedRaw, end - start)
-                        val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - rawScreenTime else totalOfflineMillis
+                        val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - screenTime else totalOfflineMillis
             
                         val dateStr = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(start))
                         
@@ -199,13 +174,13 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         if (offlineItems.isEmpty()) sb.appendLine("None logged.")
                         else offlineItems.forEach { sb.appendLine("- ${it.title}: ${it.timeFormatted}") }
                         
-                        sb.appendLine("\n[App Usage]")
+                        sb.appendLine("\n[Apps Usage]")
                         if (topAppsList.isEmpty()) sb.appendLine("None logged.")
                         else topAppsList.take(15).forEach { sb.appendLine("- ${it.title}: ${it.timeFormatted}") }
                         
                         sb.appendLine("\n[Totals]")
-                        sb.appendLine("Screen Time: ${TimeUtils.formatDuration(rawScreenTime)}")
-                        sb.appendLine("Offline Time: ${TimeUtils.formatDuration(clampedOffline)}")
+                        sb.appendLine("Screen Time: ${TimeUtils.formatDuration(screenTime)}")
+                        sb.appendLine("Offline Activity: ${TimeUtils.formatDuration(clampedOffline)}")
                         sb.appendLine("Total Tracked: ${TimeUtils.formatDuration(clampedCombined)}")
                         
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -230,11 +205,11 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         // interval that is not merely a no-op, it is a badly broken value; for
         // the others it disabled the feature without the user ever being told.
         val parsedValue = input.toIntOrNull()
-        // The detail and idle minimums are capped at one day (1440 min): no
+        // The detail minimum is capped at one day (1440 min): no
         // HAT range is longer than a day, so a bigger minimum would guarantee
         // an empty app (no gaps worth showing, or no question cards at all).
         // The limit is stated in the error message, never silently clamped.
-        val maxAllowed = if (customDialogSetting == "archive") 9999 else DetailLevel.CUSTOM_MAX_MINUTES
+        val maxAllowed = when (customDialogSetting) { "archive" -> 9999; "merge" -> 60; else -> DetailLevel.CUSTOM_MAX_MINUTES }
         val valueError = when {
             input.isBlank() -> "Enter a value"
             parsedValue == null -> "Digits only"
@@ -259,6 +234,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     when (customDialogSetting) {
                         "archive" -> updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = value))
                         "detail" -> updateSettings(currentSettings!!.copy(detailLevel = DetailLevel.CUSTOM, customDetailMinutes = value))
+                        "merge" -> updateSettings(currentSettings!!.copy(sessionMergeMinutes = value))
                     }
                     customDialogSetting = null
                 }) { Text("Save", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
@@ -315,7 +291,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     SettingsItem("Battery Optimization", "Keep the archive running by exempting HAT from battery optimization. Tap this if the onboarding battery exemption button does not work.") {
                         try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     }
-                    SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
+                    SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = TimeUtils.stamp(); exportLauncher.launch("HAT_Vault_$date.zip") }
                     SettingsItem("Restore Master Vault", "Import a previously saved master vault.") { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
                     HatSlidingSelector<Int>("Automatic Backup", "Re-writes an encrypted backup of everything to the folder below on a schedule. Same file, always overwritten.", listOf("Off" to 0, "12h" to 12, "24h" to 24), currentSettings!!.autoBackupIntervalHours, "", { hours ->
                         updateSettings(currentSettings!!.copy(autoBackupIntervalHours = hours))
@@ -342,7 +318,8 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     // is the fresh gap default, 15 min is the fresh idle
                     // default.
                     HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Recent" to SortType.RECENT, "Duration" to SortType.DURATION, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
-                    HatSlidingSelector<Int>("Gap Minimum", "Quiet periods shorter than this don't appear. A gap is time where nothing ran at all.", listOf("1 min" to DetailLevel.ONE_MIN, "5 min" to DetailLevel.FIVE_MIN, "15 min" to DetailLevel.FIFTEEN_MIN, "Custom" to -1), if (currentSettings!!.detailLevel == DetailLevel.CUSTOM) currentSettings!!.customDetailMinutes else currentSettings!!.detailLevel, " min", { updateSettings(currentSettings!!.copy(detailLevel = it)) }, { customDialogSetting = "detail" })
+                    HatSlidingSelector<Int>("Gap Minimum", "Gaps shorter than this don't appear to declutter the timeline. A gap is time where you weren't on your phone.", listOf("1 min" to DetailLevel.ONE_MIN, "5 min" to DetailLevel.FIVE_MIN, "15 min" to DetailLevel.FIFTEEN_MIN, "Custom" to -1), if (currentSettings!!.detailLevel == DetailLevel.CUSTOM) currentSettings!!.customDetailMinutes else currentSettings!!.detailLevel, " min", { updateSettings(currentSettings!!.copy(detailLevel = it)) }, { customDialogSetting = "detail" })
+                    HatSlidingSelector<Int>("Session Merge", "Visits to the same app separated by less than this become one session on the details screen.", DetailLevel.SESSION_MERGE_PRESETS + ("Custom" to -1), currentSettings!!.sessionMergeMinutes, " min", { updateSettings(currentSettings!!.copy(sessionMergeMinutes = it)) }, { customDialogSetting = "merge" })
                     HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to copy your usage history before Android deletes it. There is no Off: Android deletes old records, the archive keeps them.", listOf("12h" to 12, "6h" to 6, "2h" to 2, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))

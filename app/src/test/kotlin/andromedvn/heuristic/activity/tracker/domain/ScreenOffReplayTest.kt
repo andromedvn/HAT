@@ -18,7 +18,7 @@ import org.junit.Test
  * The split is deterministic, not heuristic:
  *
  *  - resume while the screen is PROVABLY dark  -> Screen-Off Activity
- *  - resume while the screen is on but locked   -> ghost candidate (ambiguous)
+ *  - resume while the screen is on but locked   -> no claim (ambiguous)
  *  - anything else                             -> usage
  *
  * No minute may land in two buckets. Every fixture below is drawn from the
@@ -45,7 +45,6 @@ class ScreenOffReplayTest {
         )
         val usage = replayUsageIntervals(events, 0L, 3_600_000L * 12)
         val screenOffSpans = replayScreenOffIntervals(events, 0L, 3_600_000L * 12)
-        val ghosts = replayGhostIntervals(events, 0L, 3_600_000L * 12)
 
         assertTrue("no usage is counted for the dark hours", usage.isEmpty())
         assertEquals(
@@ -53,7 +52,6 @@ class ScreenOffReplayTest {
             mapOf("com.zhiliaoapp.musically" to listOf(7_200_000L to 25_200_000L)),
             screenOffSpans
         )
-        assertTrue("and no ghost claim either", ghosts.isEmpty())
     }
 
     @Test
@@ -132,20 +130,16 @@ class ScreenOffReplayTest {
     }
 
     @Test
-    fun `a screen-on locked resume is still a ghost not screen-off activity`() {
-        // The ambiguous case stays with the ghosts: lock screen shown, screen
-        // still lit, an app resumes behind it. Not provably dark.
+    fun `a screen-on locked resume is not screen-off activity`() {
+        // The ambiguous case claims nothing: lock screen shown, screen
+        // still lit, an app resumes behind it. Not provably dark, so the
+        // screen-off walk must not take it.
         val events = listOf(
             lock(0L),
             resume(1_000L, "com.a"),
             screenOff(5_000L)
         )
         assertTrue("no screen-off claim", replayScreenOffIntervals(events, 0L, 10_000L).isEmpty())
-        assertEquals(
-            "the ghost keeps its case",
-            listOf(GhostSpan("com.a", 1_000L, 5_000L)),
-            replayGhostIntervals(events, 0L, 10_000L)
-        )
     }
 
     @Test
@@ -193,7 +187,6 @@ class ScreenOffReplayTest {
         )
         val usage = replayUsageIntervals(events, 0L, 60_000L)
         val spans = replayScreenOffIntervals(events, 0L, 60_000L)
-        val ghosts = replayGhostIntervals(events, 0L, 60_000L)
 
         // com.a: [1k, 10k] usage, then dark until the pocket check; it was
         // never PAUSED, so it also accrues the one-second dark stretch before
@@ -201,8 +194,8 @@ class ScreenOffReplayTest {
         // screen-off activity through every dark stretch it survives.
         assertEquals(listOf(1_000L to 10_000L), usage["com.a"])
         assertEquals(listOf(11_000L to 20_000L, 30_000L to 31_000L), spans["com.a"])
-        // com.b: the locked pocket-check stretch is a ghost, [21k, 30k]
-        assertEquals(listOf(GhostSpan("com.b", 21_000L, 30_000L)), ghosts)
+        // com.b: the locked pocket-check stretch claims nothing (never proven
+        // dark while it ran).
         // com.c: dark until 40k, converted to usage at the 41k unlock
         assertEquals(listOf(31_000L to 40_000L), spans["com.c"])
         assertEquals(listOf(41_000L to 60_000L), usage["com.c"])

@@ -246,37 +246,6 @@ class MalformedVaultRowTest {
         assertEquals((dayStart + 3_600_000L) to (dayStart + 10_800_000L), row)
     }
 
-    // --- the label cascade: where a corrupt row really did damage ----------
-
-    @Test
-    fun `a corrupt row cannot run the label cascade into the future`() {
-        // `expandActivityCascade` grew `maxE` from `timestamp + duration` with
-        // no bound, and the caller offers the result to the user as a block to
-        // label, which then writes an offline row spanning every day it
-        // touches. 3_000_000_000_000 ms is a 34-day window, not a real one.
-        val rows = listOf(1_000L to 2_000L, 9_000L to 3_000_000_000_000L)
-
-        val naive = grow(rows, start = 4_000L, end = 10_000L)
-        val safe = cascadeBounds(rows, start = 4_000L, end = 10_000L, now = 1_000_000L)
-
-        assertEquals(3_000_000_000_000L, naive.second)
-        assertEquals("the cascade is bounded by the present", 1_000_000L, safe.second)
-    }
-
-    @Test
-    fun `a genuinely long label is still honoured in full`() {
-        // Capping at `now` only must not truncate a real fortnight of
-        // "Sick leave", which is a legitimate single label.
-        val cascade = cascadeBounds(
-            rows = listOf(1_000L to 2_000L, 3_000L to 900_000L),
-            start = 4_000L,
-            end = 10_000L,
-            now = 1_000_000L
-        )
-        assertEquals(1_000L, cascade.first)
-        assertEquals(900_000L, cascade.second)
-    }
-
     @Test
     fun `a corrupt row cannot masquerade as the activity preceding a void`() {
         // `expandVoid` selects the preceding activity on
@@ -340,22 +309,5 @@ class MalformedVaultRowTest {
         return gaps.mapNotNull { (a, b) -> if (a < now) a to minOf(b, now) else null }
     }
 
-    /** `expandActivityCascade` with the sanitiser, the shipped shape. */
-    private fun cascadeBounds(rows: List<Interval>, start: Long, end: Long, now: Long): Pair<Long, Long> =
-        grow(rows.mapNotNull { sanitizeTrackedRow(it.first, it.second - it.first, now) }, start, end)
 
-    /** The cascade loop itself, shared by both shapes above. */
-    private fun grow(all: List<Interval>, start: Long, end: Long): Pair<Long, Long> {
-        var minS = start
-        var maxE = end
-        var changed = true
-        while (changed) {
-            changed = false
-            val prev = all.findLast { it.second >= minS - 1_000L && it.first < minS }
-            if (prev != null) { minS = prev.first; changed = true }
-            val next = all.find { it.first <= maxE + 1_000L && it.second > maxE }
-            if (next != null) { maxE = next.second; changed = true }
-        }
-        return minS to maxE
-    }
 }

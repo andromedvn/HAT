@@ -1,5 +1,6 @@
 package andromedvn.heuristic.activity.tracker.data
 
+import andromedvn.heuristic.activity.tracker.domain.REPLAY_PRE_BUFFER_MILLIS
 import android.content.Context
 import android.util.LruCache
 import andromedvn.heuristic.activity.tracker.domain.ArchiveCursor
@@ -83,14 +84,9 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
             val minSystemData = getOldestSystemData()
             val startOfMinSystemData = Calendar.getInstance().apply { timeInMillis = minSystemData; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
             val lastArchived = storage.getLatestArchivedDayMillis()
-            // The cursor (2026-10-28): the last local midnight ATTEMPTED, empty
-            // days included. The old walk restarted from the watermark
-            // (MAX(start_millis)), and because an empty day inserts no rows,
-            // five or more consecutive empty days re-queried the same days
-            // forever - everything after the hole stayed unarchived until
-            // Android's retention window deleted it. The cursor advances on
-            // empty days too, so the walk can never wedge. Installs predating
-            // the field (cursor 0) fall back to the watermark-based start.
+            // The cursor is the last local midnight ATTEMPTED (empty days
+            // included; see ArchiveCursor for why). Installs predating the
+            // field (cursor 0) fall back to the watermark-based start.
             val savedCursor = storage.settings.first().archiveCursorMillis
             val cursorStart = if (savedCursor > 0) savedCursor
                 else (lastArchived?.let { nextLocalMidnight(it) } ?: startOfMinSystemData)
@@ -138,24 +134,21 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
         } finally { isArchiverRunning.set(false) }
     }
 
+    /** The device's dark windows: the gap walk names them as neighbors. */
+    suspend fun getDeviceScreenOffIntervals(start: Long, end: Long): List<Pair<Long, Long>> =
+        engine.getDeviceScreenOffIntervals(start, end)
+
     /**
      * The package's process category. SYSTEM_UI covers the Android SystemUi
      * and input-method packages; LAUNCHER anything answering CATEGORY_HOME;
      * SELF this app; everything else STANDARD.
      */
-    /** The device's dark windows (r12q): the gap walk names them as neighbors. */
-    suspend fun getDeviceScreenOffIntervals(start: Long, end: Long): List<Pair<Long, Long>> =
-        engine.getDeviceScreenOffIntervals(start, end)
-
     fun getAppCategory(pkg: String): ProcessCategory {
         categoryCache.get(pkg)?.let { return it }
         val category = computeCategory(pkg)
         categoryCache.put(pkg, category)
         return category
     }
-
-    fun isSystemApp(pkg: String): Boolean =
-        getAppCategory(pkg) == ProcessCategory.SYSTEM_UI || getAppCategory(pkg) == ProcessCategory.LAUNCHER
 
     private fun computeCategory(pkg: String): ProcessCategory {
         if (pkg == context.packageName) return ProcessCategory.SELF
@@ -247,9 +240,6 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     suspend fun getFilteredIntervals(start: Long, end: Long, hiddenPkgs: Set<String>): Map<String, List<Pair<Long, Long>>> = getAllIntervalsCached(start, end).filterKeys { it !in hiddenPkgs }
     fun getRawOfflineActivitiesBetween(start: Long, end: Long) = storage.getOfflineActivitiesBetween(start, end)
     fun getRawOfflineActivitiesByTitleBetween(title: String, start: Long, end: Long) = storage.getOfflineActivitiesByTitleBetween(title, start, end)
-    fun getAcknowledgedGhostsBetween(start: Long, end: Long) = storage.getAcknowledgedGhostsBetween(start, end)
-    
-    suspend fun clearAllData() { storage.clearAllData() }
     
     /**
      * Rolling Vault (r12p): the scheduled backup. Same checkpoint-then-export
@@ -348,10 +338,10 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     suspend fun exportRawEventStream(outputStream: OutputStream, days: Int = 3) = withContext(Dispatchers.IO) {
         val end = System.currentTimeMillis()
         val start = end - days * 86_400_000L
-        // The replays query with a 24h buffer before the window; the export
-        // uses the same buffer so head-of-window events match what a day
-        // view would see.
-        val events = engine.collectRawEventsForExport(start - 86_400_000L, end)
+        // The replays query with the pre-buffer (REPLAY_PRE_BUFFER_MILLIS);
+        // the export uses the same buffer so head-of-window events match what
+        // a day view would see.
+        val events = engine.collectRawEventsForExport(start - REPLAY_PRE_BUFFER_MILLIS, end)
         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.getDefault())
         val writer = outputStream.bufferedWriter()
         writer.write("# HAT raw event stream, ${sdf.format(java.util.Date(start))} to ${sdf.format(java.util.Date(end))}")
@@ -387,7 +377,6 @@ class ActivityRepository(private val context: Context, val storage: OfflineStora
     suspend fun hideApp(packageName: String) { storage.saveHiddenPackages(storage.getHiddenPackagesFlow().first() + packageName) }
     suspend fun unhideApp(packageName: String) { storage.saveHiddenPackages(storage.getHiddenPackagesFlow().first() - packageName) }
     suspend fun getHiddenAppList(): List<AppUsageItem> = withContext(Dispatchers.IO) { storage.getHiddenPackagesFlow().first().map { pkg -> AppUsageItem(pkg, getAppName(pkg), 0L, 0L) }.sortedBy { it.title } }
-    suspend fun restoreAcknowledgedGhost(packageName: String, startMillis: Long, endMillis: Long) = withContext(Dispatchers.IO) { storage.removeAcknowledgedGhost(packageName, startMillis, endMillis); forceInvalidateCache() }
 
     suspend fun getSmartSuggestions(targetHour: Int): List<String> = withContext(Dispatchers.IO) { 
         val thirtyDaysAgo = System.currentTimeMillis() - (30L * 86400000L)

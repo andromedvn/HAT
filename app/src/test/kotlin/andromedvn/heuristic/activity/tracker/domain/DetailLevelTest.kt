@@ -72,8 +72,10 @@ class DetailLevelTest {
     }
 
     @Test
-    fun `session merge is always one minute, never configurable`() {
-        assertEquals(1, DetailLevel.SESSION_MERGE_MINS)
+    fun `session merge presets carry the chosen tolerance`() {
+        assertEquals(listOf("1 min" to 1, "2 min" to 2, "5 min" to 5), DetailLevel.SESSION_MERGE_PRESETS)
+        // The default UserSettings (no stored key) still reads 1 minute.
+        assertEquals(1, DetailLevel.sessionMergeMins(UserSettings()))
     }
 
     @Test

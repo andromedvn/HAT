@@ -1,5 +1,6 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
+import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,9 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -138,7 +139,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                         item {
                             DiagnosticToggleItem(
                                 title = "Bypass History Limit", 
-                                subtitle = "Allows navigation past device memory limits. Missing history will render as blank gaps.", 
+                                subtitle = "Allows navigation past Android's history limit. Missing history will render as blank gaps.", 
                                 checked = currentSettings!!.bypassHistoryLimit
                             ) { state -> 
                                 scope.launch { repository.storage.saveSettings(currentSettings!!.copy(bypassHistoryLimit = state)) }
@@ -162,7 +163,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                     }
                     item {
                         DiagnosticSettingsItem("Export Total Unbounded Matrix", "Exports every app interval the system still holds, for all apps, as JSON.") {
-                            val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
+                            val date = TimeUtils.stamp()
                             diagMatrixLauncher.launch("HAT_Calculated_Matrix_$date.json")
                         }
                     }
@@ -174,13 +175,13 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                     }
                     item {
                         DiagnosticSettingsItem("Export Diagnostic Events", "Export non-fatal logic errors (Vault merges, read/write anomalies).") {
-                            val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
+                            val date = TimeUtils.stamp()
                             diagEventLauncher.launch("HAT_Diagnostics_$date.txt")
                         }
                     }
                     item {
                         DiagnosticSettingsItem("Export Crash Logs", "Export stack traces and breadcrumbs of fatal runtime crashes.") {
-                            val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
+                            val date = TimeUtils.stamp()
                             crashLogLauncher.launch("HAT_Crash_Logs_$date.txt")
                         }
                     }

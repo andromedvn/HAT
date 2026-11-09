@@ -95,10 +95,10 @@ approves.
 
 | Question | Answer |
 |---|---|
-| What settings exist? | Gap Minimum lives in `DetailLevel.kt` via `UserSettings.detailLevel` / `customDetailMinutes`; Idle Minimum (idle, lock-screen, screen-off cards) lives in `UserSettings.idleMinimumMinutes`; both visible on the Settings screen. Nothing else is a setting, and Background History Sync has no Off. |
+| What settings exist? | Gap Minimum lives in `DetailLevel.kt` via `UserSettings.detailLevel` / `customDetailMinutes`, visible on the Settings screen. Nothing else is a setting, and Background History Sync has no Off. Idle detection was removed entirely (r9) - no idle dial exists. |
 | Database schema | `HatDatabaseHelper.kt`. The version constant and the migration comments are the record. |
 | What shipped in each version | `CHANGELOG.md`, nothing else. Not the README, not commit messages. |
-| How the engine classifies time | `UsageEventReplay.kt`: usage, screen-off spans, lock-screen spans, unattended spans. The four-way split is the contract, and no minute may be claimed by two projections. |
+| How the engine classifies time | `UsageEventReplay.kt`: usage and screen-off spans; lock-screen events act as session terminators, not a span category. No minute may be claimed by two projections. |
 | Known bugs and pending work | The maintainer's board, outside the repo. Read it before starting work if you are the maintainer's own session. |
 | How to verify a release | The verify section of `README.md`, including the signing fingerprint. |
 

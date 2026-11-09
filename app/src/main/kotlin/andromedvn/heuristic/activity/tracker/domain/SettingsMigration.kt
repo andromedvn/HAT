@@ -18,8 +18,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * every upgrading user to 5 minutes was the one real regression the branch
  * audit found. This migration carries the stored GAP threshold across, because
  * gaps are the category the value always governed most visibly. The old idle
- * trigger is deliberately NOT carried: idle spans now answer to the new
- * Idle Minimum dial, which starts at 15 minutes for everyone.
+ * trigger is deliberately NOT carried: idle detection was removed entirely
+ * (r9), so no dial governs it anymore.
  *
  * Migration 2, retiring sync Off (2026-10-23, the owner's call). "Off" is
  * gone from the Background History Sync dial: the archive worker is the only
@@ -34,7 +34,9 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 object SettingsMigration {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    // encodeDefaults is REQUIRED (same lesson as OfflineStorage): without it a
+    // settings round-trip drops fields at their defaults and the next read invents them.
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     fun migrate(raw: String): UserSettings? = try {
         val obj = json.parseToJsonElement(raw).jsonObject

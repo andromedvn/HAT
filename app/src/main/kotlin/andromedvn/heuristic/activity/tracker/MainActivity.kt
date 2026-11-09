@@ -78,9 +78,6 @@ class MainActivity : ComponentActivity() {
         // only and destroyed genuinely distinct labels. The user's decision (2026-10-01)
         // is that duplicates are SHOWN inside Total Offline Time and the user chooses.
         //
-        // Detection now lives in OfflineStorage.findDuplicateOfflineLabels(), which
-        // deletes nothing. Removal is deleteOfflineActivityById(id), called only from an
-        // explicit tap on a visible row.
         HatLogger.log("MainActivity: duplicate labels are reported, never auto-deleted")
 
         setContent {

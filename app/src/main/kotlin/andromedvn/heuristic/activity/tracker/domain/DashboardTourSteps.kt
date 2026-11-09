@@ -32,6 +32,8 @@ object DashboardTourSteps {
      * The label-dialog step never renders in the main-window overlay: the
      * dialog is its own window, so it hosts its own tour banner (r12).
      */
+    /** The label-dialog step id. Eight sites across three files match on it; use this. */
+    const val ID_LABEL_DIALOG = "labelDialog"
     const val SCREEN_LABEL_DIALOG = "label_dialog"
 
     // The owner-ratified curriculum (2026-11-04): ten steps, ending on the
@@ -50,7 +52,7 @@ object DashboardTourSteps {
         // Transition: the first gap card pulses; tapping it opens the label dialog.
         TourStep("gapCardPulse", SCREEN_GAPS, SCREEN_GAPS, "Tap this unlabeled gap card.", "firstGapCard", transitionKey = "firstGapCard"),
         // Inside the label dialog: the dialog hosts its own tour banner.
-        TourStep("labelDialog", SCREEN_LABEL_DIALOG, SCREEN_GAPS, "This is the label dialog. Name and customize the gap you tapped, then save. It will show up in the dashboard's session list.", "labelDialog"),
+        TourStep(ID_LABEL_DIALOG, SCREEN_LABEL_DIALOG, SCREEN_GAPS, "This is the label dialog. DURATION, START and END say when the gap was. BEFORE is the last app the log caught before it went quiet. AFTER is the first app after it came back. Name the gap, then save.", ID_LABEL_DIALOG),
         // Transition back through the hub: the gear pulses; tapping it opens
         // Settings, and the tour ends there.
         TourStep("settingsGear", SCREEN_DASHBOARD, SCREEN_DASHBOARD, "Tap this icon to open the settings, where you can customize how the app functions.", "settingsGear", transitionKey = "settingsGear"),

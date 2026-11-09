@@ -73,3 +73,27 @@ fun nextLocalMidnight(millis: Long): Long =
         set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         add(Calendar.DAY_OF_YEAR, 1)
     }.timeInMillis
+
+/** The local midnight containing [millis]. ONE home: CommonComponents, the
+ *  dashboard VM and the settings export used to re-inline this block. */
+fun startOfLocalDay(millis: Long): Long =
+    Calendar.getInstance().apply {
+        timeInMillis = millis
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+/** The last millisecond of the local day containing [millis]. */
+fun endOfLocalDay(millis: Long): Long =
+    Calendar.getInstance().apply {
+        timeInMillis = millis
+        set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59)
+        set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
+    }.timeInMillis
+
+/** The chart's 12-hour axis label ("12 AM", "1 AM", ..., "11 PM"). Was duplicated
+ *  verbatim in HeuristicEngine and DashboardViewModel. */
+fun hourLabel(hour: Int): String = when (hour) {
+    0 -> "12 AM"; 12 -> "12 PM"
+    else -> if (hour < 12) "$hour AM" else "${hour - 12} PM"
+}

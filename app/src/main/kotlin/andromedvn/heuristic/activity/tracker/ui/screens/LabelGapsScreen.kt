@@ -1,16 +1,11 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
+import andromedvn.heuristic.activity.tracker.domain.chartSyncKey
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,8 +19,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -52,7 +45,7 @@ import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.UsageGap
 import andromedvn.heuristic.activity.tracker.data.ScreenOffItem
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
-import andromedvn.heuristic.activity.tracker.ui.components.ChartMode
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
 import androidx.compose.ui.platform.LocalContext
@@ -61,8 +54,6 @@ import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Date
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -116,7 +107,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     
     val listState = rememberLazyListState()
     val chartScrollState = rememberLazyListState()
-    var chartHighlight by remember { mutableStateOf<HighlightEvent?>(null) }
+    val chartHighlight = dashboardViewModel.uiState.collectAsState().value.chartHighlight
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
@@ -124,22 +115,10 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     var returnScrollOffset by rememberSaveable { mutableIntStateOf(0) }
 
     val todayStartMillis = getStartOfDay(Calendar.getInstance().apply { timeInMillis = uiState.startTime })
-    var dialogPresenceRows by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
 
-    // Presence evidence lines per gap card (2026-11-02): factual, sourced
-    // from the persisted raw event stream. Gaps older than the field, or
-    // with undecided evidence, show nothing.
-    var presenceLines by remember { mutableStateOf<Map<Long, andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel.PresenceCopy>>(emptyMap()) }
-    androidx.compose.runtime.LaunchedEffect(uiState.majorGaps, uiState.screenOffItems) {
-        val ranges = buildList {
-            uiState.majorGaps.forEach { add(it.startMillis to it.endMillis) }
-        }
-        if (ranges.isNotEmpty()) presenceLines = dashboardViewModel.presenceVerdicts(ranges)
-
-    }
-
+    // 
     LaunchedEffect(uiState.timeRange, uiState.dateLabelRelative) {
-        chartHighlight = null
+        dashboardViewModel.setChartHighlight(null)
         returnScrollIndex = -1
         returnScrollOffset = 0
         chartScrollState.scrollToItem(0)
@@ -151,13 +130,40 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         else if (showScreenOffDialog) { showScreenOffDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L }
         else if (showCascadeDialog) { showCascadeDialog = false; cascadeStart = -1L; cascadeEnd = -1L; cascadeTrueStart = -1L; cascadeTrueEnd = -1L; cascadeTitle = ""; cascadeIcon = "" }
         else if (showDialog) { showDialog = false; singleGapStart = -1L; singleGapEnd = -1L }
-        else if (returnScrollIndex != -1) { scope.launch { listState.scrollToItem(returnScrollIndex, returnScrollOffset); returnScrollIndex = -1; chartHighlight = null } } 
+        else if (returnScrollIndex != -1) { scope.launch { listState.scrollToItem(returnScrollIndex, returnScrollOffset); returnScrollIndex = -1; dashboardViewModel.setChartHighlight(null) } }
+        else if (chartHighlight != null) { dashboardViewModel.setChartHighlight(null) } 
         else if (selectedGaps.isNotEmpty()) { selectedGaps.clear() } 
         else { navController.popBackStack() }
     }
 
     val isResumed = lifecycleState == Lifecycle.State.RESUMED
-    BackHandler(enabled = isResumed && (returnScrollIndex != -1 || selectedGaps.isNotEmpty() || showDialog || showCascadeDialog || showRestorationDialog || showScreenOffDialog || showDatePicker)) { handleBack() }
+    BackHandler(enabled = isResumed && (returnScrollIndex != -1 || chartHighlight != null || selectedGaps.isNotEmpty() || showDialog || showCascadeDialog || showRestorationDialog || showScreenOffDialog || showDatePicker)) { handleBack() }
+    // Bar -> card auto-scroll (sibling parity): a long-pressed Gap History bar
+    // scrolls the list to the first gap card it lights.
+    LaunchedEffect(chartHighlight, uiState.majorGaps, uiState.screenOffItems) {
+        val hl = chartHighlight ?: return@LaunchedEffect
+        val tag = hl.point?.syncTag ?: return@LaunchedEffect
+        // Same ordering as the composed card list, so the index matches. Only
+        // gaps can match: the Gap History chart plots majorGaps alone. The
+        // LazyColumn carries one header item before the cards.
+        val ordered = (uiState.majorGaps.map { UnaccountedCard.Gap(it) } +
+            uiState.screenOffItems.flatMap { item -> item.spans.map { UnaccountedCard.ScreenOff(item, it) } }
+        ).sortedBy { it.startTime }
+        val idx = ordered.indexOfFirst { card ->
+            val g = (card as? UnaccountedCard.Gap)?.gap ?: return@indexOfFirst false
+            var t = g.startMillis
+            var hit = false
+            while (t < g.endMillis && !hit) {
+                if (chartSyncKey(t, TimeRangeLabel.DAY) == tag) hit = true
+                val c = java.util.Calendar.getInstance().apply { timeInMillis = t }
+                c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0)
+                c.add(java.util.Calendar.HOUR_OF_DAY, 1)
+                t = c.timeInMillis
+            }
+            hit
+        }
+        if (idx != -1) listState.animateScrollToItem(idx + 1)
+    }
 
     if (showDatePicker) {
         HatDatePickerModal(
@@ -170,7 +176,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     }
     
     if (showRestorationDialog) {
-        HatOutlinedDialog(onDismissRequest = { showRestorationDialog = false }, title = "Dismissed Sessions") {
+        HatOutlinedDialog(onDismissRequest = { showRestorationDialog = false }, title = "Screen-Off Activity") {
             if (uiState.dismissedScreenOffSpans.isEmpty()) {
                 EmptyStateCard(icon = Icons.Default.History, title = "No Dismissed Sessions", subtitle = "No dismissed sessions for this period.")
                 Spacer(modifier = Modifier.height(24.dp))
@@ -194,8 +200,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(span.appName, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
-                                Text("${sdf.format(span.startMillis)} - ${sdf.format(span.endMillis)} (${TimeUtils.formatDuration(span.endMillis - span.startMillis)})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${TimeUtils.formatTime(span.startMillis)} - ${TimeUtils.formatTime(span.endMillis)} (${TimeUtils.formatDuration(span.endMillis - span.startMillis)})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             TextButton(onClick = {
                                 dashboardViewModel.restoreDismissedScreenOffSpan(span.packageName, span.startMillis, span.endMillis)
@@ -214,8 +219,8 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
 
     if (showCascadeDialog) {
         HatOutlinedDialog(onDismissRequest = { showCascadeDialog = false }, title = "Continuous Gap") {
-            val sStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(cascadeTrueStart)}${getDayOffsetString(cascadeTrueStart, todayStartMillis)}"
-            val eStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(cascadeTrueEnd)}${getDayOffsetString(cascadeTrueEnd, todayStartMillis)}"
+            val sStr = "${TimeUtils.formatTime(cascadeTrueStart)} ${TimeUtils.relativeDayLabel(cascadeTrueStart)}"
+            val eStr = "${TimeUtils.formatTime(cascadeTrueEnd)} ${TimeUtils.relativeDayLabel(cascadeTrueEnd)}"
             Text("Runs $sStr to $eStr, about ${TimeUtils.formatDuration(cascadeTrueEnd - cascadeTrueStart)}. It crosses midnight, so HAT already split it.\n\nApply '$cascadeTitle' to the whole thing?", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -235,8 +240,8 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
 
     if (showScreenOffDialog) {
         HatOutlinedDialog(onDismissRequest = { showScreenOffDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L }, title = "Screen-Off Activity") {
-            val sStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(screenOffStart)
-            val eStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(screenOffEnd)
+            val sStr = TimeUtils.formatTime(screenOffStart)
+            val eStr = TimeUtils.formatTime(screenOffEnd)
             val durationStr = TimeUtils.formatDuration(screenOffEnd - screenOffStart)
             Text("$screenOffAppName ran from $sStr to $eStr ($durationStr) with the screen off. Name what it actually was, or count the time as usage instead.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(24.dp))
@@ -248,9 +253,19 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
         }
     }
 
+    // Bare Ledger (owner pick, 2026-11-08): BETWEEN counts the recorded-time
+    // blocks the merge leaves untouched, computed once per dialog open.
+    var betweenCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(showDialog, selectedGaps.size, selectedGaps.minOfOrNull { it.startMillis }, selectedGaps.maxOfOrNull { it.endMillis }) {
+        betweenCount = if (showDialog && selectedGaps.size > 1) {
+            val first = selectedGaps.minOf { it.startMillis }
+            val last = selectedGaps.maxOf { it.endMillis }
+            dashboardViewModel.countUsageBlocksBetween(first, last)
+        } else 0
+    }
     if (showDialog) {
         val ledgerContext = when {
-            selectedGaps.isNotEmpty() -> LedgerContext.BatchMerge(selectedGaps.size, selectedGaps.sumOf { it.durationInMillis })
+            selectedGaps.isNotEmpty() -> LedgerContext.BatchMerge(selectedGaps.size, selectedGaps.sumOf { it.durationInMillis }, betweenCount)
             else -> LedgerContext.StandardGap(singleGapStart, singleGapEnd, lastGapContext?.precededBy, lastGapContext?.followedBy)
         }
 
@@ -260,7 +275,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             // of a hardcoded shift. Falls back to 150dp until the card has
             // measured (one frame).
             bottomGap = run {
-                val isTourStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog"
+                val isTourStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == DashboardTourSteps.ID_LABEL_DIALOG
                 if (!isTourStep) 0.dp
                 else {
                     val density = LocalDensity.current
@@ -272,20 +287,19 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             },
             initialTitle = "", initialIconName = "Walk", suggestions = uiState.recentSuggestions,
             ledgerContext = ledgerContext,
-            presenceRows = dialogPresenceRows,
             onDismiss = {
                 // Tour fallback (r12e): the label dialog dismissed while the
                 // tour sits on its step returns to the pulse instead of
                 // leaving the tour invisible.
-                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
+                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == DashboardTourSteps.ID_LABEL_DIALOG) {
                     andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == "gapCardPulse" }
                 }
-                showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceRows = emptyList()
+                showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L
             },
             onSave = { outTitle, outIcon, outStart ->
                 if (screenOffPkg.isNotEmpty()) {
                     dashboardViewModel.labelScreenOffSpan(screenOffPkg, outStart, screenOffEnd, outTitle, outIcon)
-                    showDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceRows = emptyList(); navController.popBackStack()
+                    showDialog = false; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; navController.popBackStack()
                 } else if (singleGapStart != -1L) {
                     scope.launch {
                         dashboardViewModel.resolveContiguousGap(outStart, singleGapEnd) { tS, tE ->
@@ -313,9 +327,9 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     // window, stacked on top of the label dialog. Scrim + cutout + card, the
     // same anatomy as every other step; the label dialog sits in the
     // background, dimmed.
-    if (showDialog && andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog") {
+    if (showDialog && andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == DashboardTourSteps.ID_LABEL_DIALOG) {
         val tourDismiss = {
-            showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L; dialogPresenceRows = emptyList()
+            showDialog = false; singleGapStart = -1L; singleGapEnd = -1L; screenOffPkg = ""; screenOffAppName = ""; screenOffStart = -1L; screenOffEnd = -1L
         }
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { },
@@ -363,7 +377,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets(0,0,0,0)) { innerPadding ->
-            Column(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()).fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).pointerInput(Unit) { detectTapGestures(onTap = { chartHighlight = null; returnScrollIndex = -1; returnScrollOffset = 0 }) }.verticalFadingEdges(listState.canScrollBackward, listState.canScrollForward)) {
+            Column(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()).fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).pointerInput(Unit) { detectTapGestures(onTap = { dashboardViewModel.setChartHighlight(null); returnScrollIndex = -1; returnScrollOffset = 0 }) }.verticalFadingEdges(listState.canScrollBackward, listState.canScrollForward)) {
 
     // One unaccounted timeline: gaps and screen-off spans in one
     // chronological list (2026-10-22, the owner's call). Hoisted out of the
@@ -382,13 +396,12 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
     // the label dialog never opens on that path. When the tour lands on the
     // dialog step with no dialog open, open it for the pulsed card here.
     LaunchedEffect(tourStepId) {
-        if (tourStepId != "labelDialog" || showDialog || singleGapStart != -1L || selectedGaps.isNotEmpty()) return@LaunchedEffect
+        if (tourStepId != DashboardTourSteps.ID_LABEL_DIALOG || showDialog || singleGapStart != -1L || selectedGaps.isNotEmpty()) return@LaunchedEffect
         val firstGap = unaccountedCards.firstOrNull { it is UnaccountedCard.Gap } as? UnaccountedCard.Gap ?: return@LaunchedEffect
         dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = firstGap.gap.startMillis }.get(Calendar.HOUR_OF_DAY))
         singleGapStart = firstGap.gap.startMillis
         singleGapEnd = firstGap.gap.endMillis
         lastGapContext = firstGap.gap
-        dialogPresenceRows = presenceLines[firstGap.gap.startMillis]?.rows ?: emptyList()
         showDialog = true
     }
     LaunchedEffect(tourStepId, unaccountedCards.size) {
@@ -426,45 +439,31 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                             val displayTotal = if (uiState.timeRange == TimeRangeLabel.DAY) TimeUtils.formatDuration(totalGapMillis) else "---"
                             HatChart(
                                 chartScrollState = chartScrollState, animationSalt = uiState.animationSalt,
-                                title = "Gap History", totalTime = displayTotal, dataPoints = uiState.gapChartData, dateLabelRelative = uiState.dateLabelRelative, dateLabelExact = uiState.dateLabelExact, hasNext = uiState.hasNextPeriod, hasPrev = uiState.hasPreviousPeriod, highlightedPoint = chartHighlight, onPrevious = { dashboardViewModel.previousDay() }, onNext = { dashboardViewModel.nextDay() }, onDateClick = { showDatePicker = true }, onPointSelected = { chartHighlight = it }
+                                title = "Gap History", totalTime = displayTotal, dataPoints = uiState.gapChartData, dateLabelRelative = uiState.dateLabelRelative, dateLabelExact = uiState.dateLabelExact, hasNext = uiState.hasNextPeriod, hasPrev = uiState.hasPreviousPeriod, highlightedPoint = chartHighlight, onPrevious = { dashboardViewModel.previousDay() }, onNext = { dashboardViewModel.nextDay() }, onDateClick = { showDatePicker = true }, onPointSelected = { event ->
+                        if (event == null) { dashboardViewModel.setChartHighlight(null); returnScrollIndex = -1 }
+                        else {
+                            if (returnScrollIndex == -1) { returnScrollIndex = listState.firstVisibleItemIndex; returnScrollOffset = listState.firstVisibleItemScrollOffset }
+                            dashboardViewModel.setChartHighlight(event)
+                        }
+                    }
                             )
                             
                             val currentHighlight = chartHighlight
                             val showHint = currentHighlight != null && currentHighlight.point?.values?.all { it <= 0f } == true
-                            AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
-                                Column(modifier = Modifier.padding(top = 16.dp)) {
-                                    val isFuture = currentHighlight?.point?.isFuture == true
-                                    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-                                    val isBatteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
-                                    val quote = remember(currentHighlight) {
-                                        HeuristicQuotes.getQuote(
-                                            point = currentHighlight?.point,
-                                            totalScreenTimeMillis = uiState.totalScreenTimeMillis,
-                                            isDayView = uiState.timeRange == TimeRangeLabel.DAY,
-                                            isDataReliable = uiState.isDataReliable,
-                                            hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
-                                            osRetentionDays = uiState.osRetentionDays,
-                                            chartMode = ChartMode.GAPS,
-                                            isBatteryExempt = isBatteryExempt)
-                                    }
-                                    LaunchedEffect(currentHighlight) {
-                                        if (!uiState.isDataReliable && !isFuture && !uiState.hasSeenHistoryLimitWarning) {
-                                            dashboardViewModel.markHistoryLimitWarningSeen()
-                                        }
-                                    }
-                                    HeuristicTipCard(quote = quote)
-                                }
-                            }
+                            EmptyBucketHintCard(
+                                showHint = showHint,
+                                highlight = currentHighlight,
+                                chartMode = ChartMode.GAPS,
+                                totalScreenTimeMillis = uiState.totalScreenTimeMillis,
+                                isDayView = uiState.timeRange == TimeRangeLabel.DAY,
+                                isDataReliable = uiState.isDataReliable,
+                                hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
+                                osRetentionDays = uiState.osRetentionDays,
+                                onMarkHistoryLimitWarningSeen = { dashboardViewModel.markHistoryLimitWarningSeen() })
                             Spacer(modifier = Modifier.height(24.dp))
                         }
                     }
                     
-                    // One unaccounted timeline (2026-10-22): the three
-                    // evidence sections below used to render separately;
-                    // they are deleted. Gaps, possible idle sessions,
-                    // lock-screen spans, and screen-off spans all merge
-                    // into the single chronological list further down.
-
                     // One unaccounted timeline (2026-10-22, the owner's call):
                     // a gap, a possible idle session, a lock-screen span, and
                     // a screen-off span are all the same thing, time the day
@@ -517,8 +516,25 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                     is UnaccountedCard.Gap -> {
                                         val gap = card.gap
                                         val isSelected = selectedGaps.contains(gap)
+                                        // Bar -> card highlight (consistent-codebase pass 1,
+                                        // owner pick): a long-pressed Gap History bar lights the
+                                        // gap cards it overlaps. Card long-press stays the merge
+                                        // entry - that is this screen's legitimate difference.
+                                        val highlightTag = chartHighlight?.point?.syncTag
+                                        val isHighlighted = if (highlightTag == null) false else {
+                                            var t = gap.startMillis
+                                            var hit = false
+                                            while (t < gap.endMillis && !hit) {
+                                                if (chartSyncKey(t, TimeRangeLabel.DAY) == highlightTag) hit = true
+                                                val cal = java.util.Calendar.getInstance().apply { timeInMillis = t }
+                                                cal.set(java.util.Calendar.MINUTE, 0); cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+                                                cal.add(java.util.Calendar.HOUR_OF_DAY, 1)
+                                                t = cal.timeInMillis
+                                            }
+                                            hit
+                                        }
                                         Card(
-                                            modifier = Modifier.weight(1f).padding(bottom = 12.dp).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
+                                            modifier = Modifier.weight(1f).padding(bottom = 12.dp).border(if(isSelected || isHighlighted) 2.dp else 1.dp, if(isSelected || isHighlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
                                                     .then(if (index < 4) Modifier.onGloballyPositioned { coords ->
                                                         gapCardRects[index] = coords.boundsInRoot()
                                                         registerGapCardBlock()
@@ -538,9 +554,8 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                                                 // inside the dialog instead of dropping it.
                                                                 val tourNow = andromedvn.heuristic.activity.tracker.domain.AppTourState.current
                                                                 if (andromedvn.heuristic.activity.tracker.domain.AppTourState.active && tourNow?.id == "gapCard") {
-                                                                    andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == "labelDialog" }
+                                                                    andromedvn.heuristic.activity.tracker.domain.AppTourState.stepIndex = andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps.steps.indexOfFirst { it.id == DashboardTourSteps.ID_LABEL_DIALOG }
                                                                 }
-                                                                dialogPresenceRows = presenceLines[gap.startMillis]?.rows ?: emptyList()
                                                                 showDialog = true
                                                             }
                                                         },
@@ -566,7 +581,6 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                         }
                                     }
                                     is UnaccountedCard.ScreenOff -> {
-                                        val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
                                         Card(
                                             modifier = Modifier.weight(1f).padding(bottom = 12.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
                                                 .clickable {
@@ -581,7 +595,7 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
                                         ) {
                                             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                                    Text("${sdf.format(Date(card.span.first))} - ${sdf.format(Date(card.span.second))}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                                                    Text("${TimeUtils.formatTime(card.span.first)} - ${TimeUtils.formatTime(card.span.second)}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                                                 }
                                                 Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha=0.15f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp)) { Text(TimeUtils.formatDuration(card.span.second - card.span.first), style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false) }
                                             }
@@ -595,31 +609,19 @@ fun LabelGapsScreen(navController: NavController, dashboardViewModel: DashboardV
             }
         }
         
-        AnimatedVisibility(visible = selectedGaps.isNotEmpty(), enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400)), exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeOut(tween(400)), modifier = Modifier.align(Alignment.BottomCenter)) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp).windowInsetsPadding(WindowInsets.navigationBars), 
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), 
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), 
-                shape = RoundedCornerShape(24.dp), 
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        BatchSelectionBar(
+                visible = selectedGaps.isNotEmpty(),
+                count = selectedGaps.size,
+                label = "Gaps Selected",
+                totalDurationText = TimeUtils.formatDuration(selectedGaps.sumOf { it.durationInMillis })
             ) {
-                Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(modifier = Modifier.weight(1f, fill=false).padding(end = 16.dp)) { 
-                        Text("${selectedGaps.size} Gaps Selected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(TimeUtils.formatDuration(selectedGaps.sumOf { it.durationInMillis }), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis) 
-                    }
-                    Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                        PromptHighlightButton("Merge & Label") { 
-                            if (selectedGaps.isNotEmpty()) { 
-                                dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = selectedGaps.first().startMillis }.get(Calendar.HOUR_OF_DAY))
-                                showDialog = true 
-                            }
-                        }
+                PromptHighlightButton("Merge & Label") {
+                    if (selectedGaps.isNotEmpty()) {
+                        dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = selectedGaps.first().startMillis }.get(Calendar.HOUR_OF_DAY))
+                        showDialog = true
                     }
                 }
             }
-
-        }
     }
 }
 

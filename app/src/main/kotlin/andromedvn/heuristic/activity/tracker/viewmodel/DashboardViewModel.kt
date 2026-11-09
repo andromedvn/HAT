@@ -7,12 +7,16 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import andromedvn.heuristic.activity.tracker.data.*
 import andromedvn.heuristic.activity.tracker.domain.DetailLevel
+import andromedvn.heuristic.activity.tracker.domain.chartSyncKey
+import andromedvn.heuristic.activity.tracker.domain.endOfLocalDay
+import andromedvn.heuristic.activity.tracker.domain.mergeIntervals
+import andromedvn.heuristic.activity.tracker.domain.hourLabel
+import andromedvn.heuristic.activity.tracker.domain.startOfLocalDay
 import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
 import andromedvn.heuristic.activity.tracker.domain.hourBucketsOfDay
-import andromedvn.heuristic.activity.tracker.ui.components.ChartPoint
+import andromedvn.heuristic.activity.tracker.domain.ChartPoint
 import andromedvn.heuristic.activity.tracker.ui.components.HighlightEvent
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
-import andromedvn.heuristic.activity.tracker.domain.PresenceClassifier
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +44,7 @@ data class DashboardUiState(
     val activityList: List<UnifiedActivity> = emptyList(), val appDetailChartData: List<ChartPoint> = emptyList(), val offlineDetailChartData: List<ChartPoint> = emptyList(), 
     val majorGaps: List<UsageGap> = emptyList(),
     val dismissedScreenOffSpans: List<DismissedSession> = emptyList(), val chartData: List<ChartPoint> = emptyList(), val gapChartData: List<ChartPoint> = emptyList(),
-    val screenOffItems: List<ScreenOffItem> = emptyList(), val totalScreenOffMillis: Long = 0L,
+    val screenOffItems: List<ScreenOffItem> = emptyList(),
     val recentSuggestions: List<String> = emptyList(),
     val chartHighlight: HighlightEvent? = null, val isLoading: Boolean = false, val isStalled: Boolean = false, val isDataReliable: Boolean = true, val osRetentionDays: Int = 7,
     /**
@@ -49,7 +53,7 @@ data class DashboardUiState(
      * fully tracked on the strength of a failed query.
      */
     val loadSucceeded: Boolean = true, 
-    val returnScrollIndex: Int = -1, val returnScrollOffset: Int = -1, val lastUpdatedTimeStr: String = "",
+    val returnScrollOffset: Int = -1, val lastUpdatedTimeStr: String = "",
     val oldestDataTimestamp: Long = 0L, val animationSalt: String = java.util.UUID.randomUUID().toString(),
     val hasSeenHistoryLimitWarning: Boolean = false,
     val bypassHistoryLimit: Boolean = false
@@ -71,7 +75,6 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
     private var lastSystemDay = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
     private var loadJob: Job? = null
     
-    private var isFirstLoadComplete = false
 
     init { 
         HatLogger.log("DashboardViewModel: Initialized FOSS")
@@ -91,62 +94,20 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
     fun triggerBackgroundArchiveSync() = viewModelScope.launch { repository.syncArchive() }
 
     /**
-     * Presence evidence for gap cards (2026-11-02, presence arena composite):
-     * classifies each gap from the persisted raw event stream and returns a
-     * factual card line, or null when the evidence is undecided (which is
-     * the honest answer for every gap older than the raw-event field).
-     * Charter rules: facts only, past tense, no em dashes.
+     * Bare Ledger (owner pick, 2026-11-08): the merge dialog's BETWEEN row.
+     * Counts the recorded-time blocks (app usage + labels) strictly inside
+     * [start, end] that the merge leaves untouched. Zero means the merged
+     * gaps sit back to back.
      */
-    /**
-     * The ledger fact rows for one gap (r12t, owner verdict): label/value
-     * pairs of provable events only. No sentences anywhere - the owner
-     * removed the verdict line and the context; what the log proves becomes
-     * a row, what it cannot prove stays off the ledger.
-     */
-    data class PresenceCopy(val rows: List<Pair<String, String>> = emptyList())
-
-    suspend fun presenceVerdicts(gaps: List<Pair<Long, Long>>): Map<Long, PresenceCopy> = withContext(Dispatchers.IO) {
-        if (gaps.isEmpty()) return@withContext emptyMap()
-        val minStart = gaps.minOf { it.first }
-        val maxEnd = gaps.maxOf { it.second }
-        val timeoutMs = try {
-            android.provider.Settings.System.getInt(
-                context.contentResolver,
-                android.provider.Settings.System.SCREEN_OFF_TIMEOUT
-            ).toLong()
-        } catch (e: Exception) { 60_000L }
-        val events = repository.storage.loadRawEvents(minStart - PresenceClassifier.PRE_WINDOW_MS, maxEnd + PresenceClassifier.POST_LOOKAHEAD_MS)
-        if (events.isEmpty()) return@withContext emptyMap()
-        val fmt = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
-        val out = HashMap<Long, PresenceCopy>(gaps.size)
-        for ((start, end) in gaps) {
-            val verdict = PresenceClassifier.classify(events, start, end, timeoutMs)
-            // Ledger (r12t, owner verdict): the court's fact line becomes
-            // rows. Same provable facts, same precedence (lock > timeout >
-            // media > first use), zero verbs.
-            val rows = mutableListOf<Pair<String, String>>()
-            when (verdict.kind) {
-                PresenceClassifier.Kind.CHOSE_TO_STOP -> verdict.anchorTs?.let {
-                    rows.add("LOCKED" to fmt.format(java.util.Date(it)))
-                }
-                PresenceClassifier.Kind.TIMEOUT -> {
-                    verdict.anchorTs?.let { rows.add("SCREEN OFF" to fmt.format(java.util.Date(it))) }
-                    verdict.resolveTs?.let { rows.add("UNLOCKED" to fmt.format(java.util.Date(it))) }
-                }
-                PresenceClassifier.Kind.MEDIA_CONTINUED -> {
-                    val label = verdict.pkg?.let { repository.getAppName(it) }
-                    verdict.anchorTs?.let { rows.add("SCREEN ON" to fmt.format(java.util.Date(it))) }
-                    if (label != null && label != verdict.pkg) rows.add("ON SCREEN" to label)
-                }
-                PresenceClassifier.Kind.ANCHORED -> verdict.anchorTs?.let {
-                    rows.add("PHONE WOKE" to fmt.format(java.util.Date(it)))
-                }
-                PresenceClassifier.Kind.UNDECIDED -> { }
-            }
-            if (rows.isNotEmpty()) out[start] = PresenceCopy(rows)
-        }
-        out
+    suspend fun countUsageBlocksBetween(start: Long, end: Long): Int = withContext(Dispatchers.IO) {
+        val app = repository.getAllIntervalsCached(start, end).values.flatten()
+        val offline = heuristicEngine.getShardedOfflineIntervals(start, end)
+        val clipped = mergeIntervals(app + offline)
+            .map { (s, e) -> maxOf(s, start) to minOf(e, end) }
+            .filter { (s, e) -> e > s }
+        clipped.size
     }
+
     fun setChartHighlight(event: HighlightEvent?) { _uiState.value = _uiState.value.copy(chartHighlight = event) }
     
     fun markHistoryLimitWarningSeen() = viewModelScope.launch {
@@ -164,8 +125,8 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         }
     }
     
-    fun saveScrollState(index: Int, offset: Int) { _uiState.value = _uiState.value.copy(returnScrollIndex = index, returnScrollOffset = offset) }
-    fun clearScrollState() { _uiState.value = _uiState.value.copy(returnScrollIndex = -1, returnScrollOffset = -1) }
+    fun saveScrollOffset(offset: Int) { _uiState.value = _uiState.value.copy(returnScrollOffset = offset) }
+    fun clearScrollState() { _uiState.value = _uiState.value.copy(returnScrollOffset = -1) }
     fun loadSuggestionsForHour(hour: Int) { viewModelScope.launch { _uiState.value = _uiState.value.copy(recentSuggestions = repository.getSmartSuggestions(hour)) } }
 
     fun jumpToDate(timeInMillis: Long) {
@@ -234,8 +195,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     HatLogger.log("DashboardViewModel: Instantly rendering from Memory Matrix Cache ($cacheKey)")
                     _uiState.value = cached.copy(
                         chartHighlight = null,
-                        returnScrollIndex = -1,
-                        returnScrollOffset = 0,
+                                                returnScrollOffset = 0,
                         animationSalt = _uiState.value.animationSalt 
                     )
                     return@launch
@@ -275,11 +235,10 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                 val (relativeLabel, exactLabel) = getRelativeAndExactDateLabels(activeCal, range)
                 
                 val hiddenPkgs = repository.storage.getHiddenPackagesFlow().first()
-                val pattern = if (range == TimeRangeLabel.WEEK) "EEE" else "dd"
 
                 val appUsageDef = async { heuristicEngine.getAppUsage(start, end, range, hiddenPkgs) }
                 val gapsDef = async { if (range == TimeRangeLabel.DAY) heuristicEngine.scanForGaps(start, end, hiddenPkgs) else emptyList() }
-                val chartDataDef = async { if (range == TimeRangeLabel.DAY) heuristicEngine.getHourlyBreakdown(start, end, hiddenPkgs) else heuristicEngine.getDailyBreakdown(start, end, pattern, hiddenPkgs) }
+                val chartDataDef = async { if (range == TimeRangeLabel.DAY) heuristicEngine.getHourlyBreakdown(start, end, hiddenPkgs) else heuristicEngine.getDailyBreakdown(start, end, range, hiddenPkgs) }
                 val appBreakdownDef = async { heuristicEngine.getAppBreakdown(start, end, range, hiddenPkgs) }
                 val offlineBreakdownDef = async { heuristicEngine.getOfflineBreakdown(start, end, range) }
                 val offlineActivitiesDef = async { heuristicEngine.getOfflineActivities(start, end, range) }
@@ -335,8 +294,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                 // already folded back into the usage totals by the engine.
                 val screenOffItems = if (range == TimeRangeLabel.DAY) // The old Idle Minimum dial defaulted to 15 minutes and also gated this
         // list; the dial is gone, so the same 15-minute floor stays, fixed.
-        heuristicEngine.getScreenOffActivity(start, end, 15 * 60_000L) else emptyList()
-                val totalScreenOffMillis = screenOffItems.sumOf { it.durationInMillis }
+        heuristicEngine.getScreenOffActivity(start, end, DetailLevel.SCREEN_OFF_MIN_SPAN_MILLIS) else emptyList()
 
                 // Dismissed screen-off spans get the same Restore door
                 // (2026-10-21): restoring one pulls the span back out of
@@ -361,7 +319,7 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                         var gapTime = 0L
                         for (gap in majorGaps) { val s = maxOf(bucket.startMillis, gap.startMillis); val e = minOf(bucket.endMillis, gap.endMillis); if (e > s) gapTime += (e - s) }
                         val timeStr = TimeUtils.formatDuration(gapTime)
-                        ChartPoint(getHourLabel(bucket.startHour), listOf((gapTime / bucketMillis).coerceIn(0f, 1f)), timeStr, listOf(timeStr), fullDateLabel = "${getHourLabel(bucket.startHour)} - ${getHourLabel(bucket.endHour)}", syncTag = bucket.startHour.toString()) 
+                        ChartPoint(getHourLabel(bucket.startHour), listOf((gapTime / bucketMillis).coerceIn(0f, 1f)), timeStr, listOf(timeStr), fullDateLabel = "${getHourLabel(bucket.startHour)} - ${getHourLabel(bucket.endHour)}", syncTag = chartSyncKey(bucket.startMillis, TimeRangeLabel.DAY)) 
                     } 
                 } else emptyList()
                 
@@ -375,19 +333,18 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
                     totalScreenTimeMillis = totalAppExecution, activityList = sortedList, appDetailChartData = appDetailChartData,
                     offlineDetailChartData = offlineDetailChartData, majorGaps = majorGaps,
                     dismissedScreenOffSpans = dismissedScreenOffList, chartData = chartData, gapChartData = gapChartData,
-                    screenOffItems = screenOffItems, totalScreenOffMillis = totalScreenOffMillis,
+                    screenOffItems = screenOffItems,
                     recentSuggestions = repository.getSmartSuggestions(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)), isDataReliable = reliable, osRetentionDays = retention, loadSucceeded = true, lastUpdatedTimeStr = updateFormat.format(Date()), oldestDataTimestamp = oldestStamp
                 )
             }
             yield()
             loadFinished = true
-            isFirstLoadComplete = true
             spinnerJob.cancel()
             
             val finalState = computedState.copy(isLoading = false, isStalled = false)
-                        stateCache.put(cacheKey, finalState)
-                        _uiState.value = finalState
-                        HatLogger.log("DashboardViewModel: Load complete, committed to Memory Matrix.")
+            stateCache.put(cacheKey, finalState)
+            _uiState.value = finalState
+            HatLogger.log("DashboardViewModel: Load complete, committed to Memory Matrix.")
                         } catch (t: Throwable) {
                             // Do not swallow CancellationException into a fake "couldn't read" state.
                             if (t is kotlinx.coroutines.CancellationException) throw t
@@ -407,10 +364,6 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         onResult(trueS, trueE)
     }
 
-    suspend fun checkCascadingDelete(title: String, start: Long, end: Long, onResult: (Long, Long) -> Unit) {
-        val (trueS, trueE) = heuristicEngine.expandActivityCascade(title, start, end)
-        onResult(trueS, trueE)
-    }
     
     fun previousDay() {
         val activeCal = when (_uiState.value.timeRange) { 
@@ -538,12 +491,14 @@ class DashboardViewModel(private val repository: ActivityRepository, private val
         loadDashboardData(force = true, isBackgroundTick = false) 
     }
 
-    private fun getStartOfDay(cal: Calendar): Long { val clone = cal.clone() as Calendar; clone.set(Calendar.HOUR_OF_DAY, 0); clone.set(Calendar.MINUTE, 0); clone.set(Calendar.SECOND, 0); clone.set(Calendar.MILLISECOND, 0); return clone.timeInMillis }
-    private fun getEndOfDay(cal: Calendar): Long { val clone = cal.clone() as Calendar; clone.set(Calendar.HOUR_OF_DAY, 23); clone.set(Calendar.MINUTE, 59); clone.set(Calendar.SECOND, 59); clone.set(Calendar.MILLISECOND, 999); return clone.timeInMillis }
-    private fun getHourLabel(hour: Int): String = when(hour) { 0 -> "12 AM"; 12 -> "12 PM"; else -> if(hour<12) "$hour AM" else "${hour-12} PM" }
+    private fun getStartOfDay(cal: Calendar): Long = startOfLocalDay(cal.timeInMillis)
+    private fun getEndOfDay(cal: Calendar): Long = endOfLocalDay(cal.timeInMillis)
+    private fun getHourLabel(hour: Int): String = hourLabel(hour)
     private fun getRelativeAndExactDateLabels(cal: Calendar, range: TimeRangeLabel): Pair<String, String> {
         val today = Calendar.getInstance(); val todayStart = getStartOfDay(today); val targetStart = getStartOfDay(cal)
-        val diffDays = ((todayStart - targetStart) / (1000 * 60 * 60 * 24)).toInt()
+        // Noon-normalized: a plain midnight division mislabels yesterday as
+        // "Today" on a 23-hour spring-forward day (the hazard LocalDay documents).
+        val diffDays = TimeUtils.dayNumberPublic(targetStart, todayStart).toInt()
         val exactFormat = SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault())
         return when (range) {
             TimeRangeLabel.DAY -> Pair(when (diffDays) { 0 -> "Today"; 1 -> "Yesterday"; else -> "$diffDays days ago" }, exactFormat.format(cal.time))

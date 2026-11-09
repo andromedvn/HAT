@@ -1,12 +1,28 @@
 package andromedvn.heuristic.activity.tracker.ui.components
 
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.Font
+import andromedvn.heuristic.activity.tracker.R
 import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
+import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
+import andromedvn.heuristic.activity.tracker.domain.startOfLocalDay
+import andromedvn.heuristic.activity.tracker.domain.ChartPoint
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import andromedvn.heuristic.activity.tracker.utils.SPONSOR_URL
 import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -24,10 +40,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -62,7 +78,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -110,13 +125,17 @@ val ICON_REGISTRY = mapOf(
 
 data class PresetIcon(val iconName: String, val icon: ImageVector)
 val AVAILABLE_ICONS = ICON_REGISTRY.map { PresetIcon(it.key, it.value) }
+/** One gap-dialog ledger row: label, the base value (may ellipsize), the never-cut suffix, and whether the suffix is a muted annotation. */
+private data class Row4(val label: String, val base: String, val suffix: String?, val note: Boolean)
+
 data class HighlightEvent(val point: ChartPoint? = null, val stackIndex: Int = -1, val timestamp: Long = System.currentTimeMillis(), val isLongPress: Boolean = false, val isFromChart: Boolean = true, val sourceKey: String = "", val activeTags: Set<String> = emptySet())
 
 sealed class LedgerContext {
     data class StandardGap(val startMillis: Long, val endMillis: Long, val precededBy: GapNeighbor? = null, val followedBy: GapNeighbor? = null) : LedgerContext()
-    data class BatchMerge(val count: Int, val totalDurationMillis: Long) : LedgerContext()
-    /** A Screen-Off Activity span: the app was resumed while the screen was provably dark. */
-    data class ScreenOff(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String) : LedgerContext()
+    /** The merge rewrites only the selected gaps; [betweenCount] is the
+     *  number of recorded-time blocks sitting between them that stay
+     *  untouched. Renders as a row only when it is above zero. */
+    data class BatchMerge(val count: Int, val totalDurationMillis: Long, val betweenCount: Int = 0) : LedgerContext()
 }
 
 @Composable
@@ -172,12 +191,8 @@ fun PromptHighlightButton(text: String, onClick: () -> Unit) {
     }
 }
 
-@Composable
-fun PromptOutlineButton(text: String, onClick: () -> Unit) {
-    Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Transparent).border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(50)).clickable { onClick() }.padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
-    }
-}
+/** Linear-style ledger voice: the bundled JetBrains Mono (no downloadable fonts, no INTERNET permission). */
+val LedgerMono = FontFamily(Font(R.font.jetbrains_mono_regular), Font(R.font.jetbrains_mono_medium))
 
 @Composable
 fun HatOutlinedDialog(onDismissRequest: () -> Unit, title: String, bottomGap: Dp = 0.dp, content: @Composable ColumnScope.() -> Unit) {
@@ -186,9 +201,9 @@ fun HatOutlinedDialog(onDismissRequest: () -> Unit, title: String, bottomGap: Dp
         // tour card owns the bottom of the screen, this dialog shifts up and
         // leaves a clear gap instead of overlapping it.
         Box(modifier = Modifier.fillMaxSize().padding(bottom = bottomGap), contentAlignment = Alignment.Center) {
-            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
+            Card(modifier = Modifier.fillMaxWidth().widthIn(max = 380.dp).padding(horizontal = 20.dp).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    Text(text = title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                    Text(text = title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     Spacer(modifier = Modifier.height(16.dp))
                     content()
                 }
@@ -274,25 +289,18 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
 
 // Ledger (r12t): one mono label-value row of the gap's fact table. The
 // label is the signage voice; the value is the logged fact. No verbs.
-@Composable
-fun LedgerRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(110.dp))
-        Text(value, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-    }
-}
 
 // Bento (r12n): the mono kicker above each bounded record block in the
 // label dialog; the same labelSmall uppercase treatment as the settings
 // group headers.
 @Composable
 fun DialogBlockHeader(text: String) {
-    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp), color = MaterialTheme.colorScheme.primary)
+    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     Spacer(modifier = Modifier.height(8.dp))
 }
 
 @Composable
-fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, presenceRows: List<Pair<String, String>> = emptyList(), onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, bottomGap: Dp = 0.dp) {
+fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, bottomGap: Dp = 0.dp) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
     // The label's start, taken from the device's evidence. HAT saves the
@@ -301,7 +309,6 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
         mutableStateOf(
             when (val ctx = ledgerContext) {
                 is LedgerContext.StandardGap -> ctx.startMillis
-                is LedgerContext.ScreenOff -> ctx.startMillis
                 else -> -1L
             }
         )
@@ -319,12 +326,12 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
             // dialog view's offset on screen.
             val tourDialogView = LocalView.current
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).then(
-                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog")
+                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == DashboardTourSteps.ID_LABEL_DIALOG)
                     Modifier.onGloballyPositioned { coords ->
                         val b = coords.boundsInRoot()
                         val loc = IntArray(2)
                         tourDialogView.getLocationOnScreen(loc)
-                        AppTourRegistry.register("labelDialog", androidx.compose.ui.geometry.Rect(
+                        AppTourRegistry.register(DashboardTourSteps.ID_LABEL_DIALOG, androidx.compose.ui.geometry.Rect(
                             loc[0] + b.left, loc[1] + b.top, loc[0] + b.right, loc[1] + b.bottom
                         ))
                     } else Modifier
@@ -333,40 +340,108 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                 // is a mono label-value table - base bounds always, provable
                 // event rows when the log supports them, merge rows in the
                 // batch flow. Nothing here narrates.
-                DialogBlockHeader("The gap")
+                DialogBlockHeader("Gap details")
                 Column(modifier = Modifier.fillMaxWidth()) {
                     when (ledgerContext) {
                         is LedgerContext.StandardGap -> {
-                            val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-                            LedgerRow("START", fmt.format(ledgerContext.startMillis))
-                            LedgerRow("END", fmt.format(ledgerContext.endMillis))
-                            LedgerRow("DURATION", TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis))
-                            // Neighbor rows (r12u, owner call): the named thing
-                            // the log recorded on each side - an app, a label,
-                            // or screen-off time. The row renders only when a
-                            // named neighbor exists; a side that is another
-                            // unlabeled gap or the day's edge stays off.
-                            ledgerContext.precededBy?.let { LedgerRow("BEFORE", it.name) }
-                            ledgerContext.followedBy?.let { if (!it.ongoing) LedgerRow("AFTER", it.name) }
-                            presenceRows.forEach { (label, value) -> LedgerRow(label, value) }
-                        }
-                        is LedgerContext.ScreenOff -> {
-                            val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-                            LedgerRow("START", fmt.format(ledgerContext.startMillis))
-                            LedgerRow("END", fmt.format(ledgerContext.endMillis))
-                            LedgerRow("DURATION", TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis))
-                            LedgerRow("ON SCREEN", "${ledgerContext.appName} (${ledgerContext.pkgName})")
+                            // Owner spec (2026-11-08): rows auto-sort longest
+                            // value first - a staircase, not a ragged edge. A
+                            // suffix (paren time, day word, span note) that
+                            // cannot fit beside its base steps aside so the
+                            // base completes at full size; the time it drops is
+                            // the same instant START/END already carry. The
+                            // font NEVER shrinks; only an absurdly long name
+                            // ellipsizes, and never its time.
+                            BoxWithConstraints {
+                                val rawRows = buildList {
+                                    val dur = TimeUtils.formatDurationSecs(ledgerContext.endMillis - ledgerContext.startMillis)
+                                    val days = TimeUtils.spanDays(ledgerContext.startMillis, ledgerContext.endMillis)
+                                    val crossing = days > 1
+                                    add(Row4("DURATION", dur, if (crossing) "(spans $days days)" else null, true))
+                                    if (crossing) {
+                                        add(Row4("START", TimeUtils.formatTimeSecs(ledgerContext.startMillis), TimeUtils.relativeDayLabel(ledgerContext.startMillis), true))
+                                        add(Row4("END", TimeUtils.formatTimeSecs(ledgerContext.endMillis), TimeUtils.relativeDayLabel(ledgerContext.endMillis), true))
+                                    } else {
+                                        add(Row4("START", TimeUtils.formatTimeSecs(ledgerContext.startMillis), null, true))
+                                        add(Row4("END", TimeUtils.formatTimeSecs(ledgerContext.endMillis), null, true))
+                                    }
+                                    ledgerContext.precededBy?.let { add(Row4("BEFORE", it.name, "(" + TimeUtils.formatTimeSecs(it.endMillis) + ")", false)) }
+                                    ledgerContext.followedBy?.let { if (!it.ongoing) add(Row4("AFTER", it.name, "(" + TimeUtils.formatTimeSecs(it.startMillis) + ")", false)) }
+                                }
+                                val measurer = rememberTextMeasurer()
+                                val labelStyle = MaterialTheme.typography.labelMedium.copy(fontFamily = LedgerMono)
+                                val valueStyle = MaterialTheme.typography.labelMedium
+                                val noteStyle = valueStyle.copy(fontSize = 10.sp)
+                                val density = LocalDensity.current
+                                val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                val labelDp = with(density) {
+                                    rawRows.maxOf { measurer.measure(AnnotatedString(it.label), labelStyle).size.width }.toDp() + 12.dp
+                                }
+                                val availPx = with(density) { (maxWidth - labelDp - 24.dp).toPx() }
+                                fun natural(row: Row4): Float = with(density) {
+                                    measurer.measure(AnnotatedString(row.base), valueStyle).size.width +
+                                        (row.suffix?.let { measurer.measure(AnnotatedString("  " + it), if (row.note) noteStyle else valueStyle).size.width } ?: 0)
+                                }.toFloat()
+                                // First pass: a suffix that cannot fit the shared
+                                // budget steps aside (base completes, no shrink).
+                                val budget = minOf(rawRows.maxOf { natural(it) }, availPx)
+                                val trimmed = rawRows.map { row ->
+                                    if (row.suffix != null && natural(row) > budget) row.copy(suffix = null) else row
+                                }
+                                // Second pass: final widths, longest value first.
+                                val finalRows = trimmed.map { it to natural(it) }.sortedByDescending { it.second }
+                                val valueDp = with(density) { minOf(finalRows.maxOf { it.second }, availPx).toDp() }
+                                Column {
+                                    finalRows.forEach { (row, _) ->
+                                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                            Text(row.label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(labelDp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Row(modifier = Modifier.width(valueDp)) {
+                                                Text(row.base, style = valueStyle, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                row.suffix?.let {
+                                                    Text("  " + it, style = if (row.note) noteStyle else valueStyle, color = if (row.note) mutedColor else MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         is LedgerContext.BatchMerge -> {
-                            LedgerRow("MERGING", "${ledgerContext.count} gaps")
-                            LedgerRow("TOTAL", TimeUtils.formatDuration(ledgerContext.totalDurationMillis))
-                            LedgerRow("BETWEEN", "usage stays untouched")
+                            BoxWithConstraints {
+                                val rows = buildList {
+                                    add(Row4("MERGING", "${ledgerContext.count} gaps", null, true))
+                                    add(Row4("TOTAL", TimeUtils.formatDuration(ledgerContext.totalDurationMillis), null, true))
+                                    if (ledgerContext.betweenCount > 0) add(Row4("BETWEEN", "${ledgerContext.betweenCount} blocks stay", null, true))
+                                }
+                                val measurer = rememberTextMeasurer()
+                                val labelStyle = MaterialTheme.typography.labelMedium.copy(fontFamily = LedgerMono)
+                                val valueStyle = MaterialTheme.typography.labelMedium
+                                val density = LocalDensity.current
+                                val labelDp = with(density) {
+                                    rows.maxOf { measurer.measure(AnnotatedString(it.label), labelStyle).size.width }.toDp() + 12.dp
+                                }
+                                val availPx = with(density) { (maxWidth - labelDp - 24.dp).toPx() }
+                                val valueDp = with(density) {
+                                    val natural = rows.maxOf { measurer.measure(AnnotatedString(it.base), valueStyle).size.width }.toFloat()
+                                    minOf(natural, availPx.coerceAtLeast(1f)).toDp()
+                                }
+                                Column {
+                                    rows.forEach { row ->
+                                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                            Text(row.label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(labelDp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Text(row.base, style = valueStyle, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(valueDp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
+                        
                         }
                     }
                 }
             }
         }
-        DialogBlockHeader("Your label")
         Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Activity Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)))
                 Spacer(modifier = Modifier.height(16.dp))
@@ -388,7 +463,7 @@ fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggesti
                 }
                 // The tour's label-dialog step hides Save: the tour card sits
                 // where Save would be, and saving mid-tour is not the flow.
-                val tourDialogStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == "labelDialog"
+                val tourDialogStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == DashboardTourSteps.ID_LABEL_DIALOG
                 if (!tourDialogStep) {
                     Spacer(modifier = Modifier.height(24.dp))
                     DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
@@ -428,12 +503,11 @@ fun TimeSelector(currentRange: TimeRangeLabel, modifier: Modifier = Modifier, on
 }
 
 @Composable
-fun SummaryStatCard(modifier: Modifier = Modifier, title: String, value: String, badgeText: String?, onClick: () -> Unit) {
+fun SummaryStatCard(modifier: Modifier = Modifier, title: String, value: String, onClick: () -> Unit) {
     Card(modifier = modifier.defaultMinSize(minHeight = 110.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp)).clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = Color.Transparent), shape = RoundedCornerShape(24.dp)) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                  Text(text = title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), minLines = 2)
-                 if (badgeText != null) { Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha=0.15f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp)) { Text(badgeText, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) } }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = value, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
@@ -547,6 +621,92 @@ fun PermissionRequestCard(context: Context) {
     }
 }
 
+/**
+ * The empty-bucket hint card shared by all four chart screens. Was four
+ * hand-pasted copies that had already drifted (animation timing, the battery
+ * lookup, which highlight field it watched). The caller decides WHEN to show
+ * it (the showHint predicate differs per chart); everything inside is one copy.
+ */
+@Composable
+fun EmptyBucketHintCard(
+    showHint: Boolean,
+    highlight: HighlightEvent?,
+    chartMode: ChartMode,
+    totalScreenTimeMillis: Long,
+    isDayView: Boolean,
+    isDataReliable: Boolean,
+    hasSeenHistoryLimitWarning: Boolean,
+    osRetentionDays: Int,
+    onMarkHistoryLimitWarningSeen: () -> Unit
+) {
+    AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
+        Column(modifier = Modifier.padding(top = 16.dp)) {
+            val isFuture = highlight?.point?.isFuture == true
+            val context = LocalContext.current
+            val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            val isBatteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+            val quote = remember(highlight) {
+                HeuristicQuotes.getQuote(
+                    point = highlight?.point,
+                    totalScreenTimeMillis = totalScreenTimeMillis,
+                    isDayView = isDayView,
+                    isDataReliable = isDataReliable,
+                    hasSeenHistoryLimitWarning = hasSeenHistoryLimitWarning,
+                    osRetentionDays = osRetentionDays,
+                    chartMode = chartMode,
+                    isBatteryExempt = isBatteryExempt)
+            }
+            LaunchedEffect(highlight) {
+                if (!isDataReliable && !isFuture && !hasSeenHistoryLimitWarning) {
+                    onMarkHistoryLimitWarningSeen()
+                }
+            }
+            HeuristicTipCard(quote = quote)
+        }
+    }
+}
+
+/**
+ * The bottom-center batch-selection bar shared by three screens (was three
+ * drifting copies: 1dp/16dp vs 2dp/24dp card, different count labels). The
+ * caller supplies visibility, the count, an optional total line and the
+ * action buttons; the anatomy is one copy. Must sit inside a Box (it aligns
+ * itself to the bottom center).
+ */
+@Composable
+fun androidx.compose.foundation.layout.BoxScope.BatchSelectionBar(
+    visible: Boolean,
+    count: Int,
+    label: String = "Selected",
+    totalDurationText: String? = null,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400)),
+        exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeOut(tween(400)),
+        modifier = Modifier.align(Alignment.BottomCenter)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp).windowInsetsPadding(WindowInsets.navigationBars),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            shape = RoundedCornerShape(24.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(modifier = Modifier.weight(1f, fill = false).padding(end = 16.dp)) {
+                    Text("$count $label", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (totalDurationText != null) {
+                        Text(totalDurationText, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically, content = content)
+            }
+        }
+    }
+}
+
 @Composable
 fun HeuristicTipCard(quote: String) {
     Card(modifier = Modifier.fillMaxWidth().wrapContentHeight(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
@@ -564,20 +724,8 @@ fun HeuristicTipCard(quote: String) {
     }
 }
 
-fun getDayOffsetString(targetMillis: Long, currentDayStartMillis: Long): String {
-    val cal = Calendar.getInstance().apply { timeInMillis = targetMillis }
-    val diffDays = ((currentDayStartMillis - getStartOfDay(cal)) / 86400000L).toInt()
-    return when {
-        diffDays == 1 -> " (Yesterday)"
-        diffDays > 1 -> " ($diffDays days ago)"
-        else -> ""
-    }
-}
 
-fun getStartOfDay(cal: Calendar): Long { 
-    val clone = cal.clone() as Calendar; clone.set(Calendar.HOUR_OF_DAY, 0); clone.set(Calendar.MINUTE, 0); clone.set(Calendar.SECOND, 0); clone.set(Calendar.MILLISECOND, 0)
-    return clone.timeInMillis 
-}
+fun getStartOfDay(cal: Calendar): Long = startOfLocalDay(cal.timeInMillis)
 
 // -----------------------------------------------------------------------------
 // THEME COMPONENTS
@@ -674,8 +822,7 @@ fun ThemePreviewBox(derivedColor: Color) {
                             val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
                             drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }
-                        // Bar 2 is the middle plain bar from v1.1.1.
-                        Canvas(modifier = Modifier.width(12.dp).height(24.dp)) {
+                                                Canvas(modifier = Modifier.width(12.dp).height(24.dp)) {
                             val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
                             drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
                         }
@@ -688,15 +835,11 @@ fun ThemePreviewBox(derivedColor: Color) {
                         }
                     }
                 }
-                // 2. Calendar circle: 36dp, shows 22.
                 Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(derivedColor.copy(alpha = 0.15f)).border(2.dp, derivedColor, CircleShape), contentAlignment = Alignment.Center) {
                     Text("22", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = derivedColor)
                 }
-                // 3. The Day/Week/Month range switcher, in miniature. Same grammar
-                // as the real TimeSelector on the dashboard (user request,
-                // 2026-10-21): pill outline at half alpha, selected segment
-                // filled and fully bordered, full words not letters, and
-                // unselected labels at the same 60% alpha the app uses.
+                // Miniature Day/Week/Month switcher: same grammar as the real
+                // TimeSelector (owner, 2026-10-21).
                 Box(modifier = Modifier.width(102.dp).height(36.dp).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(50)).padding(3.dp)) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         Box(modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(50)).background(derivedColor.copy(alpha = 0.15f)).border(2.dp, derivedColor, RoundedCornerShape(50)), contentAlignment = Alignment.Center) { Text("Day", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp), color = derivedColor) }

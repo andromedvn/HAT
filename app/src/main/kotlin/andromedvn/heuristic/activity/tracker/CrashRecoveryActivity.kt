@@ -1,5 +1,6 @@
 package andromedvn.heuristic.activity.tracker
 
+import andromedvn.heuristic.activity.tracker.utils.HatLogger
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -37,8 +38,9 @@ class CrashRecoveryActivity : ComponentActivity() {
 
         setContent {
             val scope = rememberCoroutineScope()
+            var confirmReset by remember { mutableStateOf(false) }
             // We use a completely static, isolated theme so the UI engine doesn't crash trying to read corrupted DataStore settings
-            ComposeEmptyActivityTheme(settings = UserSettings(staticColor = 0xFFD32F2F)) { 
+            ComposeEmptyActivityTheme(settings = UserSettings(staticColor = 0xFFD32F2F)) {
                 Scaffold(containerColor = MaterialTheme.colorScheme.background) { innerPadding ->
                     Column(
                         modifier = Modifier
@@ -72,7 +74,7 @@ class CrashRecoveryActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth().height(56.dp).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
                                     .clickable {
                                         try {
-                                            val logFile = java.io.File(filesDir, "crash_logs/$logFileName")
+                                            val logFile = java.io.File(java.io.File(filesDir, HatLogger.CRASH_LOGS_DIR), logFileName)
                                             if (logFile.exists()) {
                                                 val uri = FileProvider.getUriForFile(this@CrashRecoveryActivity, "${packageName}.provider", logFile)
                                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -92,7 +94,7 @@ class CrashRecoveryActivity : ComponentActivity() {
                                 shape = RoundedCornerShape(16.dp)
                             ) {
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text("Export Diagnostic Log", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                                    Text("Share Diagnostic Log", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                             Spacer(modifier = Modifier.height(16.dp))
@@ -101,34 +103,8 @@ class CrashRecoveryActivity : ComponentActivity() {
                         Card(
                             modifier = Modifier.fillMaxWidth().height(56.dp).border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
                                 .clickable {
-                                    scope.launch {
-                                        try {
-                                            // V.11.11: Physical Nuke Protocol. Bypass DataStore/SQLite Object instantiation entirely to avoid Inter-Process Deadlocks.
-                                            val dbFile = getDatabasePath("hat_heuristic.db")
-                                            dbFile.delete()
-                                            File(dbFile.path + "-wal").delete()
-                                            File(dbFile.path + "-shm").delete()
-                                            
-                                            val dataStoreFile = File(filesDir, "datastore/hat_secure_prefs.preferences_pb")
-                                            dataStoreFile.delete()
-                                            
-                                            File(filesDir, "crash_logs").deleteRecursively()
-                                            File(filesDir, "diagnostics").deleteRecursively()
-                                            File(filesDir, "offline_chunks").deleteRecursively()
-                                            File(filesDir, "app_archive_chunks").deleteRecursively()
-
-                                            Toast.makeText(this@CrashRecoveryActivity, "Engine Reset Complete.", Toast.LENGTH_SHORT).show()
-                                            
-                                            // Restart App
-                                            val intent = packageManager.getLaunchIntentForPackage(packageName)
-                                            val componentName = intent?.component
-                                            val restartIntent = Intent.makeRestartActivityTask(componentName)
-                                            startActivity(restartIntent)
-                                            Runtime.getRuntime().exit(0)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(this@CrashRecoveryActivity, "Reset Failed.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
+                                    // Charter: irreversible actions never run on one tap.
+                                    confirmReset = true
                                 },
                             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                             shape = RoundedCornerShape(16.dp)
@@ -138,6 +114,43 @@ class CrashRecoveryActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+
+                if (confirmReset) {
+                    AlertDialog(
+                        onDismissRequest = { confirmReset = false },
+                        title = { Text("Factory Reset Engine?") },
+                        text = { Text("This erases everything HAT stored on this device: the database, your labels and settings, and all backups. It cannot be undone.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirmReset = false
+                                scope.launch {
+                                    try {
+                                        // Physical reset: bypass DataStore/SQLite object instantiation to avoid inter-process deadlocks.
+                                        val dbFile = getDatabasePath("hat_heuristic.db")
+                                        dbFile.delete()
+                                        File(dbFile.path + "-wal").delete()
+                                        File(dbFile.path + "-shm").delete()
+                                        File(filesDir, "datastore/hat_secure_prefs.preferences_pb").delete()
+                                        File(filesDir, HatLogger.CRASH_LOGS_DIR).deleteRecursively()
+                                        File(filesDir, HatLogger.DIAGNOSTICS_DIR).deleteRecursively()
+                                        File(filesDir, "offline_chunks").deleteRecursively()
+                                        File(filesDir, "app_archive_chunks").deleteRecursively()
+                                        Toast.makeText(this@CrashRecoveryActivity, "Engine Reset Complete.", Toast.LENGTH_SHORT).show()
+                                        val intent = packageManager.getLaunchIntentForPackage(packageName)
+                                        val restartIntent = Intent.makeRestartActivityTask(intent?.component)
+                                        startActivity(restartIntent)
+                                        Runtime.getRuntime().exit(0)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(this@CrashRecoveryActivity, "Reset Failed.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }) { Text("Erase Everything", color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
+                        }
+                    )
                 }
             }
         }

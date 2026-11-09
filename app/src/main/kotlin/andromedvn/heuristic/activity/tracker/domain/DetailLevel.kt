@@ -56,6 +56,13 @@ object DetailLevel {
     fun minDurationMillis(settings: UserSettings): Long = minDurationMinutes(settings) * 60_000L
 
     /**
+     * The fixed 15-minute floor for Screen-Off Activity items. The user-facing
+     * dial that set it was removed (r9); the value froze here. The doc lives
+     * with the constant so the number is findable.
+     */
+    const val SCREEN_OFF_MIN_SPAN_MILLIS: Long = 15 * 60_000L
+
+    /**
      * The largest custom value the Settings dialog accepts, in minutes.
      * One day is the longest range HAT displays, so a minimum above 1440
      * would guarantee an empty app. A visible validation rule, not a hidden
@@ -64,10 +71,13 @@ object DetailLevel {
     const val CUSTOM_MAX_MINUTES: Int = 1440
 
     /**
-     * Session merge tolerance in minutes. NOT configurable: 1 minute is
-     * correct for everyone. If you leave an app and come back within a
-     * minute, it is one session. This is a grouping rule, not a visibility
-     * filter, and it never needs user input.
+     * Session merge tolerance in minutes, now a setting (owner call,
+     * 2026-11-09): some users want choppier sessions, some want smoother
+     * ones. [UserSettings.sessionMergeMinutes] carries the choice; the
+     * presets below feed the Settings selector. Default stays 1 minute.
      */
-    const val SESSION_MERGE_MINS: Int = 1
+    val SESSION_MERGE_PRESETS: List<Pair<String, Int>> =
+        listOf("1 min" to 1, "2 min" to 2, "5 min" to 5)
+
+    fun sessionMergeMins(settings: UserSettings): Int = settings.sessionMergeMinutes
 }

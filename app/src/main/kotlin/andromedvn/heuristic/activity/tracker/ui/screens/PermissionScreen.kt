@@ -41,7 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -59,6 +58,7 @@ import andromedvn.heuristic.activity.tracker.data.OfflineStorage
 import andromedvn.heuristic.activity.tracker.data.ActivityRepository
 import andromedvn.heuristic.activity.tracker.domain.AppTourState
 import andromedvn.heuristic.activity.tracker.utils.hasUsageStatsPermission
+import andromedvn.heuristic.activity.tracker.utils.restoreVaultAndRestart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -114,26 +114,9 @@ fun PermissionsScreen(
         }
     }
 
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val report = context.contentResolver.openInputStream(uri)?.use { repository.restoreSecureVault(it, context.cacheDir) }
-                    withContext(Dispatchers.Main) {
-                        if (report != null && report.success) {
-                            Toast.makeText(context, "Vault Restored. ${report.offlineMerged} label(s) merged, ${report.offlineSkipped} skipped as overlapping existing ones. Restarting safely...", Toast.LENGTH_LONG).show()
-                            delay(1000)
-                            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-                            val componentName = intent?.component
-                            val restartIntent = Intent.makeRestartActivityTask(componentName)
-                            context.startActivity(restartIntent)
-                            Runtime.getRuntime().exit(0)
-                        } else {
-                            Toast.makeText(context, "Restore failed: the file is damaged, was edited after export, or is not a HAT vault.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }
-            }
+            scope.launch { restoreVaultAndRestart(context, repository, uri) }
         }
     }
 

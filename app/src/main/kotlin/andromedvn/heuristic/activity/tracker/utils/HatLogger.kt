@@ -11,6 +11,18 @@ import kotlin.system.exitProcess
 
 object HatLogger {
     private const val MAX_BREADCRUMBS = 50
+
+    /**
+     * One home for the diagnostics store names and the rotation rule: the
+     * writers here and the readers (getDiagnosticLogs/getCrashLogs/clearLogs)
+     * plus CrashRecoveryActivity's reset must agree. Rename here, update the
+     * reset screen's literal list.
+     */
+    const val DIAGNOSTICS_DIR = "diagnostics"
+    const val DIAGNOSTIC_EVENTS_FILE = "diagnostic_events.txt"
+    const val BACKGROUND_LEDGER_FILE = "background_worker_ledger.txt"
+    const val CRASH_LOGS_DIR = "crash_logs"
+    private const val MAX_LOG_FILE_BYTES = 1024L * 1024L
     private val breadcrumbs = ArrayDeque<String>(MAX_BREADCRUMBS)
     private var defaultHandler: Thread.UncaughtExceptionHandler? = null
     private var isCrashHandling = false
@@ -32,26 +44,25 @@ object HatLogger {
         log("ERROR [$tag]: $message")
         val ctx = appContext ?: return
         try {
-            val dir = File(ctx.filesDir, "diagnostics")
+            val dir = File(ctx.filesDir, DIAGNOSTICS_DIR)
             if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "diagnostic_events.txt")
-            if (file.exists() && file.length() > 1024 * 1024) file.delete()
+            val file = File(dir, DIAGNOSTIC_EVENTS_FILE)
+            if (file.exists() && file.length() > MAX_LOG_FILE_BYTES) file.delete()
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
             file.appendText("[$timestamp] [$tag] $message\n")
             e?.let { file.appendText("${it.stackTraceToString()}\n") }
         } catch (ex: Exception) {}
     }
 
-    // V.11.12 BACKGROUND LEDGER: Persists silent worker actions that don't belong in the UI breadcrumbs
+    // Background ledger: worker actions that never belong in UI breadcrumbs.
     fun logBackgroundEvent(tag: String, message: String) {
         log("BACKGROUND [$tag]: $message")
         val ctx = appContext ?: return
         try {
-            val dir = File(ctx.filesDir, "diagnostics")
+            val dir = File(ctx.filesDir, DIAGNOSTICS_DIR)
             if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "background_worker_ledger.txt")
-            // Limit to ~1MB to prevent stealth storage bloat
-            if (file.exists() && file.length() > 1024 * 1024) file.delete()
+            val file = File(dir, BACKGROUND_LEDGER_FILE)
+            if (file.exists() && file.length() > MAX_LOG_FILE_BYTES) file.delete()
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             file.appendText("[$timestamp] [$tag] $message\n")
         } catch (ex: Exception) {}
@@ -83,7 +94,7 @@ object HatLogger {
     }
 
     private fun saveCrashLog(context: Context, thread: Thread, throwable: Throwable): String {
-        val dir = File(context.filesDir, "crash_logs")
+        val dir = File(context.filesDir, CRASH_LOGS_DIR)
         if (!dir.exists()) dir.mkdirs()
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val fileName = "crash_$timestamp.txt"
@@ -104,13 +115,13 @@ object HatLogger {
     }
 
     fun getCrashLogs(context: Context): List<File> {
-        val dir = File(context.filesDir, "crash_logs")
+        val dir = File(context.filesDir, CRASH_LOGS_DIR)
         return if (dir.exists()) dir.listFiles()?.toList()?.sortedByDescending { it.lastModified() } ?: emptyList() else emptyList()
     }
     
     fun getDiagnosticLogs(context: Context): List<File> {
-        val diagFile = File(context.filesDir, "diagnostics/diagnostic_events.txt")
-        val bgFile = File(context.filesDir, "diagnostics/background_worker_ledger.txt")
+        val diagFile = File(File(context.filesDir, DIAGNOSTICS_DIR), DIAGNOSTIC_EVENTS_FILE)
+        val bgFile = File(File(context.filesDir, DIAGNOSTICS_DIR), BACKGROUND_LEDGER_FILE)
         return listOfNotNull(
             diagFile.takeIf { it.exists() },
             bgFile.takeIf { it.exists() }
@@ -118,9 +129,9 @@ object HatLogger {
     }
 
     fun clearLogs(context: Context) {
-        val crashDir = File(context.filesDir, "crash_logs")
+        val crashDir = File(context.filesDir, CRASH_LOGS_DIR)
         if (crashDir.exists()) crashDir.listFiles()?.forEach { it.delete() }
-        val diagDir = File(context.filesDir, "diagnostics")
+        val diagDir = File(context.filesDir, DIAGNOSTICS_DIR)
         if (diagDir.exists()) diagDir.listFiles()?.forEach { it.delete() }
         // These are local diagnostic logs, never telemetry: nothing here has
         // ever left the device (docs audit, 2026-10-21).

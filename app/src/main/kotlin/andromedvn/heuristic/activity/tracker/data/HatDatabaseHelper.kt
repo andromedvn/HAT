@@ -50,6 +50,15 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         const val TABLE_ACK_GHOSTS = "ack_ghosts"
         const val TABLE_SCREEN_OFF_DISMISSED = "screen_off_dismissed"
         const val TABLE_RAW_EVENTS = "raw_usage_events"
+
+        // Column names shared by the three (package_name, start, end) tables.
+        // One home: the DDL here, the queries in OfflineStorage, the dedupe and
+        // the unique indexes all use the same literals today; a rename must
+        // touch exactly this block plus the raw-events DDL below.
+        const val COL_EVENT_ID = "id"
+        const val COL_EVENT_PKG = "package_name"
+        const val COL_EVENT_START = "start_millis"
+        const val COL_EVENT_END = "end_millis"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -109,9 +118,9 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     private fun purgeDuplicateRows(db: SQLiteDatabase) {
         val targets = listOf(
             Triple(HatDatabaseHelper.TABLE_ARCHIVE, HatDatabaseHelper.COL_ARCHIVE_ID, listOf(HatDatabaseHelper.COL_PKG, HatDatabaseHelper.COL_START, HatDatabaseHelper.COL_END)),
-            Triple(HatDatabaseHelper.TABLE_IGNORED, "id", listOf("package_name", "start_millis", "end_millis")),
-            Triple(HatDatabaseHelper.TABLE_ACK_GHOSTS, "id", listOf("package_name", "start_millis", "end_millis")),
-            Triple(HatDatabaseHelper.TABLE_SCREEN_OFF_DISMISSED, "id", listOf("package_name", "start_millis", "end_millis"))
+            Triple(HatDatabaseHelper.TABLE_IGNORED, COL_EVENT_ID, listOf(COL_EVENT_PKG, COL_EVENT_START, COL_EVENT_END)),
+            Triple(HatDatabaseHelper.TABLE_ACK_GHOSTS, COL_EVENT_ID, listOf(COL_EVENT_PKG, COL_EVENT_START, COL_EVENT_END)),
+            Triple(HatDatabaseHelper.TABLE_SCREEN_OFF_DISMISSED, COL_EVENT_ID, listOf(COL_EVENT_PKG, COL_EVENT_START, COL_EVENT_END))
         )
         for ((table, idCol, cols) in targets) {
             try {
@@ -150,35 +159,35 @@ class HatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS $TABLE_IGNORED (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                package_name TEXT NOT NULL,
-                start_millis INTEGER NOT NULL,
-                end_millis INTEGER NOT NULL
+                $COL_EVENT_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_EVENT_PKG TEXT NOT NULL,
+                $COL_EVENT_START INTEGER NOT NULL,
+                $COL_EVENT_END INTEGER NOT NULL
             )
         """.trimIndent())
         
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS $TABLE_ACK_GHOSTS (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                package_name TEXT NOT NULL,
-                start_millis INTEGER NOT NULL,
-                end_millis INTEGER NOT NULL
+                $COL_EVENT_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_EVENT_PKG TEXT NOT NULL,
+                $COL_EVENT_START INTEGER NOT NULL,
+                $COL_EVENT_END INTEGER NOT NULL
             )
         """.trimIndent())
 
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS $TABLE_SCREEN_OFF_DISMISSED (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                package_name TEXT NOT NULL,
-                start_millis INTEGER NOT NULL,
-                end_millis INTEGER NOT NULL
+                $COL_EVENT_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_EVENT_PKG TEXT NOT NULL,
+                $COL_EVENT_START INTEGER NOT NULL,
+                $COL_EVENT_END INTEGER NOT NULL
             )
         """.trimIndent())
 
         createUniqueIndexSafely(db, "idx_archive_unique", TABLE_ARCHIVE, listOf(COL_PKG, COL_START, COL_END))
-        createUniqueIndexSafely(db, "idx_ignored_unique", TABLE_IGNORED, listOf("package_name", "start_millis", "end_millis"))
-        createUniqueIndexSafely(db, "idx_ack_unique", TABLE_ACK_GHOSTS, listOf("package_name", "start_millis", "end_millis"))
-        createUniqueIndexSafely(db, "idx_screen_off_dismissed_unique", TABLE_SCREEN_OFF_DISMISSED, listOf("package_name", "start_millis", "end_millis"))
+        createUniqueIndexSafely(db, "idx_ignored_unique", TABLE_IGNORED, listOf(COL_EVENT_PKG, COL_EVENT_START, COL_EVENT_END))
+        createUniqueIndexSafely(db, "idx_ack_unique", TABLE_ACK_GHOSTS, listOf(COL_EVENT_PKG, COL_EVENT_START, COL_EVENT_END))
+        createUniqueIndexSafely(db, "idx_screen_off_dismissed_unique", TABLE_SCREEN_OFF_DISMISSED, listOf(COL_EVENT_PKG, COL_EVENT_START, COL_EVENT_END))
 
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS $TABLE_RAW_EVENTS (

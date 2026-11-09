@@ -1,21 +1,19 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
 import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -23,11 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -57,17 +53,12 @@ import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
-import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.utils.hasUsageStatsPermission
-import androidx.compose.ui.text.style.TextOverflow
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import andromedvn.heuristic.activity.tracker.ui.components.TourRegistry
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
+import andromedvn.heuristic.activity.tracker.ui.components.STACK_APPS
+import andromedvn.heuristic.activity.tracker.ui.components.STACK_OFFLINE
 import andromedvn.heuristic.activity.tracker.domain.AppTourState
 import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
 import kotlinx.coroutines.delay
@@ -217,53 +208,39 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                         Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(400, easing = FastOutSlowInEasing)).tutorialTarget("chart", tourRegistry)) {
                             HatChart(
                                 chartScrollState = chartScrollState, animationSalt = uiState.animationSalt,
-                                title = "Activity Overview", subTitle = "Apps Usage + Offline Time", totalTime = if (uiState.totalCombinedTimeFormatted.isNotEmpty()) uiState.totalCombinedTimeFormatted else "0m", 
+                                title = "Activity Overview", subTitle = "Apps Usage + Offline Activity", totalTime = if (uiState.totalCombinedTimeFormatted.isNotEmpty()) uiState.totalCombinedTimeFormatted else "0m", 
                                 dataPoints = uiState.chartData, palette = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary), dateLabelRelative = uiState.dateLabelRelative, dateLabelExact = uiState.dateLabelExact,
                                 highlightedPoint = chartHighlight, hasNext = uiState.hasNextPeriod, hasPrev = uiState.hasPreviousPeriod, onPrevious = { viewModel.previousDay() }, onNext = { viewModel.nextDay() },
                                 onDateClick = { showDatePicker = true },
                                 onPointSelected = { event ->
                                     viewModel.setChartHighlight(event)
-                                    if (event?.isFromChart == true && event.isLongPress && event.stackIndex != -1) {
+                                    if (event?.isFromChart == true && event.isLongPress) {
                                         val matchTag = event.point?.syncTag ?: ""
-                                        val expectedClass = if (event.stackIndex == 0) AppUsageItem::class.java else OfflineActivityItem::class.java
+                                        // stackIndex -1 = a single-segment bar (no stack choice): match either kind.
                                         val matchIndex = uiState.activityList.indexOfFirst {
-                                            expectedClass.isInstance(it) && it.activeTimeTags.contains(matchTag)
+                                            it.activeTimeTags.contains(matchTag) &&
+                                                (event.stackIndex == -1 ||
+                                                    (event.stackIndex == STACK_APPS && it is AppUsageItem) ||
+                                                    (event.stackIndex == STACK_OFFLINE && it is OfflineActivityItem))
                                         }
                                         if (matchIndex != -1) {
+                                            viewModel.saveScrollOffset(listState.firstVisibleItemScrollOffset)
                                             scope.launch { listState.animateScrollToItem(matchIndex + 1) }
                                         }
                                     }
                                 }
                             )
                             val showHint = chartHighlight != null && chartHighlight.stackIndex == -1 && chartHighlight.point?.values?.all { it <= 0f } == true
-                            AnimatedVisibility(
-                                visible = showHint,
-                                enter = fadeIn(tween(300)) + expandVertically(tween(300, easing = FastOutSlowInEasing)),
-                                exit = fadeOut(tween(300)) + shrinkVertically(tween(300, easing = FastOutSlowInEasing))
-                            ) {
-                                Column(modifier = Modifier.padding(top = 16.dp)) {
-                                    val isFuture = chartHighlight?.point?.isFuture == true
-                                    val quote = remember(chartHighlight) {
-                                        HeuristicQuotes.getQuote(
-                                            point = chartHighlight?.point,
-                                            totalScreenTimeMillis = uiState.totalScreenTimeMillis,
-                                            isDayView = uiState.timeRange == TimeRangeLabel.DAY,
-                                            isDataReliable = uiState.isDataReliable,
-                                            hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
-                                            osRetentionDays = uiState.osRetentionDays,
-                                            chartMode = ChartMode.DASHBOARD
-                                        )
-                                    }
-                                    
-                                    LaunchedEffect(chartHighlight) {
-                                        if (!uiState.isDataReliable && !isFuture && !uiState.hasSeenHistoryLimitWarning) {
-                                            viewModel.markHistoryLimitWarningSeen()
-                                        }
-                                    }
-
-                                    HeuristicTipCard(quote = quote)
-                                }
-                            }
+                            EmptyBucketHintCard(
+                                showHint = showHint,
+                                highlight = chartHighlight,
+                                chartMode = ChartMode.DASHBOARD,
+                                totalScreenTimeMillis = uiState.totalScreenTimeMillis,
+                                isDayView = uiState.timeRange == TimeRangeLabel.DAY,
+                                isDataReliable = uiState.isDataReliable,
+                                hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
+                                osRetentionDays = uiState.osRetentionDays,
+                                onMarkHistoryLimitWarningSeen = { viewModel.markHistoryLimitWarningSeen() })
                             AnimatedVisibility(visible = uiState.isStalled, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
                                 Column(modifier = Modifier.padding(top = 16.dp)) {
                                     Card(modifier = Modifier.fillMaxWidth().wrapContentHeight(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
@@ -286,8 +263,8 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                         }
                         
                         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max).tutorialTarget("statCards", tourRegistry), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight().tutorialTarget("statCardApps", tourRegistry), title = "Total Apps Usage", value = uiState.totalScreenTimeFormatted, badgeText = null, onClick = { navController.navigate("app_usage_stats") })
-                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Offline Activity", value = uiState.totalOfflineTimeFormatted, badgeText = null, onClick = { navController.navigate("offline_stats") })
+                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight().tutorialTarget("statCardApps", tourRegistry), title = "Total Apps Usage", value = uiState.totalScreenTimeFormatted, onClick = { navController.navigate("app_usage_stats") })
+                            SummaryStatCard(modifier = Modifier.weight(1f).fillMaxHeight(), title = "Total Offline Activity", value = uiState.totalOfflineTimeFormatted, onClick = { navController.navigate("offline_stats") })
                         }
                         
                         Spacer(modifier = Modifier.height(24.dp))
@@ -309,14 +286,14 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                     val maxUsage = uiState.activityList.maxOfOrNull { it.durationInMillis }?.toFloat() ?: 1f
                     itemsIndexed(uiState.activityList, key = { _, it -> it.uniqueKey }) { itemIndex, item ->
                         val progress = item.durationInMillis / maxUsage.coerceAtLeast(1f)
-                        val stackIndex = if (item is AppUsageItem) 0 else 1
+                        val stackIndex = if (item is AppUsageItem) STACK_APPS else STACK_OFFLINE
                         val isHighlighted = if (chartHighlight != null) { if (chartHighlight.isFromChart) { val pointTag = chartHighlight.point?.syncTag ?: ""; (pointTag in item.activeTimeTags) && (chartHighlight.stackIndex == -1 || chartHighlight.stackIndex == stackIndex) } else chartHighlight.sourceKey == item.uniqueKey } else false
 
                         val onLongPress = { sIdx: Int ->
                             val targetTag = item.activeTimeTags.firstOrNull() ?: ""
                             val matchedPoint = uiState.chartData.find { it.syncTag == targetTag }
                             if (matchedPoint != null) {
-                                viewModel.saveScrollState(0, listState.firstVisibleItemScrollOffset)
+                                viewModel.saveScrollOffset(listState.firstVisibleItemScrollOffset)
                                 viewModel.setChartHighlight(HighlightEvent(matchedPoint, stackIndex = sIdx, timestamp = System.currentTimeMillis(), isLongPress = true, isFromChart = false, sourceKey = item.uniqueKey, activeTags = item.activeTimeTags))
                                 scope.launch { listState.animateScrollToItem(0) }
                             }
@@ -329,14 +306,14 @@ fun DashboardScreen(navController: NavController, viewModel: DashboardViewModel,
                             } else it
                         }) {
                             when (item) {
-                                is AppUsageItem -> RealActivityListItem(navController = navController, app = item, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onLongClick = { onLongPress(0) })
+                                is AppUsageItem -> RealActivityListItem(navController = navController, app = item, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onLongClick = { onLongPress(STACK_APPS) })
                                 is OfflineActivityItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = item.iconName, color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { navController.navigate(NavRouteCodec.offlineDetailsRoute(item.id)) }, onLongClick = { onLongPress(1) })
                                 // Unreachable today: the unified list carries only apps and
                                 // offline items, and screen-off spans surface in the Gaps
                                 // screen's unaccounted timeline (2026-10-22), not here. The
                                 // branch exists so the sealed interface stays exhaustive if
                                 // that ever changes (functional sweep Finding 19).
-                                is ScreenOffItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = "Sleep", color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { }, onLongClick = { onLongPress(1) })
+                                is ScreenOffItem -> MockOfflineListItem(name = item.title, duration = item.timeFormatted, iconName = "Sleep", color = MaterialTheme.colorScheme.primary, progress = progress, isHighlighted = isHighlighted, onClick = { }, onLongClick = { onLongPress(STACK_OFFLINE) })
                             }
                         }
                     }

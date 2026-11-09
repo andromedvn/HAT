@@ -31,7 +31,7 @@ class ArchiveSyncWorker(appContext: Context, workerParams: WorkerParameters) : C
      *
      * ## Why a loop is needed here and not in the repository
      *
-     * [ActivityRepository.syncArchive] processes at most [DAYS_PER_PASS] days
+     * [ActivityRepository.syncArchive] processes at most [ArchiveCursor.DEFAULT_PASS_DAYS] days
      * and then returns; calling it repeatedly resumes where the previous call
      * stopped. A single WorkManager run therefore used to archive 5 days, and
      * a user returning after a year needed 365/5 = 73 separate scheduled runs
@@ -40,15 +40,9 @@ class ArchiveSyncWorker(appContext: Context, workerParams: WorkerParameters) : C
      *
      * ## Progress is measured by the ATTEMPTED-day cursor, not the watermark
      *
-     * The watermark is `MAX(start_millis)` over the archive table, so it only
-     * advances on a day that produced rows. A day with no usage inserts
-     * nothing - and before 2026-10-28 the walk restarted from the watermark,
-     * so five or more consecutive empty days (a dead-battery weekend) made
-     * every pass re-query the same days forever while the days after the hole
-     * aged out of Android's retention window. [ArchiveCursor] now records the
-     * last ATTEMPTED local midnight in settings, and it advances on empty
-     * days too: the walk can never wedge. Progress (and the caught-up check)
-     * therefore read the cursor, not the watermark.
+     * A day with no usage inserts nothing, so a watermark-based check would
+     * re-run passes forever after empty days. Progress (and the caught-up
+     * check) read the cursor; the full story is [ArchiveCursor]'s doc.
      *
      * The loop stops on *either*:
      *
@@ -58,8 +52,8 @@ class ArchiveSyncWorker(appContext: Context, workerParams: WorkerParameters) : C
      *  - [MAX_CATCH_UP_PASSES], the hard ceiling.
      *
      * The ceiling alone covers the intended backfill: 365 days at
-     * [DAYS_PER_PASS] days per pass is exactly 73 passes, so a first run after
-     * a year-long gap completes in one execution instead of 73.
+     * [ArchiveCursor.DEFAULT_PASS_DAYS] days per pass is exactly 73 passes, so a
+     * first run after a year-long gap completes in one execution instead of 73.
      */
     private suspend fun runCatchUp(repository: ActivityRepository, storage: OfflineStorage) {
         val startOfToday = Calendar.getInstance().apply {
@@ -95,17 +89,18 @@ class ArchiveSyncWorker(appContext: Context, workerParams: WorkerParameters) : C
     }
 
     companion object {
-        /** Days [ActivityRepository.syncArchive] handles per call. */
-        private const val DAYS_PER_PASS = 5
+        // The pass length lives in ArchiveCursor.DEFAULT_PASS_DAYS (one home);
+        // syncArchive() uses the domain default, so this file no longer restates it.
 
         /** History the first run after a long gap aims to backfill. */
         private const val CATCH_UP_TARGET_DAYS = 365
 
         /**
          * Hard ceiling on passes: exactly enough for [CATCH_UP_TARGET_DAYS] at
-         * [DAYS_PER_PASS] days per pass. Never exceeded, so a first run after a
-         * long gap cannot run unbounded; anything beyond resumes next run.
+         * [ArchiveCursor.DEFAULT_PASS_DAYS] days per pass. Never exceeded, so a
+         * first run after a long gap cannot run unbounded; anything beyond
+         * resumes next run.
          */
-        private const val MAX_CATCH_UP_PASSES = CATCH_UP_TARGET_DAYS / DAYS_PER_PASS
+        private const val MAX_CATCH_UP_PASSES = CATCH_UP_TARGET_DAYS / ArchiveCursor.DEFAULT_PASS_DAYS
     }
 }

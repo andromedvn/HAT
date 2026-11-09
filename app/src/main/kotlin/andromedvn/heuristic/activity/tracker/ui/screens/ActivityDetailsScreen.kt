@@ -3,7 +3,6 @@ package andromedvn.heuristic.activity.tracker.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -17,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Android
-import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -42,14 +40,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
+import andromedvn.heuristic.activity.tracker.domain.chartSyncKey
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.viewmodel.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import java.util.Date
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -72,18 +68,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     var returnScrollIndex by rememberSaveable { mutableIntStateOf(-1) }
     var returnScrollOffset by rememberSaveable { mutableIntStateOf(0) }
     
-    // Which evidence the idle dialog is presenting (2026-10-23): true for an
-    // untouched-app Idle Session, false for Lock Screen Activity. The details
-    // screen previously knew only lock ghosts, which made every new idle span
-    // invisible to long-press and the maintainer's conversion dead-ended
-    // (functional sweep Finding 1).
-    // The SESSION the long-pressed span lives in (2026-10-23). The session
-    // row shows the app's whole foreground stretch while the dialog asks
-    // about the untouched tail; naming both ended the "2h 16m card says
-    // 42m 19s" contradiction the maintainer hit on CloudStream.
-    var sessionStart by rememberSaveable { mutableLongStateOf(-1L) }
-    var sessionEnd by rememberSaveable { mutableLongStateOf(-1L) }
-    
+                
     val selectedSessions = remember { mutableStateListOf<SessionItem>() }
     var showSessionDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -140,7 +125,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     
     if (showHideDialog) {
         HatOutlinedDialog(onDismissRequest = { showHideDialog = false }, title = "Hide App?") {
-            Text("This app will be hidden from your dashboard. You can restore it in Settings.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("This app will be hidden from your timeline. You can restore it in Settings.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { showHideDialog = false }) { Text("Cancel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -157,11 +142,21 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     // rendered while the convert function sat uncalled. It exists now.
     if (showSessionDialog && selectedSessions.isNotEmpty()) {
         val pkgForBatch = (uiState.activity as? AppUsageItem)?.packageName
+        // BETWEEN parity with the Label Gaps merge: count the recorded-time
+        // blocks the merge leaves untouched (computed once per dialog open).
+        var betweenCount by remember(showSessionDialog, selectedSessions.size) { mutableStateOf(0) }
+        LaunchedEffect(showSessionDialog, selectedSessions.size) {
+            if (selectedSessions.isNotEmpty()) {
+                val lo = selectedSessions.minOf { it.startTime }
+                val hi = selectedSessions.maxOf { it.endTime }
+                betweenCount = dashboardViewModel.countUsageBlocksBetween(lo, hi)
+            }
+        }
         if (pkgForBatch != null) {
             ActivityEditorDialog(
                 initialTitle = "", initialIconName = "Walk",
                 suggestions = dashState.recentSuggestions,
-                ledgerContext = LedgerContext.BatchMerge(selectedSessions.size, selectedSessions.sumOf { it.displayedDuration }),
+                ledgerContext = LedgerContext.BatchMerge(selectedSessions.size, selectedSessions.sumOf { it.displayedDuration }, betweenCount),
                 onDismiss = { showSessionDialog = false },
                 onSave = { outTitle, outIcon, _ ->
                     dashboardViewModel.saveMultipleGaps(selectedSessions.map { UsageGap(it.startTime, it.endTime) }, outTitle, outIcon)
@@ -222,12 +217,10 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                         // it, so on a non-English device the strings differed and
                                         // no row was ever found.
                                         val matchIndex = uiState.sessionList.indexOfFirst { chartSyncKey(it.startTime, dashState.timeRange) == pt.syncTag }
-                                        // Two items precede the sessions: the dynamic header and the
-                                        // block holding the chart plus the SESSIONS caption. +1 landed
-                                        // on that SESSIONS caption item, one row above the target.
                                         // Exactly two items precede the sessions: the dynamic
                                         // header and the block carrying the icon row, the chart
-                                        // and the SESSIONS caption. So +2 is the first session row.
+                                        // and the SESSIONS caption (+1 landed on that caption,
+                                        // one row above the target). So +2 is the first session row.
                                         //
                                         // There is deliberately no term for ghostIntervals.size.
                                         // A ghost is not a row of its own - it only annotates an
@@ -249,7 +242,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                     val appActivity = uiState.activity as? AppUsageItem
 
                     if (renderList.isEmpty() && (uiState.activity == null || uiState.activity!!.durationInMillis <= 0L)) {
-                        item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(icon = if (type == "app") Icons.Default.Smartphone else Icons.AutoMirrored.Filled.DirectionsWalk, title = "No Activity", subtitle = "No sessions or offline logs for this on the selected date.") } }
+                        item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(icon = if (type == "app") Icons.Default.Smartphone else Icons.AutoMirrored.Filled.DirectionsWalk, title = "No Activity", subtitle = "Nothing recorded for this period.") } }
                     } else if (!uiState.isLoading) {
                         if (renderList.isEmpty()) {
                             item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.Default.Splitscreen, "No Session Data", "No sessions recorded for this activity") } }
@@ -258,10 +251,40 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                 val isLast = index == renderList.lastIndex
                                 val pinOffset = 16.dp + with(LocalDensity.current) { 8.sp.toDp() }
                                 val isSessionSelected = selectedSessions.contains(session)
+                                // Bar -> row highlight (consistent-codebase pass 1):
+                                // the chart long-press already scrolls here; the row
+                                // now wears the same highlight border every other
+                                // screen's cards wear. Selection keeps precedence.
+                                // Overlap match: a session spans buckets, so it
+                                // lights when ANY hour it covers is the pressed bar
+                                // (same walk the gap cards use).
+                                val isHighlighted = if (chartHighlight?.point == null) false else {
+                                    val tag = chartHighlight.point!!.syncTag
+                                    var t = session.startTime
+                                    var hit = false
+                                    while (t < session.endTime && !hit) {
+                                        if (chartSyncKey(t, dashState.timeRange) == tag) hit = true
+                                        val c = java.util.Calendar.getInstance().apply { timeInMillis = t }
+                                        c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0)
+                                        c.add(java.util.Calendar.HOUR_OF_DAY, 1)
+                                        t = c.timeInMillis
+                                    }
+                                    hit
+                                }
 
                                 fun handleLongPress(s: SessionItem) {
+                                    // Ratified jobs (CONSISTENCY.md): on an app
+                                    // page long-press starts the Convert
+                                    // selection; on an offline page it highlights
+                                    // this session's bars in the History chart.
                                     if (type == "app" && selectedSessions.isEmpty()) {
                                         selectedSessions.add(s)
+                                    } else if (type != "app") {
+                                        val pt = uiState.chartData.firstOrNull { point -> chartSyncKey(s.startTime, dashState.timeRange) == point.syncTag }
+                                        if (pt != null) {
+                                            if (returnScrollIndex == -1) { returnScrollIndex = listState.firstVisibleItemIndex; returnScrollOffset = listState.firstVisibleItemScrollOffset }
+                                            dashboardViewModel.setChartHighlight(HighlightEvent(pt, stackIndex = -1))
+                                        }
                                     }
                                 }
 
@@ -273,7 +296,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                     }
                                     Card(
                                         modifier = Modifier.weight(1f).padding(bottom = 12.dp)
-                                            .border(if(isSessionSelected) 2.dp else 1.dp, MaterialTheme.colorScheme.primary.copy(alpha=if(isSessionSelected) 1f else 0.5f), RoundedCornerShape(16.dp))
+                                            .border(if(isSessionSelected || isHighlighted) 2.dp else 1.dp, MaterialTheme.colorScheme.primary.copy(alpha=if(isSessionSelected || isHighlighted) 1f else 0.5f), RoundedCornerShape(16.dp))
                                             .clip(RoundedCornerShape(16.dp))
                                             .combinedClickable(
                                                 onClick = { if (selectedSessions.isNotEmpty()) { if (isSessionSelected) selectedSessions.remove(session) else selectedSessions.add(session) } },
@@ -299,37 +322,18 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
             }
         }
 
-        AnimatedVisibility(
-            visible = selectedSessions.isNotEmpty(),
-            enter = androidx.compose.animation.slideInVertically(initialOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400)),
-            exit = androidx.compose.animation.slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeOut(tween(400)),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp).windowInsetsPadding(WindowInsets.navigationBars),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        BatchSelectionBar(
+                visible = selectedSessions.isNotEmpty(),
+                count = selectedSessions.size,
+                // Must be displayedDuration (active sum), not spanDuration
+                // (wall span), or the header total exceeds the sum of the
+                // session rows below it whenever a cluster has an internal gap.
+                totalDurationText = TimeUtils.formatDuration(selectedSessions.sumOf { it.displayedDuration })
             ) {
-                Box(modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(modifier = Modifier.weight(1f, fill=false).padding(end = 16.dp)) { 
-                            Text("${selectedSessions.size} Selected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            // Must be displayedDuration (active sum), not spanDuration
-                            // (wall span), or the header total exceeds the sum of the
-                            // session rows below it whenever a cluster has an internal gap.
-                            Text(TimeUtils.formatDuration(selectedSessions.sumOf { it.displayedDuration }), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                            PromptHighlightButton("Convert") { 
-                                dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = selectedSessions.first().startTime }.get(Calendar.HOUR_OF_DAY))
-                                showSessionDialog = true 
-                            }
-                        }
-                    }
+                PromptHighlightButton("Convert") {
+                    dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = selectedSessions.first().startTime }.get(Calendar.HOUR_OF_DAY))
+                    showSessionDialog = true
                 }
             }
-        }
     }
 }

@@ -27,7 +27,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -41,7 +40,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import andromedvn.heuristic.activity.tracker.domain.AppTourState
@@ -66,9 +64,6 @@ class TourRegistry {
         if (bounds[key] != rect) bounds = bounds + (key to rect)
     }
 
-    fun unregister(key: String) {
-        bounds = bounds - key
-    }
 }
 
 /** The one registry every screen registers tour targets into. */

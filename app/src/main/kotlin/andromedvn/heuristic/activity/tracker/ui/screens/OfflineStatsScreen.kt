@@ -1,25 +1,16 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
 import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Close
@@ -28,8 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -43,7 +32,6 @@ import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.data.SortType
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 @Composable
 fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewModel) {
@@ -114,17 +102,15 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
             }
             val titlesWord = if (selectedTitles.size == 1) "activity" else "activities"
             HatOutlinedDialog(onDismissRequest = { showDeleteDialog = false }, title = "Delete Selected?") {
+                val dupClause = if (rowsAtRisk != selectedTitles.size) " (${selectedTitles.size} of them saved more than once)" else ""
                 Text(
-                    "This will erase ${rowsAtRisk} stored $titlesWord" +
-                        if (rowsAtRisk != selectedTitles.size) " (${selectedTitles.size} of them saved more than once)" else "" +
-                        ", totalling ${TimeUtils.formatDuration(timeAtRisk)}, from this period." +
-                        " This cannot be undone.",
+                    "This will erase ${rowsAtRisk} stored $titlesWord$dupClause, totalling ${TimeUtils.formatDuration(timeAtRisk)}, from this period. This cannot be undone.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (rowsAtRisk != selectedTitles.size) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        selectedTitles.joinToString(", ") { "${it} (${offlineList.firstOrNull { i -> i.title == it }?.storedRowCount ?: 1} copies)" },
+                        selectedTitles.joinToString(", ") { title -> val n = offlineList.firstOrNull { i -> i.title == title }?.storedRowCount ?: 1; "${title} (${n} ${if (n == 1) "copy" else "copies"})" },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -175,39 +161,25 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                                         if (selectedTitles.size == allOffline.size) selectedTitles.clear() else { selectedTitles.clear(); selectedTitles.addAll(allOffline) }
                                     }) { Text(if (selectedTitles.size == uiState.activityList.filterIsInstance<OfflineActivityItem>().size) "Deselect All" else "Select All", color = MaterialTheme.colorScheme.primary) }
                                 }
-                            } else { HatDynamicHeader(title = "Offline Time", subtitle = "Summarized Activities") }
+                            } else { HatDynamicHeader(title = "Offline Activities", subtitle = "Summarized Activities") }
                         
                             TimeSelector(uiState.timeRange) { viewModel.setTimeRange(it) }
                             Spacer(modifier = Modifier.height(24.dp))
                             HatChart(
                                 chartScrollState = chartScrollState, animationSalt = uiState.animationSalt,
-                                title = "Offline Activity", subTitle = "Tracked time", totalTime = uiState.totalOfflineTimeFormatted, dataPoints = uiState.offlineDetailChartData, palette = listOf(primaryColor), dateLabelRelative = uiState.dateLabelRelative, dateLabelExact = uiState.dateLabelExact, highlightedPoint = chartHighlight, hasNext = uiState.hasNextPeriod, hasPrev = uiState.hasPreviousPeriod, onPrevious = { viewModel.previousDay() }, onNext = { viewModel.nextDay() }, onDateClick = { showDatePicker = true }, onPointSelected = { event -> if (event == null) { viewModel.setChartHighlight(null); returnScrollIndex = -1 } else { viewModel.setChartHighlight(event) } }
+                                title = "Offline Activity", subTitle = "Total Offline Activity", totalTime = uiState.totalOfflineTimeFormatted, dataPoints = uiState.offlineDetailChartData, palette = listOf(primaryColor), dateLabelRelative = uiState.dateLabelRelative, dateLabelExact = uiState.dateLabelExact, highlightedPoint = chartHighlight, hasNext = uiState.hasNextPeriod, hasPrev = uiState.hasPreviousPeriod, onPrevious = { viewModel.previousDay() }, onNext = { viewModel.nextDay() }, onDateClick = { showDatePicker = true }, onPointSelected = { event -> if (event == null) { viewModel.setChartHighlight(null); returnScrollIndex = -1 } else { viewModel.setChartHighlight(event) } }
                             )
                             val showHint = chartHighlight != null && chartHighlight.point?.values?.all { it <= 0f } == true
-                            AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
-                                Column(modifier = Modifier.padding(top = 16.dp)) {
-                                    val isFuture = chartHighlight?.point?.isFuture == true
-                                    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-                                    val isBatteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
-                                    val quote = remember(chartHighlight) {
-                                        HeuristicQuotes.getQuote(
-                                            point = chartHighlight?.point,
-                                            totalScreenTimeMillis = uiState.totalScreenTimeMillis,
-                                            isDayView = uiState.timeRange == TimeRangeLabel.DAY,
-                                            isDataReliable = uiState.isDataReliable,
-                                            hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
-                                            osRetentionDays = uiState.osRetentionDays,
-                                            chartMode = ChartMode.OFFLINE,
-                                            isBatteryExempt = isBatteryExempt)
-                                    }
-                                    LaunchedEffect(chartHighlight) {
-                                        if (!uiState.isDataReliable && !isFuture && !uiState.hasSeenHistoryLimitWarning) {
-                                            viewModel.markHistoryLimitWarningSeen()
-                                        }
-                                    }
-                                    HeuristicTipCard(quote = quote)
-                                }
-                            }
+                            EmptyBucketHintCard(
+                                showHint = showHint,
+                                highlight = chartHighlight,
+                                chartMode = ChartMode.OFFLINE,
+                                totalScreenTimeMillis = uiState.totalScreenTimeMillis,
+                                isDayView = uiState.timeRange == TimeRangeLabel.DAY,
+                                isDataReliable = uiState.isDataReliable,
+                                hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
+                                osRetentionDays = uiState.osRetentionDays,
+                                onMarkHistoryLimitWarningSeen = { viewModel.markHistoryLimitWarningSeen() })
                             Spacer(modifier = Modifier.height(24.dp))
                             Text("LOGGED ACTIVITIES", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.height(12.dp))
@@ -215,7 +187,7 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                     }
                     
                     if (offlineList.isEmpty()) {
-                        item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.AutoMirrored.Filled.DirectionsWalk, "Zero Offline Logs", "No offline activities logged for this period.") } }
+                        item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.AutoMirrored.Filled.DirectionsWalk, "Zero Offline Activities", "No offline activities logged for this period.") } }
                     } else {
                         val maxUsage = offlineList.maxOfOrNull { it.durationInMillis }?.toFloat() ?: 1f
                         itemsIndexed(offlineList, key = { _, item -> item.uniqueKey }) { _, item -> 
@@ -223,7 +195,7 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
                             val isHighlighted = if (chartHighlight != null) {
                                 if (chartHighlight.isFromChart) {
                                     val pointTag = chartHighlight.point?.syncTag ?: ""
-                                    (pointTag in item.activeTimeTags) && (chartHighlight.stackIndex == -1 || chartHighlight.stackIndex == 1)
+                                    (pointTag in item.activeTimeTags) && (chartHighlight.stackIndex == -1 || chartHighlight.stackIndex == STACK_OFFLINE)
                                 } else chartHighlight.sourceKey == item.uniqueKey
                             } else false
                             
@@ -236,38 +208,21 @@ fun OfflineStatsScreen(navController: NavController, viewModel: DashboardViewMod
             }
         }
         
-        AnimatedVisibility(
-            visible = selectedTitles.isNotEmpty(), 
-            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400)), 
-            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeOut(tween(400)), 
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp).windowInsetsPadding(WindowInsets.navigationBars), 
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), 
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), 
-                shape = RoundedCornerShape(24.dp), 
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        BatchSelectionBar(
+                visible = selectedTitles.isNotEmpty(),
+                count = selectedTitles.size
             ) {
-                Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(modifier = Modifier.weight(1f, fill=false).padding(end = 16.dp)) {
-                        Text("${selectedTitles.size} Selected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                if (selectedTitles.size == 1) {
+                    TextButton(onClick = { navController.navigate(NavRouteCodec.offlineDetailsRoute(selectedTitles.first())) }) {
+                        Text("Edit Label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                        if (selectedTitles.size == 1) {
-                            TextButton(onClick = { navController.navigate(NavRouteCodec.offlineDetailsRoute(selectedTitles.first())) }) {
-                                Text("Edit Label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            TextButton(onClick = { showDeleteDialog = true }) {
-                                Text("Delete", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-                            }
-                        } else {
-                            PromptHighlightButton("Delete Selected") { showDeleteDialog = true }
-                        }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = { showDeleteDialog = true }) {
+                        Text("Delete", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
                     }
+                } else {
+                    PromptHighlightButton("Delete Selected") { showDeleteDialog = true }
                 }
             }
-        }
     }
 }

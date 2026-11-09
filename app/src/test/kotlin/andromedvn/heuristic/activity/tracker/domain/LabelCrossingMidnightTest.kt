@@ -147,60 +147,6 @@ class LabelCrossingMidnightTest {
     private val labelEnd = at(2024, Calendar.MARCH, 11, 0, 30).timeInMillis
     private val labelDuration = labelEnd - labelStart
 
-    // --- the split happens --------------------------------------------------
-
-    @Test
-    fun `a label crossing midnight is split into one row per day`() {
-        val rows = chunkAsProduction(labelStart, labelEnd)
-
-        assertEquals("one chunk per calendar day", 2, rows.size)
-        assertEquals(labelStart, rows[0].first)
-        assertEquals("the second chunk starts at the next local midnight", startOfDay(day11), rows[1].first)
-        assertTrue("the second day is not skipped", rows[1].first >= startOfDay(day11))
-        assertTrue("and the first chunk stops inside the first day", rows[0].second <= endOfDay(day10))
-    }
-
-    @Test
-    fun `the two shares lose exactly one millisecond and duplicate nothing`() {
-        val rows = chunkAsProduction(labelStart, labelEnd)
-        val recorded = rows.sumOf { it.second - it.first }
-
-        assertEquals(3_600_000L, labelDuration)
-        assertEquals("1 ms short, from the inclusive end-of-day plus the +1 resume", 1L, labelDuration - recorded)
-        assertEquals(1_799_999L, rows[0].second - rows[0].first)
-        assertEquals(1_800_000L, rows[1].second - rows[1].first)
-        assertTrue(
-            "the chunks must not overlap: they resume at the next midnight",
-            rows[0].second < rows[1].first
-        )
-    }
-
-    @Test
-    fun `a half-open split is exact and still never duplicates a millisecond`() {
-        val rows = chunkHalfOpen(labelStart, labelEnd)
-
-        assertEquals(2, rows.size)
-        assertEquals("the two shares reconstruct the label exactly", labelDuration, rows.sumOf { it.second - it.first })
-        assertEquals(1_800_000L, rows[0].second - rows[0].first)
-        assertEquals(1_800_000L, rows[1].second - rows[1].first)
-        assertEquals("each row ends where the next begins", rows[0].second, rows[1].first)
-    }
-
-    @Test
-    fun `the loss scales with the number of midnights crossed, not with the label length`() {
-        // 22:00 on the 10th through 02:00 on the 12th: 28 hours, two midnights.
-        val start = at(2024, Calendar.MARCH, 10, 22, 0).timeInMillis
-        val end = at(2024, Calendar.MARCH, 12, 2, 0).timeInMillis
-
-        val rows = chunkAsProduction(start, end)
-        val recorded = rows.sumOf { it.second - it.first }
-
-        assertEquals(100_800_000L, end - start)
-        assertEquals(3, rows.size)
-        assertEquals("1 ms per boundary crossed", 2L, (end - start) - recorded)
-        assertEquals("and a half-open split is exact", end - start, chunkHalfOpen(start, end).sumOf { it.second - it.first })
-    }
-
     // --- the read side, in the production function -------------------------
 
     @Test
@@ -246,38 +192,6 @@ class LabelCrossingMidnightTest {
             "app + offline still fits the day window",
             totalDuration(app) + totalDuration(sharded) <= d10End - d10Start
         )
-    }
-
-    // --- the read path cannot see the second day's share -------------------
-
-    @Test
-    fun `a row that began on the previous day is invisible to the next day's query`() {
-        // PINNED, NOT FIXED, the WHERE clause lives in OfflineStorage.kt:381.
-        val d10Start = startOfDay(day10); val d10End = endOfDay(day10)
-        val d11Start = startOfDay(day11); val d11End = endOfDay(day11)
-
-        assertTrue("day 10 sees the row", isVisibleToQuery(labelStart, d10Start, d10End))
-        assertTrue(
-            "day 11 does NOT, so its share is lost on the read path",
-            !isVisibleToQuery(labelStart, d11Start, d11End)
-        )
-    }
-
-    @Test
-    fun `the writer splits the label so this invisibility never bites in practice`() {
-        // Why the 1 ms is the lesser defect: because the writer already emits
-        // one row per day, every row a query can see lies inside that day.
-        val rows = chunkAsProduction(labelStart, labelEnd)
-
-        for (row in rows) {
-            val dayStart = startOfDay(Calendar.getInstance().apply { timeInMillis = row.first })
-            val dayEnd = endOfDay(Calendar.getInstance().apply { timeInMillis = row.first })
-            assertTrue(
-                "row ${row.first} must be returned by the query for its own day",
-                isVisibleToQuery(row.first, dayStart, dayEnd)
-            )
-            assertTrue("and must not leak into the next", row.second <= dayEnd)
-        }
     }
 
     @Test

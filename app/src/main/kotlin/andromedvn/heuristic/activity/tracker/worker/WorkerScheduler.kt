@@ -8,7 +8,12 @@ object WorkerScheduler {
     private const val ARCHIVE_WORK_NAME = "HatArchiveSyncWork"
     private const val BACKUP_WORK_NAME = "HatRollingVaultWork"
 
-    fun updateWorkers(context: Context, archiveHours: Int, backupHours: Int = 0) {
+    /**
+     * Always pass BOTH intervals explicitly: omitting one used to mean
+     * "cancel that worker" (a general settings change silently cancelled the
+     * Rolling Vault schedule until MainActivity re-asserted it on next resume).
+     */
+    fun updateWorkers(context: Context, archiveHours: Int, backupHours: Int) {
         val workManager = WorkManager.getInstance(context)
 
         // Deploy or cancel Archiver

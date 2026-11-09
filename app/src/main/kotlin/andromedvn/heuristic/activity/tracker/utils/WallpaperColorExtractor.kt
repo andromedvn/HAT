@@ -11,13 +11,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object WallpaperColorExtractor {
+    // Lint's MissingPermission fires because getDrawable needs READ_WALLPAPER_INTERNAL
+    // on modern Android; that path is version-gated above (the call only runs on
+    // Android 8.1 and lower, where READ_EXTERNAL_STORAGE is the actual requirement),
+    // so the annotation documents a deliberate, guarded decision.
+    @android.annotation.SuppressLint("MissingPermission")
     suspend fun getWallpaperDominantColor(context: Context): Long? {
         return withContext(Dispatchers.IO) {
             try {
-                if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.O_MR1) {
-                    if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                        return@withContext null
-                    }
+                // Android 9+ removed wallpaper-bitmap access for store apps
+                // (READ_WALLPAPER_INTERNAL is signature-only) - the call below
+                // cannot succeed there, so skip it instead of throwing.
+                if (android.os.Build.VERSION.SDK_INT > android.os.Build.VERSION_CODES.O_MR1) {
+                    return@withContext null
+                }
+                if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    return@withContext null
                 }
 
                 val wallpaperManager = WallpaperManager.getInstance(context)

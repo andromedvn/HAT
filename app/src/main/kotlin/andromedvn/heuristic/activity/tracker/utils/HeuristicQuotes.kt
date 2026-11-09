@@ -1,7 +1,7 @@
 package andromedvn.heuristic.activity.tracker.utils
 
-import andromedvn.heuristic.activity.tracker.ui.components.ChartMode
-import andromedvn.heuristic.activity.tracker.ui.components.ChartPoint
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
+import andromedvn.heuristic.activity.tracker.domain.ChartPoint
 
 /**
  * The tip copy (2026-11-01, owner-picked line by line): the HAT voice.
@@ -61,8 +61,8 @@ object HeuristicQuotes {
 
         // 4. The Past (Day View)
         return when (chartMode) {
-            ChartMode.GAPS -> "All accounted for.\nApp time and labeled offline time cover this whole period. Nothing needs a labeling here."
-            ChartMode.APP_USAGE -> "Hmm... No apps were present this hour.\nView the unlabeled gaps instead."
+            ChartMode.GAPS -> "All accounted for.\nApp time and labeled offline activities cover this whole period. Nothing needs a labeling here."
+            ChartMode.APP_USAGE -> "Hmm... No apps were present this hour.\nThe Label Gaps screen on the dashboard can log it."
             ChartMode.OFFLINE -> "Nothing here.\nGaps is where this time gets named."
             else -> "No screen activity or manual logs here\nTap View Unlabeled Gaps below and tell HAT what really happened."
         }

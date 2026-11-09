@@ -1,9 +1,10 @@
 package andromedvn.heuristic.activity.tracker.ui.components
 
-import androidx.compose.animation.animateColorAsState
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
+import andromedvn.heuristic.activity.tracker.domain.ChartPoint
+import andromedvn.heuristic.activity.tracker.domain.chartSyncKey
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
@@ -22,7 +23,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -44,9 +44,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -64,11 +62,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.take
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.round
@@ -76,33 +69,24 @@ import kotlin.math.sin
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.text.style.TextOverflow
 
-private val BarWidth = 16.dp 
-private val ChartHeight = 180.dp 
-
-enum class ChartMode { DASHBOARD, APP_USAGE, OFFLINE, DETAIL, GAPS }
-
-data class ChartPoint(val label: String, val values: List<Float>, val displayValue: String, val segmentValues: List<String>, val fullDateLabel: String = label, val syncTag: String = "", val isCurrent: Boolean = false, val isFuture: Boolean = false, val isNextFuture: Boolean = false)
+private val BarWidth = 16.dp
+private val ChartHeight = 180.dp
 
 /**
- * Stable, locale-independent identity for the bucket a millisecond value falls in.
- *
- * [ChartPoint.syncTag] is the tag the engine stamps on every bucket, so a list row and
- * a bar can be matched on this key instead of on a display string. The old comparison
- * went through [andromedvn.heuristic.activity.tracker.data.SessionItem.getTimeRangeStr],
- * which formats with Locale.getDefault(); a device set to e.g. Turkish or Japanese
- * produced a different string for the same instant and the row never highlighted.
- *
- * Patterns are pinned to [Locale.ENGLISH] to match the tags the engine builds, so the
- * key is a function of the instant and the range only.
+ * The label band under each bar row: the chart area is ChartHeight tall and the
+ * labels live in the 24dp strip below it. The row height, the bottom gridline
+ * position and the hit-test margin all derive from it; change one, change all.
  */
-fun chartSyncKey(millis: Long, range: TimeRangeLabel): String {
-    val cal = Calendar.getInstance().apply { timeInMillis = millis }
-    return when (range) {
-        TimeRangeLabel.DAY -> cal.get(Calendar.HOUR_OF_DAY).toString()
-        TimeRangeLabel.WEEK -> SimpleDateFormat("EEE", Locale.ENGLISH).format(cal.time)
-        TimeRangeLabel.MONTH -> SimpleDateFormat("MMM d", Locale.ENGLISH).format(cal.time)
-    }
-}
+private val LABEL_BAND_DP = 24.dp
+
+/**
+ * Stack order of the two bar segments: 0 = app usage (front), 1 = offline.
+ * The chart labels and the long-press row mapping (Dashboard/AppUsage/Offline
+ * screens) must use the same numbers; a reorder without these breaks which
+ * row lights up.
+ */
+const val STACK_APPS = 0
+const val STACK_OFFLINE = 1
 
 @Composable
 fun HatChart(
@@ -190,8 +174,8 @@ fun HatChart(
                 if (totalTime != null) {
                     val labelText = when {
                         selectedPoint != null && selectedStackIndex == -1 -> "Segment Total"
-                        selectedPoint != null && selectedStackIndex == 0 -> "Apps Usage"
-                        selectedPoint != null && selectedStackIndex == 1 -> "Offline Time"
+                        selectedPoint != null && selectedStackIndex == STACK_APPS -> "Apps Usage"
+                        selectedPoint != null && selectedStackIndex == STACK_OFFLINE -> "Offline Activity"
                         else -> "Total Tracked Time"
                     }
                     val displayTime = when {
@@ -200,7 +184,9 @@ fun HatChart(
                         else -> totalTime
                     }
                     
-                    val isZero = displayTime == "0m" || displayTime == "0h 0m" || displayTime == ""
+                    // Zero comes from the data (all bucket values empty), not from matching the
+            // formatted string - a formatter change must not move this fade.
+            val isZero = selectedPoint != null && selectedPoint!!.values.all { it <= 0f }
                     val timeAlpha by animateFloatAsState(targetValue = if (isZero) 0f else 1f, animationSpec = tween(400), label = "timeAlpha")
                     
                     Column(horizontalAlignment = Alignment.End, modifier = Modifier.alpha(timeAlpha).widthIn(max = 150.dp)) {
@@ -229,7 +215,7 @@ fun HatChart(
                 totalTime?.let { append(", total ").append(it) }
             }
 
-            Row(modifier = Modifier.fillMaxWidth().height(ChartHeight + 24.dp), verticalAlignment = Alignment.Top) {
+            Row(modifier = Modifier.fillMaxWidth().height(ChartHeight + LABEL_BAND_DP), verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.height(ChartHeight).padding(end = 12.dp), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.End) {
                     Text(dynamicLabels[0], style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 10.sp)
                     Text(dynamicLabels[1], style = MaterialTheme.typography.labelSmall, color = labelColor, fontSize = 10.sp)
@@ -312,8 +298,8 @@ fun GridLinesOverlay(color: Color) {
         val linePaint = color.copy(alpha = 0.1f)
         val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
         drawLine(linePaint, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx())
-        drawLine(linePaint, Offset(0f, (size.height - 24.dp.toPx()) / 2), Offset(size.width, (size.height - 24.dp.toPx()) / 2), pathEffect = pathEffect, strokeWidth = 1.dp.toPx())
-        drawLine(linePaint, Offset(0f, size.height - 24.dp.toPx()), Offset(size.width, size.height - 24.dp.toPx()), strokeWidth = 1.dp.toPx())
+        drawLine(linePaint, Offset(0f, (size.height - LABEL_BAND_DP.toPx()) / 2), Offset(size.width, (size.height - LABEL_BAND_DP.toPx()) / 2), pathEffect = pathEffect, strokeWidth = 1.dp.toPx())
+        drawLine(linePaint, Offset(0f, size.height - LABEL_BAND_DP.toPx()), Offset(size.width, size.height - LABEL_BAND_DP.toPx()), strokeWidth = 1.dp.toPx())
     }
 }
 
@@ -338,11 +324,10 @@ fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelect
     var flashAlpha by remember { mutableFloatStateOf(0f) }
     val animatedFlash by animateFloatAsState(targetValue = flashAlpha, animationSpec = tween(300), label = "flash")
 
-    // pulseAlpha is supplied by HatChart: one shared infinite transition per chart.
-    val labelColor = if (point.isCurrent) primaryColor.copy(alpha = pulseAlpha) else if (isSelected) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant
+        val labelColor = if (point.isCurrent) primaryColor.copy(alpha = pulseAlpha) else if (isSelected) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant
     val labelWeight = if (point.isCurrent) FontWeight.ExtraBold else if (isSelected) FontWeight.Bold else FontWeight.Normal
 
-    // V.9 Pure Physics: Animatable + rememberSaveable guarantees memory permanence across nav-graphs.
+    // rememberSaveable + listSaver: the animation survives navigation.
     val savedValues = rememberSaveable(point.values.size, saver = listSaver(
         save = { it.map { anim -> anim.value } },
         restore = { it.map { value -> Animatable(value) }.toMutableList() }
@@ -354,8 +339,7 @@ fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelect
 
     LaunchedEffect(point.values, animationSalt) {
         if (executedSalt != animationSalt) {
-            // Explicit refresh detected. Snap to 0 to trigger growth discovery.
-            savedValues.forEach { it.snapTo(0f) }
+                        savedValues.forEach { it.snapTo(0f) }
             executedSalt = animationSalt
         }
         
@@ -380,7 +364,11 @@ fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelect
         with(density) {
             val barH = ChartHeight.toPx()
             if (currentActiveIndices.size == 1) {
-                clickedIndex = currentActiveIndices.first()
+                // One visible segment carries no stack choice: -1 means "the
+                // whole bucket". Single-series charts never claim a stack, so
+                // every screen's stackIndex match treats them as bucket-wide
+                // (the offline screen's 0-vs-STACK_OFFLINE mismatch died here).
+                clickedIndex = -1
             } else {
                 var currentGapPx = gapSize.toPx()
                 var currentMinPx = 2.dp.toPx()
@@ -405,7 +393,7 @@ fun BarItem(point: ChartPoint, palette: List<Color>, maxDataSum: Float, isSelect
                     overallTop = topY
                     currentY = topY - currentGapPx
                 }
-                if (y >= overallTop - 24.dp.toPx() && y <= barH + 24.dp.toPx()) { clickedIndex = closestIdx }
+                if (y >= overallTop - LABEL_BAND_DP.toPx() && y <= barH + LABEL_BAND_DP.toPx()) { clickedIndex = closestIdx }
             }
         }
         clickedIndex

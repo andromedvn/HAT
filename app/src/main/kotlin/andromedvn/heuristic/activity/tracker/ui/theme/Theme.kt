@@ -30,19 +30,6 @@ object ColorUtils {
         newHsl[2] = (tone / 100f).coerceIn(0f, 1f)
         return Color(AndroidColorUtils.HSLToColor(newHsl))
     }
-
-    fun adjustBrightness(color: Color, fraction: Float): Color {
-        val hsl = FloatArray(3)
-        AndroidColorUtils.colorToHSL(color.toArgb(), hsl)
-        hsl[2] = (hsl[2] + fraction).coerceIn(0f, 1f)
-        return Color(AndroidColorUtils.HSLToColor(hsl))
-    }
-
-    fun generateMonochromaticPalette(base: Color, steps: Int = 10): List<Color> {
-        return List(steps) { i ->
-            adjustBrightness(base, -(i * 0.045f)) 
-        }
-    }
 }
 
 fun generateMonochromaticDark(seed: Color): ColorScheme {

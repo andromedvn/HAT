@@ -18,12 +18,19 @@ object ArchiveCursor {
     const val DAY_MILLIS: Long = 86_400_000L
 
     /**
+     * Days one archive pass attempts. ONE home for the number: the worker's
+     * catch-up ceiling is derived from it, so changing the pass length can
+     * never silently desync the two.
+     */
+    const val DEFAULT_PASS_DAYS: Int = 5
+
+    /**
      * The local midnights one pass attempts: [cursor, cursor + daysPerPass),
      * never reaching [startOfToday]. Day steps go through [LocalDay.nextLocalMidnight]
      * so a 23- or 25-hour DST day is walked the way the calendar says it is,
      * exactly like the repository walk it plans.
      */
-    fun passDays(cursor: Long, startOfToday: Long, daysPerPass: Int = 5): List<Long> {
+    fun passDays(cursor: Long, startOfToday: Long, daysPerPass: Int = DEFAULT_PASS_DAYS): List<Long> {
         require(daysPerPass > 0) { "daysPerPass must be positive, was $daysPerPass" }
         val out = ArrayList<Long>(daysPerPass)
         var day = cursor

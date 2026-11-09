@@ -1,18 +1,21 @@
 package andromedvn.heuristic.activity.tracker.domain
 
 import andromedvn.heuristic.activity.tracker.data.*
-import andromedvn.heuristic.activity.tracker.ui.components.ChartMode
-import andromedvn.heuristic.activity.tracker.ui.components.ChartPoint
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Locale
 
 class HeuristicEngine(private val repository: ActivityRepository, private val engine: UsageStatsEngine) {
+
+    /**
+     * Coalescing tolerance for gap-walk neighbor lookups (scanForGaps, expandVoid,
+     * expandActivityCascade all use it): spans closer than this are treated as
+     * touching. Deliberately NOT the classifier's BOUNDARY_EPSILON_MS (2000).
+     */
+    private val COALESCE_TOLERANCE_MS = 1000L
 
     private fun getSyncTagsForIntervals(intervals: List<Pair<Long, Long>>, range: TimeRangeLabel): Set<String> {
         val tags = mutableSetOf<String>()
@@ -21,21 +24,15 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
             var curr = iv.first
             while (curr < iv.second) {
                 cal.timeInMillis = curr
+                tags.add(chartSyncKey(cal.timeInMillis, range))
                 when (range) {
-                    TimeRangeLabel.DAY -> { 
-                        tags.add(cal.get(Calendar.HOUR_OF_DAY).toString())
+                    TimeRangeLabel.DAY -> {
                         cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                        cal.add(Calendar.HOUR_OF_DAY, 1) 
+                        cal.add(Calendar.HOUR_OF_DAY, 1)
                     }
-                    TimeRangeLabel.WEEK -> { 
-                        tags.add(SimpleDateFormat("EEE", Locale.ENGLISH).format(cal.time))
+                    else -> {
                         cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                        cal.add(Calendar.DAY_OF_YEAR, 1) 
-                    }
-                    TimeRangeLabel.MONTH -> { 
-                        tags.add(SimpleDateFormat("MMM d", Locale.ENGLISH).format(cal.time))
-                        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                        cal.add(Calendar.DAY_OF_YEAR, 1) 
+                        cal.add(Calendar.DAY_OF_YEAR, 1)
                     }
                 }
                 curr = cal.timeInMillis
@@ -314,7 +311,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
                 dismissedSpans.map { it.second to it.third }
             )
         )
-        for ((ds, de) in darkOnly) labeled.add(GapNeighbor("The screen was off", ds, de, screenOff = true))
+        for ((ds, de) in darkOnly) labeled.add(GapNeighbor("The screen was off", ds, de))
 
         // Nearest neighbor lookup for the explainers. A gap's "before" is the
         // latest named span ending at or before the gap's start; its "after"
@@ -327,10 +324,10 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         fun nearestBefore(t: Long): GapNeighbor? {
             // Latest interval whose end is <= t (+1s: the walk's coalescing
             // tolerance, so a span ending exactly at the boundary counts).
-            return byEnd.firstOrNull { it.endMillis <= t + 1000L }
+            return byEnd.firstOrNull { it.endMillis <= t + COALESCE_TOLERANCE_MS }
         }
         fun nearestAfter(t: Long): GapNeighbor? {
-            return byStart.firstOrNull { it.startMillis >= t - 1000L }
+            return byStart.firstOrNull { it.startMillis >= t - COALESCE_TOLERANCE_MS }
         }
 
         val gaps = mutableListOf<UsageGap>()
@@ -360,7 +357,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         val appIntervals = repository.getFilteredIntervals(scanStart, scanEnd, hiddenPkgs).values.flatten()
         val offlineItems = repository.getRawOfflineActivitiesBetween(scanStart, scanEnd)
         // `maxEnd = Long.MAX_VALUE`: this walk's "what precedes the gap" lookup
-        // selects on `interval.second <= start + 1000`, so truncating a corrupt
+        // selects on `interval.second <= start + COALESCE_TOLERANCE_MS`, so truncating a corrupt
         // row's end to `now` would let it masquerade as a real activity ending
         // where the gap begins. The end is left alone; the row is still
         // rejected if its duration is non-positive or it starts in the future.
@@ -372,10 +369,10 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         var trueStart = start
         var trueEnd = end
         
-        val pre = combined.findLast { it.second <= start + 1000L }
+        val pre = combined.findLast { it.second <= start + COALESCE_TOLERANCE_MS }
         if (pre != null) trueStart = pre.second
         
-        val post = combined.find { it.first >= end - 1000L }
+        val post = combined.find { it.first >= end - COALESCE_TOLERANCE_MS }
         if (post != null) trueEnd = post.first
         
         trueStart to minOf(trueEnd, now)
@@ -398,9 +395,9 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         var changed = true
         while (changed) {
             changed = false
-            val prev = all.findLast { it.second >= minS - 1000L && it.first < minS }
+            val prev = all.findLast { it.second >= minS - COALESCE_TOLERANCE_MS && it.first < minS }
             if (prev != null) { minS = prev.first; changed = true }
-            val next = all.find { it.first <= maxE + 1000L && it.second > maxE }
+            val next = all.find { it.first <= maxE + COALESCE_TOLERANCE_MS && it.second > maxE }
             if (next != null) { maxE = next.second; changed = true }
         }
         minS to maxE
@@ -424,7 +421,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         clusterSessions(merged, clusterThreshold).sortedByDescending { it.startTime }
     }
 
-    private fun getHourLabel(hour: Int): String = when(hour) { 0 -> "12 AM"; 12 -> "12 PM"; else -> if(hour<12) "$hour AM" else "${hour-12} PM" }
+    private fun getHourLabel(hour: Int): String = hourLabel(hour)
     
     private suspend fun buildChartPoints(start: Long, range: TimeRangeLabel, appIntervals: List<Pair<Long, Long>>, offlineIntervals: List<Pair<Long, Long>>, mode: ChartMode): List<ChartPoint> = withContext(Dispatchers.Default) {
         val bucketType = if (range == TimeRangeLabel.DAY) Calendar.HOUR_OF_DAY else Calendar.DAY_OF_YEAR
@@ -470,13 +467,13 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
                 // which ends at the second 01:00.
                 val endHour = tempCal.get(Calendar.HOUR_OF_DAY)
                 fullLabel = "${getHourLabel(hour)} - ${getHourLabel(endHour)}"
-                syncTag = hour.toString()
+                syncTag = chartSyncKey(cal.timeInMillis, range)
             } else if (range == TimeRangeLabel.WEEK) {
-                val dayStr = SimpleDateFormat("EEE", Locale.ENGLISH).format(cal.time)
+                val dayStr = chartSyncKey(cal.timeInMillis, range)
                 label = dayStr; fullLabel = dayStr; syncTag = dayStr
             } else {
                 label = cal.get(Calendar.DAY_OF_MONTH).toString()
-                val dateStr = SimpleDateFormat("MMM d", Locale.ENGLISH).format(cal.time)
+                val dateStr = chartSyncKey(cal.timeInMillis, range)
                 fullLabel = dateStr; syncTag = dateStr
             }
 
@@ -505,8 +502,7 @@ class HeuristicEngine(private val repository: ActivityRepository, private val en
         buildChartPoints(start, TimeRangeLabel.DAY, mergedAppIntervals, shardedOfflineIntervals, ChartMode.DASHBOARD)
     }
     
-    suspend fun getDailyBreakdown(start: Long, end: Long, pattern: String, hiddenPkgs: Set<String>): List<ChartPoint> = withContext(Dispatchers.Default) { 
-        val range = if (pattern == "EEE") TimeRangeLabel.WEEK else TimeRangeLabel.MONTH 
+    suspend fun getDailyBreakdown(start: Long, end: Long, range: TimeRangeLabel, hiddenPkgs: Set<String>): List<ChartPoint> = withContext(Dispatchers.Default) {
         val mergedAppIntervals = engine.mergeIntervals(repository.getFilteredIntervals(start, end, hiddenPkgs).values.flatten())
         val shardedOfflineIntervals = getShardedOfflineIntervals(start, end)
         buildChartPoints(start, range, mergedAppIntervals, shardedOfflineIntervals, ChartMode.DASHBOARD) 
@@ -687,7 +683,7 @@ fun sanitizeOfflineRow(
  *
  * [maxEnd] caps the end. Pass [Long.MAX_VALUE] to leave the end uncapped -
  * required by `expandVoid`, whose "what activity precedes this gap" lookup
- * selects on `interval.second <= start + 1000` and would otherwise start
+ * selects on `interval.second <= start + COALESCE_TOLERANCE_MS` and would otherwise start
  * matching a corrupt row that has been truncated to [now], mistaking it for a
  * real activity that ends where the gap begins.
  */

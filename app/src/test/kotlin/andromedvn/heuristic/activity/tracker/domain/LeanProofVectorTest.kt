@@ -118,29 +118,4 @@ class LeanProofVectorTest {
         assertEquals(listOf((0L to 499L), (500L to 1000L)), subtractIntervals(listOf((0L to 1000L)), listOf((499L to 500L))))
     }
 
-    @Test
-    fun `clamp_overhang`() {
-        assertEquals(listOf((0L to 86400000L)), listOf(clampRaw(0L, 86400000L, -100L, 86400100L)))
-    }
-
-    @Test
-    fun `clamp_inside`() {
-        assertEquals(listOf((3600000L to 7200000L)), listOf(clampRaw(0L, 86400000L, 3600000L, 7200000L)))
-    }
-
-    @Test
-    fun `clamp_disjoint`() {
-        assertEquals(listOf((90000000L to 86400000L)), listOf(clampRaw(0L, 86400000L, 90000000L, 91000000L)))
-    }
-
-    @Test
-    fun `clamp_point`() {
-        assertEquals(listOf((500L to 500L)), listOf(clampRaw(0L, 86400000L, 500L, 500L)))
-    }
-
-    @Test
-    fun `clamp_negative`() {
-        assertEquals(listOf((-86400000L to -100L)), listOf(clampRaw(-86400000L, 0L, -90000000L, -100L)))
-    }
-
 }

@@ -13,6 +13,17 @@ and HAT uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Made by hand**
 
+### Removed
+
+- Idle detection, end to end (r9, 2026-11-01). The Idle Minimum dial, the
+  idle/lock-screen question cards, and the ghost dialogs are gone; an
+  untouched-app stretch is now an ordinary gap you label like any other.
+- The gap evidence classifier and its verdict rows (LOCKED at, SCREEN OFF at,
+  UNLOCKED at, PHONE WOKE at, ON SCREEN, LAST TOUCH, hidden-app count). The
+  raw event log stays on disk and backs the numbers, but the labeling dialog
+  shows only the proven core: duration, start, end, and the recorded app on
+  each side.
+
 - The archive walk can no longer be wedged by empty days (2026-10-28). The
   walk restarted from the newest archived row, and because a day with zero
   usage writes no rows, five or more consecutive dead days (a dead-battery

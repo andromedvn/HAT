@@ -10,7 +10,7 @@ import andromedvn.heuristic.activity.tracker.data.UnifiedActivity
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
 import andromedvn.heuristic.activity.tracker.domain.DetailLevel
 import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
-import andromedvn.heuristic.activity.tracker.ui.components.ChartPoint
+import andromedvn.heuristic.activity.tracker.domain.ChartPoint
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
 import kotlinx.coroutines.Job
@@ -48,11 +48,19 @@ class ActivityDetailsViewModel(private val repository: ActivityRepository, priva
             
             val settings = repository.settings.first()
             
-            val item = if (type == "app") heuristicEngine.getAppDetail(id, start, end) else heuristicEngine.getOfflineDetail(id, start, end)
-            val points = heuristicEngine.getActivityChartData(type, id, start, end, range)
-            val sessions = if (type == "app") heuristicEngine.getAppSessions(id, start, end, DetailLevel.SESSION_MERGE_MINS) else heuristicEngine.getOfflineSessions(id, start, end, DetailLevel.SESSION_MERGE_MINS)
-            
-            _uiState.value = DetailsUiState(activity = item, chartData = points, sessionList = sessions, isLoading = false, animationSalt = _uiState.value.animationSalt)
+            try {
+                val item = if (type == "app") heuristicEngine.getAppDetail(id, start, end) else heuristicEngine.getOfflineDetail(id, start, end)
+                val points = heuristicEngine.getActivityChartData(type, id, start, end, range)
+                val mergeMins = DetailLevel.sessionMergeMins(settings)
+                val sessions = if (type == "app") heuristicEngine.getAppSessions(id, start, end, mergeMins) else heuristicEngine.getOfflineSessions(id, start, end, mergeMins)
+                
+                _uiState.value = DetailsUiState(activity = item, chartData = points, sessionList = sessions, isLoading = false, animationSalt = _uiState.value.animationSalt)
+            } catch (e: Exception) {
+                // Honesty catch (same shape as the dashboard load): an engine throw
+                // must end the spinner, not hang the screen on it forever.
+                HatLogger.log("ActivityDetailsViewModel: load failed for type=$type id=$id - ${e.message}")
+                _uiState.value = DetailsUiState(isLoading = false, animationSalt = _uiState.value.animationSalt)
+            }
         }
     }
 

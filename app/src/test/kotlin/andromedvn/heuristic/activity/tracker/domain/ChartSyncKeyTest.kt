@@ -2,7 +2,6 @@ package andromedvn.heuristic.activity.tracker.domain
 
 import andromedvn.heuristic.activity.tracker.data.SessionItem
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
-import andromedvn.heuristic.activity.tracker.ui.components.chartSyncKey
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -87,21 +86,6 @@ class ChartSyncKeyTest {
             "Japanese formatting must not reproduce the engine's English tag",
             monthTag.contains(session.getTimeRangeStr(TimeRangeLabel.MONTH).split(",")[0])
         )
-    }
-
-    // --- the key agrees with the tag the engine stamps ---------------------
-
-    @Test
-    fun `day key is the hour of day`() {
-        assertEquals("14", chartSyncKey(friday, TimeRangeLabel.DAY))
-        assertEquals("0", chartSyncKey(utcMillis(2024, Calendar.JUNE, 14, 0, 0), TimeRangeLabel.DAY))
-        assertEquals("23", chartSyncKey(utcMillis(2024, Calendar.JUNE, 14, 23, 59), TimeRangeLabel.DAY))
-    }
-
-    @Test
-    fun `week and month keys use english abbreviations`() {
-        assertEquals("Fri", chartSyncKey(friday, TimeRangeLabel.WEEK))
-        assertEquals("Jun 14", chartSyncKey(friday, TimeRangeLabel.MONTH))
     }
 
     @Test

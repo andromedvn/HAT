@@ -27,6 +27,22 @@ import java.io.File
 private val Context.dataStore by preferencesDataStore("hat_secure_prefs")
 
 class OfflineStorage private constructor(private val context: Context) {
+    /**
+     * Chunked-transaction convention for the vault merge: every 500 rows,
+     * commit, yield to other writers, and open the next chunk. Keeps one big
+     * merge from holding the write lock for the whole import. The caller
+     * opens the first transaction and does the final setTransactionSuccessful
+     * in its own finally.
+     */
+    private suspend fun chunkTx(db: android.database.sqlite.SQLiteDatabase, count: Int) {
+        if (count % 500 == 0) {
+            db.setTransactionSuccessful()
+            db.endTransaction()
+            yield()
+            db.beginTransaction()
+        }
+    }
+
     private val SETTINGS_KEY = stringPreferencesKey("user_settings")
     private val HIDDEN_APPS_KEY = stringPreferencesKey("hidden_apps")
     
@@ -271,13 +287,7 @@ class OfflineStorage private constructor(private val context: Context) {
                                 skipped++
                                 HatLogger.logError("OfflineStorage", "Vault Merge: Imported label fully overlapped existing time; nothing survived to shard.")
                             }
-
-                            if (count % 500 == 0) {
-                                currentDb.setTransactionSuccessful()
-                                currentDb.endTransaction()
-                                yield()
-                                currentDb.beginTransaction()
-                            }
+                            chunkTx(currentDb, count)
                         }
                         currentDb.setTransactionSuccessful()
                     } finally {
@@ -303,12 +313,7 @@ class OfflineStorage private constructor(private val context: Context) {
                             currentDb.insertWithOnConflict(HatDatabaseHelper.TABLE_ARCHIVE, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
                             
                             count++
-                            if (count % 500 == 0) {
-                                currentDb.setTransactionSuccessful()
-                                currentDb.endTransaction()
-                                yield()
-                                currentDb.beginTransaction()
-                            }
+                            chunkTx(currentDb, count)
                         }
                         currentDb.setTransactionSuccessful()
                     } finally {
@@ -318,26 +323,21 @@ class OfflineStorage private constructor(private val context: Context) {
             } catch (e: Exception) { recordTableFailure(HatDatabaseHelper.TABLE_ARCHIVE, e) }
 
             try {
-                val curIgnored = importedDb.query(HatDatabaseHelper.TABLE_IGNORED, arrayOf("package_name", "start_millis", "end_millis"), null, null, null, null, null)
+                val curIgnored = importedDb.query(HatDatabaseHelper.TABLE_IGNORED, arrayOf(HatDatabaseHelper.COL_EVENT_PKG, HatDatabaseHelper.COL_EVENT_START, HatDatabaseHelper.COL_EVENT_END), null, null, null, null, null)
                 curIgnored.use {
-                    val pkgIdx = it.getColumnIndexOrThrow("package_name")
-                    val sIdx = it.getColumnIndexOrThrow("start_millis")
-                    val eIdx = it.getColumnIndexOrThrow("end_millis")
+                    val pkgIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_PKG)
+                    val sIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_START)
+                    val eIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_END)
                     
                     var count = 0
                     currentDb.beginTransaction()
                     try {
                         while (it.moveToNext()) {
-                            val cv = ContentValues().apply { put("package_name", it.getString(pkgIdx)); put("start_millis", it.getLong(sIdx)); put("end_millis", it.getLong(eIdx)) }
+                            val cv = ContentValues().apply { put(HatDatabaseHelper.COL_EVENT_PKG, it.getString(pkgIdx)); put(HatDatabaseHelper.COL_EVENT_START, it.getLong(sIdx)); put(HatDatabaseHelper.COL_EVENT_END, it.getLong(eIdx)) }
                             currentDb.insertWithOnConflict(HatDatabaseHelper.TABLE_IGNORED, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
                             
                             count++
-                            if (count % 500 == 0) {
-                                currentDb.setTransactionSuccessful()
-                                currentDb.endTransaction()
-                                yield()
-                                currentDb.beginTransaction()
-                            }
+                            chunkTx(currentDb, count)
                         }
                         currentDb.setTransactionSuccessful()
                     } finally {
@@ -347,26 +347,21 @@ class OfflineStorage private constructor(private val context: Context) {
             } catch (e: Exception) { recordTableFailure(HatDatabaseHelper.TABLE_IGNORED, e) }
 
             try {
-                val curAck = importedDb.query(HatDatabaseHelper.TABLE_ACK_GHOSTS, arrayOf("package_name", "start_millis", "end_millis"), null, null, null, null, null)
+                val curAck = importedDb.query(HatDatabaseHelper.TABLE_ACK_GHOSTS, arrayOf(HatDatabaseHelper.COL_EVENT_PKG, HatDatabaseHelper.COL_EVENT_START, HatDatabaseHelper.COL_EVENT_END), null, null, null, null, null)
                 curAck.use {
-                    val pkgIdx = it.getColumnIndexOrThrow("package_name")
-                    val sIdx = it.getColumnIndexOrThrow("start_millis")
-                    val eIdx = it.getColumnIndexOrThrow("end_millis")
+                    val pkgIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_PKG)
+                    val sIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_START)
+                    val eIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_END)
 
                     var count = 0
                     currentDb.beginTransaction()
                     try {
                         while (it.moveToNext()) {
-                            val cv = ContentValues().apply { put("package_name", it.getString(pkgIdx)); put("start_millis", it.getLong(sIdx)); put("end_millis", it.getLong(eIdx)) }
+                            val cv = ContentValues().apply { put(HatDatabaseHelper.COL_EVENT_PKG, it.getString(pkgIdx)); put(HatDatabaseHelper.COL_EVENT_START, it.getLong(sIdx)); put(HatDatabaseHelper.COL_EVENT_END, it.getLong(eIdx)) }
                             currentDb.insertWithOnConflict(HatDatabaseHelper.TABLE_ACK_GHOSTS, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
 
                             count++
-                            if (count % 500 == 0) {
-                                currentDb.setTransactionSuccessful()
-                                currentDb.endTransaction()
-                                yield()
-                                currentDb.beginTransaction()
-                            }
+                            chunkTx(currentDb, count)
                         }
                         currentDb.setTransactionSuccessful()
                     } finally {
@@ -376,26 +371,21 @@ class OfflineStorage private constructor(private val context: Context) {
             } catch (e: Exception) { recordTableFailure(HatDatabaseHelper.TABLE_ACK_GHOSTS, e) }
 
             try {
-                val curDismissed = importedDb.query(HatDatabaseHelper.TABLE_SCREEN_OFF_DISMISSED, arrayOf("package_name", "start_millis", "end_millis"), null, null, null, null, null)
+                val curDismissed = importedDb.query(HatDatabaseHelper.TABLE_SCREEN_OFF_DISMISSED, arrayOf(HatDatabaseHelper.COL_EVENT_PKG, HatDatabaseHelper.COL_EVENT_START, HatDatabaseHelper.COL_EVENT_END), null, null, null, null, null)
                 curDismissed.use {
-                    val pkgIdx = it.getColumnIndexOrThrow("package_name")
-                    val sIdx = it.getColumnIndexOrThrow("start_millis")
-                    val eIdx = it.getColumnIndexOrThrow("end_millis")
+                    val pkgIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_PKG)
+                    val sIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_START)
+                    val eIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_END)
 
                     var count = 0
                     currentDb.beginTransaction()
                     try {
                         while (it.moveToNext()) {
-                            val cv = ContentValues().apply { put("package_name", it.getString(pkgIdx)); put("start_millis", it.getLong(sIdx)); put("end_millis", it.getLong(eIdx)) }
+                            val cv = ContentValues().apply { put(HatDatabaseHelper.COL_EVENT_PKG, it.getString(pkgIdx)); put(HatDatabaseHelper.COL_EVENT_START, it.getLong(sIdx)); put(HatDatabaseHelper.COL_EVENT_END, it.getLong(eIdx)) }
                             currentDb.insertWithOnConflict(HatDatabaseHelper.TABLE_SCREEN_OFF_DISMISSED, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
 
                             count++
-                            if (count % 500 == 0) {
-                                currentDb.setTransactionSuccessful()
-                                currentDb.endTransaction()
-                                yield()
-                                currentDb.beginTransaction()
-                            }
+                            chunkTx(currentDb, count)
                         }
                         currentDb.setTransactionSuccessful()
                     } finally {
@@ -436,7 +426,7 @@ class OfflineStorage private constructor(private val context: Context) {
                         try { 
                             json.decodeFromString<List<OfflineActivityEntity>>(file.readText()).forEach { insertActivityInternal(db, it) } 
                             file.delete()
-                        } catch (e: Exception) {} 
+                        } catch (e: Exception) { HatLogger.logError("OfflineStorage", "Legacy activity chunk ${file.name} failed to migrate; keeping the file for retry: ${e.message}") } 
                     } 
                 }
                 db.setTransactionSuccessful()
@@ -451,7 +441,7 @@ class OfflineStorage private constructor(private val context: Context) {
                         try { 
                             json.decodeFromString<List<ArchivedDay>>(file.readText()).forEach { day -> day.usage.forEach { usage -> usage.spans.forEach { span -> insertArchivedSpanInternal(db, usage.pkg, span.s, span.e) } } } 
                             file.delete()
-                        } catch (e: Exception) {} 
+                        } catch (e: Exception) { HatLogger.logError("OfflineStorage", "Legacy archive chunk ${file.name} failed to migrate; keeping the file for retry: ${e.message}") } 
                     } 
                 }
                 db.setTransactionSuccessful()
@@ -465,20 +455,11 @@ class OfflineStorage private constructor(private val context: Context) {
                     val old: List<IgnoredSession> = json.decodeFromString(it)
                     old.forEach { s -> addIgnoredSession(s) }
                     context.dataStore.edit { p -> p.remove(stringPreferencesKey("ignored_sessions")) }
-                } catch(e: Exception) {}
+                } catch(e: Exception) { HatLogger.logError("OfflineStorage", "Legacy ignored_sessions failed to migrate; keeping the entry for retry: ${e.message}") }
             }
         }
     }
 
-    suspend fun clearAllData() {
-        val db = dbHelper.writableDatabase
-        try { db.execSQL("DELETE FROM ${HatDatabaseHelper.TABLE_OFFLINE}") } catch (e: Exception) {}
-        try { db.execSQL("DELETE FROM ${HatDatabaseHelper.TABLE_ARCHIVE}") } catch (e: Exception) {}
-        try { db.execSQL("DELETE FROM ${HatDatabaseHelper.TABLE_IGNORED}") } catch (e: Exception) {}
-        try { db.execSQL("DELETE FROM ${HatDatabaseHelper.TABLE_ACK_GHOSTS}") } catch (e: Exception) {}
-        try { db.execSQL("DELETE FROM ${HatDatabaseHelper.TABLE_SCREEN_OFF_DISMISSED}") } catch (e: Exception) {}
-        context.dataStore.edit { prefs -> prefs.remove(HIDDEN_APPS_KEY) }
-    }
 
     suspend fun saveSettings(newSettings: UserSettings) { 
         context.dataStore.edit { it[SETTINGS_KEY] = json.encodeToString(newSettings) } 
@@ -488,11 +469,6 @@ class OfflineStorage private constructor(private val context: Context) {
         insertActivityInternal(dbHelper.writableDatabase, activity) 
     }
 
-    fun saveActivities(list: List<OfflineActivityEntity>) {
-        val db = dbHelper.writableDatabase
-        db.beginTransaction()
-        try { list.forEach { insertActivityInternal(db, it) }; db.setTransactionSuccessful() } finally { db.endTransaction() }
-    }
 
     fun deleteOfflineActivitiesByTitle(title: String, start: Long, end: Long) {
         // Overlap, not "starts inside" (known issue #2): a label crossing
@@ -514,6 +490,14 @@ class OfflineStorage private constructor(private val context: Context) {
         context.dataStore.edit { it[HIDDEN_APPS_KEY] = json.encodeToString(packages) } 
     }
 
+    /**
+     * Labelling the same gap again should EDIT it, not stack a duplicate copy.
+     * BUG (fixed 2026-09-30): id 0 gave every insert a fresh rowid, so
+     * CONFLICT_REPLACE never collided and the exported vault held six copies of
+     * the same label. Matching on (title, timestamp) fixes the repeat; a removed
+     * sibling that matched on timestamp alone rewrote every row sharing that
+     * instant, which is why the match is this wide and no wider.
+     */
     fun insertActivityInternal(db: SQLiteDatabase, activity: OfflineActivityEntity) {
         val cv = ContentValues().apply { 
             if (activity.id != 0L) put(HatDatabaseHelper.COL_ID, activity.id)
@@ -525,33 +509,6 @@ class OfflineStorage private constructor(private val context: Context) {
         db.insertWithOnConflict(HatDatabaseHelper.TABLE_OFFLINE, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    /**
-     * Labelling the same gap again should EDIT it, not stack a duplicate copy.
-     *
-     * BUG (fixed 2026-09-30): `insertActivityInternal` inserts with id 0, so SQLite
-     * assigns a fresh rowid every time and CONFLICT_REPLACE never has a key to
-     * collide with. Re-labelling one gap repeatedly produced identical rows - the
-     * exported vault held six copies of the same 3h 28m label. This matches on
-     * (title, timestamp) so a repeat label replaces the previous one, while two
-     * genuinely different labels at the same instant are still kept.
-     */
-    /**
-     * Save a label.
-     *
-     * REMOVED 2026-09-30: `insertOrReplaceLabel` (and `addActivityAtomicUnique`).
-     *
-     * That function matched on `timestamp` alone with an `UPDATE` that has no LIMIT, so
-     * it rewrote EVERY row sharing that start instant. VERIFIED against the real schema:
-     * `(1,'Sleep'),(2,'Sick leave')` re-labelled to `(1,'Sleep'),(2,'Sleep')` - the
-     * distinct label destroyed, with no undo and no prompt. Run after the one-shot dedupe
-     * it also RECREATED the exact duplicate damage that dedupe existed to remove, after
-     * the prefs flag was consumed, so it was never cleaned.
-     *
-     * It is unnecessary by design: editing a label renames it through
-     * `updateOfflineActivitiesByTitle` on the existing dialog path. Saving a label for a
-     * gap is an INSERT, full stop. One label per continuous gap is enforced by the gap
-     * generator (see `scanForGaps`/`expandVoid`), not by guessing here.
-     */
 
 
     fun insertArchivedSpanInternal(db: SQLiteDatabase, pkg: String, start: Long, end: Long) {
@@ -559,7 +516,7 @@ class OfflineStorage private constructor(private val context: Context) {
         db.insertWithOnConflict(HatDatabaseHelper.TABLE_ARCHIVE, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
-    private fun mapCursorToActivity(cursor: Cursor): OfflineActivityEntity = OfflineActivityEntity(id = cursor.getLong(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_ID)), title = cursor.getString(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_TITLE)), durationInMillis = cursor.getLong(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_DURATION)), timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_TIMESTAMP)), colorHex = 0L, iconName = cursor.getString(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_ICON)))
+    private fun mapCursorToActivity(cursor: Cursor): OfflineActivityEntity = OfflineActivityEntity(id = cursor.getLong(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_ID)), title = cursor.getString(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_TITLE)), durationInMillis = cursor.getLong(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_DURATION)), timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_TIMESTAMP)), iconName = cursor.getString(cursor.getColumnIndexOrThrow(HatDatabaseHelper.COL_ICON)))
 
     fun getOfflineActivitiesBetween(start: Long, end: Long): List<OfflineActivityEntity> {
         val list = mutableListOf<OfflineActivityEntity>()
@@ -594,7 +551,6 @@ class OfflineStorage private constructor(private val context: Context) {
         return list
     }
 
-    fun getAllOfflineActivities(): List<OfflineActivityEntity> = getOfflineActivitiesBetween(0L, Long.MAX_VALUE)
 
     fun getOldestOfflineActivityTimestamp(): Long? {
         val cursor = dbHelper.readableDatabase.rawQuery("SELECT MIN(${HatDatabaseHelper.COL_TIMESTAMP}) FROM ${HatDatabaseHelper.TABLE_OFFLINE}", null)
@@ -640,32 +596,17 @@ class OfflineStorage private constructor(private val context: Context) {
     fun getIgnoredSessions(): List<IgnoredSession> {
         val list = mutableListOf<IgnoredSession>()
         dbHelper.readableDatabase.query(HatDatabaseHelper.TABLE_IGNORED, null, null, null, null, null, null).use {
-            val pkgIdx = it.getColumnIndexOrThrow("package_name")
-            val sIdx = it.getColumnIndexOrThrow("start_millis")
-            val eIdx = it.getColumnIndexOrThrow("end_millis")
+            val pkgIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_PKG)
+            val sIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_START)
+            val eIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_END)
             while(it.moveToNext()) list.add(IgnoredSession(it.getString(pkgIdx), it.getLong(sIdx), it.getLong(eIdx)))
         }
         return list
     }
     
-    fun getIgnoredSessionsBetween(startMillis: Long, endMillis: Long): List<IgnoredSession> {
-        val list = mutableListOf<IgnoredSession>()
-        dbHelper.readableDatabase.query(
-            HatDatabaseHelper.TABLE_IGNORED, null,
-            "end_millis >= ? AND start_millis <= ?",
-            arrayOf(startMillis.toString(), endMillis.toString()),
-            null, null, null
-        ).use {
-            val pkgIdx = it.getColumnIndexOrThrow("package_name")
-            val sIdx = it.getColumnIndexOrThrow("start_millis")
-            val eIdx = it.getColumnIndexOrThrow("end_millis")
-            while(it.moveToNext()) list.add(IgnoredSession(it.getString(pkgIdx), it.getLong(sIdx), it.getLong(eIdx)))
-        }
-        return list
-    }
 
     fun addIgnoredSession(session: IgnoredSession) {
-        val cv = ContentValues().apply { put("package_name", session.packageName); put("start_millis", session.startMillis); put("end_millis", session.endMillis) }
+        val cv = ContentValues().apply { put(HatDatabaseHelper.COL_EVENT_PKG, session.packageName); put(HatDatabaseHelper.COL_EVENT_START, session.startMillis); put(HatDatabaseHelper.COL_EVENT_END, session.endMillis) }
         dbHelper.writableDatabase.insertWithOnConflict(HatDatabaseHelper.TABLE_IGNORED, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
@@ -696,43 +637,20 @@ class OfflineStorage private constructor(private val context: Context) {
     fun getAllAcknowledgedGhosts(): List<AcknowledgedGhost> {
         val list = mutableListOf<AcknowledgedGhost>()
         dbHelper.readableDatabase.query(HatDatabaseHelper.TABLE_ACK_GHOSTS, null, null, null, null, null, null).use {
-            val pkgIdx = it.getColumnIndexOrThrow("package_name")
-            val sIdx = it.getColumnIndexOrThrow("start_millis")
-            val eIdx = it.getColumnIndexOrThrow("end_millis")
+            val pkgIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_PKG)
+            val sIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_START)
+            val eIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_END)
             while(it.moveToNext()) list.add(AcknowledgedGhost(it.getString(pkgIdx), it.getLong(sIdx), it.getLong(eIdx)))
         }
         return list
     }
     
-    fun getAcknowledgedGhostsBetween(startMillis: Long, endMillis: Long): List<AcknowledgedGhost> {
-        val list = mutableListOf<AcknowledgedGhost>()
-        dbHelper.readableDatabase.query(
-            HatDatabaseHelper.TABLE_ACK_GHOSTS, null, 
-            "end_millis >= ? AND start_millis <= ?", 
-            arrayOf(startMillis.toString(), endMillis.toString()), 
-            null, null, null
-        ).use {
-            val pkgIdx = it.getColumnIndexOrThrow("package_name")
-            val sIdx = it.getColumnIndexOrThrow("start_millis")
-            val eIdx = it.getColumnIndexOrThrow("end_millis")
-            while(it.moveToNext()) list.add(AcknowledgedGhost(it.getString(pkgIdx), it.getLong(sIdx), it.getLong(eIdx)))
-        }
-        return list
-    }
 
     fun addAcknowledgedGhost(ghost: AcknowledgedGhost) {
-        val cv = ContentValues().apply { put("package_name", ghost.packageName); put("start_millis", ghost.startMillis); put("end_millis", ghost.endMillis) }
+        val cv = ContentValues().apply { put(HatDatabaseHelper.COL_EVENT_PKG, ghost.packageName); put(HatDatabaseHelper.COL_EVENT_START, ghost.startMillis); put(HatDatabaseHelper.COL_EVENT_END, ghost.endMillis) }
         dbHelper.writableDatabase.insertWithOnConflict(HatDatabaseHelper.TABLE_ACK_GHOSTS, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
-    // V.15.1: Ghost Recovery Matrix
-    fun removeAcknowledgedGhost(packageName: String, startMillis: Long, endMillis: Long) {
-        dbHelper.writableDatabase.delete(
-            HatDatabaseHelper.TABLE_ACK_GHOSTS,
-            "package_name = ? AND start_millis = ? AND end_millis = ?",
-            arrayOf(packageName, startMillis.toString(), endMillis.toString())
-        )
-    }
 
     // --- Screen-Off Activity dismissals -------------------------------------
     // A dismissed span is one the user looked at and said "this really was
@@ -749,16 +667,16 @@ class OfflineStorage private constructor(private val context: Context) {
             arrayOf(startMillis.toString(), endMillis.toString()),
             null, null, null
         ).use {
-            val pkgIdx = it.getColumnIndexOrThrow("package_name")
-            val sIdx = it.getColumnIndexOrThrow("start_millis")
-            val eIdx = it.getColumnIndexOrThrow("end_millis")
+            val pkgIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_PKG)
+            val sIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_START)
+            val eIdx = it.getColumnIndexOrThrow(HatDatabaseHelper.COL_EVENT_END)
             while (it.moveToNext()) list.add(Triple(it.getString(pkgIdx), it.getLong(sIdx), it.getLong(eIdx)))
         }
         return list
     }
 
     fun dismissScreenOffSpan(packageName: String, startMillis: Long, endMillis: Long) {
-        val cv = ContentValues().apply { put("package_name", packageName); put("start_millis", startMillis); put("end_millis", endMillis) }
+        val cv = ContentValues().apply { put(HatDatabaseHelper.COL_EVENT_PKG, packageName); put(HatDatabaseHelper.COL_EVENT_START, startMillis); put(HatDatabaseHelper.COL_EVENT_END, endMillis) }
         dbHelper.writableDatabase.insertWithOnConflict(HatDatabaseHelper.TABLE_SCREEN_OFF_DISMISSED, null, cv, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
@@ -770,82 +688,8 @@ class OfflineStorage private constructor(private val context: Context) {
         )
     }
 
-    private fun clearIgnoredAndAckGhosts() {
-        try { dbHelper.writableDatabase.execSQL("DELETE FROM ${HatDatabaseHelper.TABLE_IGNORED}") } catch (e: Exception) {}
-        try { dbHelper.writableDatabase.execSQL("DELETE FROM ${HatDatabaseHelper.TABLE_ACK_GHOSTS}") } catch (e: Exception) {}
-    }
 
-    /**
-     * REPORT duplicated offline labels. Never deletes them. (2026-10-01)
-     *
-     * Why this is read-only, per the user's decision:
-     *   Duplicates are SHOWN inside the Total Offline Time screen and the user decides
-     *   what happens to them. A silent startup cleanup is exactly the behaviour this app
-     *   must never have - the user never sees it and cannot undo it.
-     *
-     * This replaced `dedupeOfflineActivitiesOnce`, which deleted rows at launch with no
-     * prompt, no undo, and no record of what it removed. An earlier version of it grouped
-     * by time window only and destroyed genuinely distinct labels ("Work" vanished while
-     * "Sleep" survived).
-     *
-     * Two rows are "possible duplicates" when they cover the SAME window
-     * (same start, same end) but do not agree on content - i.e. they would render as two
-     * entries for one gap, which is not a state the gap generator can produce on its own.
-     * Rows describing genuinely different windows are never reported.
-     *
-     * @return groups of rows sharing a window, each with the ids involved. Empty when
-     *         there is nothing to report.
-     */
-    fun findDuplicateOfflineLabels(): List<DuplicateLabelGroup> {
-        val out = mutableListOf<DuplicateLabelGroup>()
-        try {
-            val db = dbHelper.readableDatabase
-            db.query(
-                HatDatabaseHelper.TABLE_OFFLINE, null, null, null, null, null, null
-            ).use { c ->
-                val byWindow = LinkedHashMap<Pair<Long, Long>, MutableList<Pair<Long, String>>>()
-                val idIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_ID)
-                val tIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_TITLE)
-                val tsIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_TIMESTAMP)
-                val dIdx = c.getColumnIndexOrThrow(HatDatabaseHelper.COL_DURATION)
-                while (c.moveToNext()) {
-                    val id = c.getLong(idIdx)
-                    val title = c.getString(tIdx) ?: ""
-                    val ts = c.getLong(tsIdx)
-                    val end = ts + c.getLong(dIdx)
-                    byWindow.getOrPut(ts to end) { mutableListOf() } += (id to title)
-                }
-                for ((window, entries) in byWindow) {
-                    if (entries.size < 2) continue
-                    // Same window, same content, different row id => true duplicates.
-                    val distinct = entries.map { it.second }.distinct()
-                    if (distinct.size == 1) {
-                        out += DuplicateLabelGroup(window.first, window.second, entries.map { it.first }, distinct.single())
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            HatLogger.logError("OfflineStorage", "Duplicate scan failed - ${e.message}")
-        }
-        return out
-    }
 
-    /**
-     * Delete one specific duplicate row, by explicit row id.
-     *
-     * Only ever called from a user action on a row the user can SEE in the Total Offline
-     * Time screen. There is no automatic caller.
-     */
-    fun deleteOfflineActivityById(id: Long): Boolean = try {
-        dbHelper.writableDatabase.delete(
-            HatDatabaseHelper.TABLE_OFFLINE,
-            "${HatDatabaseHelper.COL_ID} = ?",
-            arrayOf(id.toString())
-        ) > 0
-    } catch (e: Exception) {
-        HatLogger.logError("OfflineStorage", "Delete by id failed - ${e.message}")
-        false
-    }
     /**
      * Persists the raw usage-event stream (schema v4). INSERT OR IGNORE on the
      * (ts, type, package, class) primary key makes the sync idempotent: the
