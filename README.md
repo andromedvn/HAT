@@ -28,7 +28,7 @@
 <br/>
 
 <a href="https://ko-fi.com/andromedvn">
-  <img src="docs/kofi-banner.png" width="300" alt="Support HAT on Ko-fi"/>
+  <img src="docs/kofi-banner.png" width="285" alt="Support HAT on Ko-fi"/>
 </a>
 
 <br/>
