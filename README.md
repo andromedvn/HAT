@@ -31,6 +31,10 @@
   <img src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" width="320" alt="Support HAT on Ko-fi"/>
 </a>
 
+<br/>
+
+HAT will always be free with no ads and no locked features. If it's been useful to you, your support is what keeps the updates and more projects coming: <b><a href="https://ko-fi.com/andromedvn">ko-fi.com/andromedvn</a></b>, or alternatively tell a friend.
+
 </div>
 
 ---
@@ -552,8 +556,6 @@ No, and that is a decision rather than a pending step. HAT is distributed throug
 **Who built this?**
 
 [andromedvn](https://github.com/andromedvn). One person, no company, no budget, currently going full-time on this. (The first prototypes were built on-device with [ACS (Android Code Studio)](https://github.com/AndroidCSOfficial/android-code-studio); HAT is now built on desktop.)
-
-HAT will always be free with no ads and no locked features. If it's been useful to you, your support is what keeps the updates and more projects coming: **[ko-fi.com/andromedvn](https://ko-fi.com/andromedvn)**, or alternatively tell a friend.
 
 ---
 
