@@ -28,7 +28,7 @@
 <br/>
 
 <a href="https://ko-fi.com/andromedvn">
-  <img src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" width="320" alt="Support HAT on Ko-fi"/>
+  <img src="docs/kofi-banner.svg" width="320" alt="Support HAT on Ko-fi"/>
 </a>
 
 <br/>
@@ -44,11 +44,11 @@ HAT will always be free with no ads and no locked features. If it's been useful 
 **HAT** is more than just a screen time tracker, it helps you track and label gaps when you are not using your phone.
 
 <p align="center">
-  <img src="docs/screenshots/1.jpg" width="19%" alt="Dashboard: the day at a glance" />
-  <img src="docs/screenshots/2.jpg" width="19%" alt="Label gaps" />
-  <img src="docs/screenshots/3.jpg" width="19%" alt="Label Activity dialog" />
-  <img src="docs/screenshots/4.jpg" width="19%" alt="App sessions" />
-  <img src="docs/screenshots/5.jpg" width="19%" alt="Settings" />
+  <img src="docs/screenshots/1.jpg" width="32%" alt="1 Dashboard: the day at a glance" />
+  <img src="docs/screenshots/2.jpg" width="32%" alt="2 Label gaps" />
+  <img src="docs/screenshots/3.jpg" width="32%" alt="3 Label Activity dialog" />
+  <img src="docs/screenshots/4.jpg" width="32%" alt="4 App sessions" />
+  <img src="docs/screenshots/5.jpg" width="32%" alt="5 Settings" />
 </p>
 
 It does this by watching your app usage, something Android already tracks in the background, and inverting it. Every minute you weren't on your phone becomes an unlabeled block of time called a **gap**. You can leave those gaps empty, or fill them in: `Sleeping`, `Working`, `Reading`, `At the gym`. Over time, you end up with a complete picture of how you spend both your screen time and your offline time.
@@ -63,7 +63,6 @@ This is the full source code.
 
 - [How It Works](#how-it-works)
 - [Features](#features)
-- [Screenshots](#screenshots)
 - [Architecture](#architecture)
 - [The Heuristic Engine](#the-heuristic-engine)
 - [What Was Removed and Why](#what-was-removed-and-why)
