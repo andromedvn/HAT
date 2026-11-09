@@ -37,6 +37,12 @@ Standing rulings from consistency sweeps. The skill (consistent-codebase) is pro
 
 - Every dialog/UI change: build + tests green, install, then pull a device screenshot of the changed surface AND the edge case where the new element shows (e.g. a midnight-crossing gap) before reporting done.
 
+## Release signing (verified 2026-11-09)
+
+- The permanent release key is the single `hat` alias in C:/Users/dvn/HAT-RELEASE-KEY-BACKUP/hat-release.jks.
+- TRUE signing SHA-256: F6:55:2D:DB:2E:CD:02:47:C8:6A:EC:00:A4:0F:1C:97:41:6D:5D:F8:7C:CF:10:FA:00:52:00:97:61:96:42:44 (colon-less: F6552DDB2ECD0247C86AEC00A40F1C97416D5DF87CCF10FA0052009761964244).
+- The A8:DA:E3:... fingerprint is the PRE-ROTATION key (rotated 2026-10-16). Never use it again. Always verify a built APK with apksigner against the keystore's own keytool output before publishing.
+
 ## Postponed features (owner's list, 2026-11-09)
 
 Recorded so they are findable. None ships in 1.2.0; they are 1.2.1+ candidates. Do not start one without the owner's pick.

@@ -21,7 +21,7 @@ Description: |-
 RepoType: git
 Repo: https://github.com/andromedvn/HAT.git
 Binaries: https://github.com/andromedvn/HAT/releases/download/v%v/HAT-%v.apk
-AllowedAPKSigningKeys: A8DAE3057F3AAC4AB895505C7B07E01D643AF3E25BC36ED082F2D0289D95B6EC
+AllowedAPKSigningKeys: F6552DDB2ECD0247C86AEC00A40F1C97416D5DF87CCF10FA0052009761964244
 
 Builds:
   - versionName: 1.2.0
