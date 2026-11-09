@@ -10,30 +10,19 @@
 
 <br/>
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-orange.svg?style=flat-square)](https://www.gnu.org/licenses/agpl-3.0)
-[![Material You](https://img.shields.io/badge/Theme-Material_You-orange.svg?style=flat-square)](#dynamic-theme-engine)
-[![Android](https://img.shields.io/badge/Platform-Android_8.0%2B-orange.svg?style=flat-square&logo=android&logoColor=white)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/Language-Kotlin-orange.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack_Compose-orange.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![No Internet](https://img.shields.io/badge/Internet_Permission-NONE-brightgreen.svg?style=flat-square)](https://andromedvn.github.io/HAT/PRIVACY.html)
-[![No Tracking](https://img.shields.io/badge/Tracking-ZERO-brightgreen.svg?style=flat-square)](#privacy--security)
-[![No Cloud](https://img.shields.io/badge/Cloud-NONE-brightgreen.svg?style=flat-square)](#privacy--security)
-[![Releases](https://img.shields.io/badge/Releases-GitHub-brightgreen.svg?style=flat-square)](https://github.com/andromedvn/HAT/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-orange.svg?style=flat-square)](https://www.gnu.org/licenses/agpl-3.0) [![Material You](https://img.shields.io/badge/Theme-Material_You-orange.svg?style=flat-square)](#dynamic-theme-engine) [![Android](https://img.shields.io/badge/Platform-Android_8.0%2B-orange.svg?style=flat-square&logo=android&logoColor=white)](https://developer.android.com) [![Kotlin](https://img.shields.io/badge/Language-Kotlin-orange.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org) [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack_Compose-orange.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+
+[![No Internet](https://img.shields.io/badge/Internet_Permission-NONE-brightgreen.svg?style=flat-square)](https://andromedvn.github.io/HAT/PRIVACY.html) [![No Tracking](https://img.shields.io/badge/Tracking-ZERO-brightgreen.svg?style=flat-square)](#privacy--security) [![No Cloud](https://img.shields.io/badge/Cloud-NONE-brightgreen.svg?style=flat-square)](#privacy--security) [![Releases](https://img.shields.io/badge/Releases-GitHub-brightgreen.svg?style=flat-square)](https://github.com/andromedvn/HAT/releases)
+
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support_Development-FF5E5B.svg?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/andromedvn)
 
 <br/>
 
+HAT will always be free with no ads and no locked features. If it's been useful to you, your support is what keeps the updates and more projects coming: **[ko-fi.com/andromedvn](https://ko-fi.com/andromedvn)**, or alternatively tell a friend.
+
+<br/>
+
 [Privacy Policy](https://andromedvn.github.io/HAT/PRIVACY.html) · [Terms of Service](https://andromedvn.github.io/HAT/TERMS.html) · [Report a Bug](../../issues) · [Request a Feature](../../issues) · [Releases](../../releases)
-
-<br/>
-
-<a href="https://ko-fi.com/andromedvn">
-  <img src="docs/kofi-banner.png" width="285" alt="Support HAT on Ko-fi"/>
-</a>
-
-<br/>
-
-HAT will always be free with no ads and no locked features. If it's been useful to you, your support is what keeps the updates and more projects coming: <b><a href="https://ko-fi.com/andromedvn">ko-fi.com/andromedvn</a></b>, or alternatively tell a friend.
 
 </div>
 
