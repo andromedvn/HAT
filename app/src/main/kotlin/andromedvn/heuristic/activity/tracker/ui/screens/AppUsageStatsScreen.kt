@@ -1,10 +1,7 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,32 +14,36 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.AppUsageItem
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
-import andromedvn.heuristic.activity.tracker.ui.components.ChartMode
-import andromedvn.heuristic.activity.tracker.ui.components.ChartPoint
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
+import andromedvn.heuristic.activity.tracker.domain.chartSyncKey
+import andromedvn.heuristic.activity.tracker.ui.components.STACK_APPS
+import andromedvn.heuristic.activity.tracker.ui.components.STACK_OFFLINE
 import andromedvn.heuristic.activity.tracker.ui.components.HighlightEvent
+import andromedvn.heuristic.activity.tracker.ui.components.EmptyBucketHintCard
 import andromedvn.heuristic.activity.tracker.ui.components.HatChart
 import andromedvn.heuristic.activity.tracker.ui.components.HatDatePickerModal
 import andromedvn.heuristic.activity.tracker.ui.components.RealActivityListItem
 import andromedvn.heuristic.activity.tracker.ui.components.HatDynamicHeader
+import andromedvn.heuristic.activity.tracker.ui.components.tutorialTarget
 import andromedvn.heuristic.activity.tracker.ui.components.TimeSelector
 import andromedvn.heuristic.activity.tracker.ui.components.verticalFadingEdges
 import andromedvn.heuristic.activity.tracker.ui.components.HeuristicTipCard
 import andromedvn.heuristic.activity.tracker.ui.components.EmptyStateCard
 import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
+import andromedvn.heuristic.activity.tracker.data.SortType
 import andromedvn.heuristic.activity.tracker.viewmodel.DashboardViewModel
-import java.util.Calendar
-import java.text.SimpleDateFormat
-import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
 fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewModel) {
+    val context = LocalContext.current
+    val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val chartScrollState = rememberLazyListState()
@@ -64,8 +65,13 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
         chartScrollState.scrollToItem(0)
     }
     
-    val appList = remember(uiState.activityList) {
-        uiState.activityList.filterIsInstance<AppUsageItem>().sortedByDescending { it.durationInMillis }
+    val sortType = viewModel.currentSortTypeValue
+    val appList = remember(uiState.activityList, sortType) {
+        when (sortType) {
+            SortType.DURATION -> uiState.activityList.filterIsInstance<AppUsageItem>().sortedByDescending { it.durationInMillis }
+            SortType.CHRONOLOGICAL -> uiState.activityList.filterIsInstance<AppUsageItem>().sortedBy { it.timestamp }
+            else -> uiState.activityList.filterIsInstance<AppUsageItem>().sortedByDescending { it.timestamp }
+        }
     }
     
     LaunchedEffect(appList) {
@@ -108,7 +114,7 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
         ) {
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
                 item {
-                    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp).tutorialTarget("statsScreen", tourRegistry)) {
                         HatDynamicHeader(title = "Apps Usage", subtitle = "Quick Overview")
                         TimeSelector(currentRange = uiState.timeRange, onRangeSelected = { viewModel.setTimeRange(it) })
                         Spacer(modifier = Modifier.height(24.dp))
@@ -117,28 +123,16 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
                             title = "Apps Usage", subTitle = "Total Tracked Time", totalTime = uiState.totalAppExecutionFormatted, dataPoints = uiState.appDetailChartData, palette = listOf(primaryColor), dateLabelRelative = uiState.dateLabelRelative, dateLabelExact = uiState.dateLabelExact, highlightedPoint = chartHighlight, hasNext = uiState.hasNextPeriod, hasPrev = uiState.hasPreviousPeriod, onPrevious = { viewModel.previousDay() }, onNext = { viewModel.nextDay() }, onDateClick = { showDatePicker = true }, onPointSelected = { event -> if (event == null) { viewModel.setChartHighlight(null); returnScrollIndex = -1 } else { viewModel.setChartHighlight(event) } })
                         
                         val showHint = chartHighlight != null && chartHighlight.point?.values?.all { it <= 0f } == true
-                        AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
-                            Column(modifier = Modifier.padding(top = 16.dp)) {
-                                val isFuture = chartHighlight?.point?.isFuture == true
-                                val quote = remember(chartHighlight) {
-                                    HeuristicQuotes.getQuote(
-                                        point = chartHighlight?.point,
-                                        totalScreenTimeMillis = uiState.totalScreenTimeMillis,
-                                        isDayView = uiState.timeRange == TimeRangeLabel.DAY,
-                                        isDataReliable = uiState.isDataReliable,
-                                        hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
-                                        osRetentionDays = uiState.osRetentionDays,
-                                        chartMode = ChartMode.APP_USAGE
-                                    )
-                                }
-                                LaunchedEffect(chartHighlight) {
-                                    if (!uiState.isDataReliable && !isFuture && !uiState.hasSeenHistoryLimitWarning) {
-                                        viewModel.markHistoryLimitWarningSeen()
-                                    }
-                                }
-                                HeuristicTipCard(quote = quote)
-                            }
-                        }
+                        EmptyBucketHintCard(
+                                showHint = showHint,
+                                highlight = chartHighlight,
+                                chartMode = ChartMode.APP_USAGE,
+                                totalScreenTimeMillis = uiState.totalScreenTimeMillis,
+                                isDayView = uiState.timeRange == TimeRangeLabel.DAY,
+                                isDataReliable = uiState.isDataReliable,
+                                hasSeenHistoryLimitWarning = uiState.hasSeenHistoryLimitWarning,
+                                osRetentionDays = uiState.osRetentionDays,
+                                onMarkHistoryLimitWarningSeen = { viewModel.markHistoryLimitWarningSeen() })
                         
                         Spacer(modifier = Modifier.height(24.dp))
                         Text("APPS USAGE LIST", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -147,29 +141,25 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
                 }
                 
                 if (appList.isEmpty()) {
-                    item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.Default.Smartphone, "Zero Digital Usage", "No apps logged for this period.") } }
+                    item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.Default.Smartphone, "Zero Apps Usage", "No apps logged for this period.") } }
                 } else {
                     val maxUsage = appList.maxOfOrNull { it.durationInMillis }?.toFloat() ?: 1f
                     itemsIndexed(appList, key = { _, item -> item.uniqueKey }) { _, item -> 
                         val isHighlighted = if (chartHighlight != null) {
                             if (chartHighlight.isFromChart) {
                                 val pointTag = chartHighlight.point?.syncTag ?: ""
-                                (pointTag in item.activeTimeTags) && (chartHighlight.stackIndex == -1 || chartHighlight.stackIndex == 0)
+                                (pointTag in item.activeTimeTags) && (chartHighlight.stackIndex == -1 || chartHighlight.stackIndex == STACK_APPS)
                             } else chartHighlight.sourceKey == item.uniqueKey
                         } else false
                     
                         Box(modifier = Modifier.padding(horizontal = 20.dp)) {
                             RealActivityListItem(navController, item, color = primaryColor, progress = item.durationInMillis / maxUsage, isHighlighted = isHighlighted, onLongClick = {
-                                val matchTag = when (uiState.timeRange) {
-                                    TimeRangeLabel.DAY -> Calendar.getInstance().apply { timeInMillis = item.timestamp }.get(Calendar.HOUR_OF_DAY).toString()
-                                    TimeRangeLabel.WEEK -> SimpleDateFormat("EEE", Locale.ENGLISH).format(item.timestamp)
-                                    TimeRangeLabel.MONTH -> SimpleDateFormat("MMM d", Locale.ENGLISH).format(item.timestamp)
-                                }
+                                val matchTag = chartSyncKey(item.timestamp, uiState.timeRange)
                                 val matchedPoint = uiState.appDetailChartData.find { it.syncTag == matchTag }
                                 if (matchedPoint != null) {
                                     returnScrollIndex = listState.firstVisibleItemIndex
                                     returnScrollOffset = listState.firstVisibleItemScrollOffset
-                                    viewModel.setChartHighlight(HighlightEvent(matchedPoint, timestamp = System.currentTimeMillis(), sourceKey = item.uniqueKey, activeTags = item.activeTimeTags))
+                                    viewModel.setChartHighlight(HighlightEvent(matchedPoint, timestamp = System.currentTimeMillis(), isFromChart = false, sourceKey = item.uniqueKey, activeTags = item.activeTimeTags))
                                     scope.launch { listState.animateScrollToItem(0) }
                                 }
                             }) 
@@ -177,6 +167,7 @@ fun AppUsageStatsScreen(navController: NavController, viewModel: DashboardViewMo
                     }
                 }
             }
+
         }
     }
 }

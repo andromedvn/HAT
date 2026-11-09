@@ -3,6 +3,11 @@ package andromedvn.heuristic.activity.tracker.utils
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import andromedvn.heuristic.activity.tracker.domain.REPLAY_PRE_BUFFER_MILLIS
+import andromedvn.heuristic.activity.tracker.domain.RawEvent
+import andromedvn.heuristic.activity.tracker.domain.replayDeviceScreenOffIntervals
+import andromedvn.heuristic.activity.tracker.domain.replayScreenOffIntervals
+import andromedvn.heuristic.activity.tracker.domain.replayUsageIntervals
 import kotlinx.coroutines.yield
 import java.util.Calendar
 
@@ -26,150 +31,81 @@ class UsageStatsEngine(context: Context) {
         return end 
     }
 
-    suspend fun getUsageIntervals(start: Long, end: Long, hiddenApps: Set<String>): Map<String, List<Pair<Long, Long>>> {
-        val bufferedStart = start - 86400000L
-        val events = usageStatsManager.queryEvents(bufferedStart, end) ?: return emptyMap()
-        val intervals = mutableMapOf<String, MutableList<Pair<Long, Long>>>()
-        val resumed = mutableMapOf<String, AppState>()
-        
+    /**
+     * Drains UsageStatsManager into plain [RawEvent]s so the actual replay logic
+     * can be unit-tested off-device. The framework call stays here; everything
+     * downstream is pure.
+     */
+    private suspend fun collectEvents(bufferedStart: Long, end: Long): List<RawEvent> {
+        val events = usageStatsManager.queryEvents(bufferedStart, end) ?: return emptyList()
+        val out = ArrayList<RawEvent>(1024)
         val event = UsageEvents.Event()
-        var yieldCounter = 0
+        var counter = 0
         while (events.hasNextEvent()) {
-            if (yieldCounter++ % 100 == 0) yield() 
+            if (counter++ % 100 == 0) yield()
             events.getNextEvent(event)
-            
-            if (event.eventType == 16 || event.eventType == 26) { 
-                for ((_, state) in resumed) {
-                    if (state.time < event.timeStamp) {
-                        intervals.getOrPut(state.pkg) { mutableListOf() }.add(state.time to event.timeStamp)
-                    }
-                }
-                resumed.clear()
-                continue
-            }
-
-            val pkg = event.packageName ?: continue
-            if (hiddenApps.contains(pkg)) continue
-            val clazz = event.className ?: pkg
-
-            if (event.eventType == 1) { // ACTIVITY_RESUMED
-                resumed[clazz]?.let { oldState ->
-                    if (oldState.time < event.timeStamp) intervals.getOrPut(oldState.pkg) { mutableListOf() }.add(oldState.time to (event.timeStamp - 1))
-                }
-                resumed[clazz] = AppState(pkg, event.timeStamp)
-            } else if (event.eventType == 2 || event.eventType == 23) { // ACTIVITY_PAUSED or STOPPED
-                val state = resumed.remove(clazz)
-                if (state != null && state.time < event.timeStamp) {
-                    intervals.getOrPut(state.pkg) { mutableListOf() }.add(state.time to event.timeStamp)
-                }
-            }
+            out.add(
+                RawEvent(
+                    type = event.eventType,
+                    timestamp = event.timeStamp,
+                    packageName = event.packageName ?: "",
+                    className = event.className
+                )
+            )
         }
-
-        val cap = minOf(end, System.currentTimeMillis())
-        resumed.values.forEach { state ->
-            if (state.time < cap) {
-                intervals.getOrPut(state.pkg) { mutableListOf() }.add(state.time to cap)
-            }
-        }
-        
-        val clampedIntervals = mutableMapOf<String, List<Pair<Long, Long>>>()
-        for ((pkg, ivs) in intervals) {
-            val valid = ivs.mapNotNull { (s, e) ->
-                val cS = maxOf(s, start)
-                val cE = minOf(e, end)
-                if (cE > cS) cS to cE else null
-            }
-            if (valid.isNotEmpty()) clampedIntervals[pkg] = valid
-        }
-        
-        return clampedIntervals
+        return out
     }
 
-    suspend fun getGhostCandidateIntervals(start: Long, end: Long): List<Triple<String, Long, Long>> {
-        val events = usageStatsManager.queryEvents(start - 86400000L, end) ?: return emptyList()
-        var isHuman = false
-        var currentGhostPkg: String? = null
-        var ghostStart = -1L
-        val ghosts = mutableListOf<Triple<String, Long, Long>>()
-        
-        val event = UsageEvents.Event()
-        var yieldCounter = 0
-        while (events.hasNextEvent()) {
-            if (yieldCounter++ % 100 == 0) yield()
-            events.getNextEvent(event)
-            when (event.eventType) {
-                15 -> isHuman = false // SCREEN_INTERACTIVE
-                18 -> isHuman = true  // KEYGUARD_HIDDEN (Definitive human presence)
-                16, 26 -> { // SCREEN_NON_INTERACTIVE
-                    if (!isHuman && currentGhostPkg != null && ghostStart != -1L) {
-                        ghosts.add(Triple(currentGhostPkg, ghostStart, event.timeStamp))
-                    }
-                    isHuman = false
-                    currentGhostPkg = null
-                    ghostStart = -1L
-                }
-                1 -> { // ACTIVITY_RESUMED
-                    if (!isHuman) {
-                        currentGhostPkg = event.packageName
-                        ghostStart = event.timeStamp
-                    }
-                }
-                2, 23 -> { // ACTIVITY_PAUSED / STOPPED
-                    if (!isHuman && currentGhostPkg != null && currentGhostPkg == event.packageName && ghostStart != -1L) {
-                        ghosts.add(Triple(currentGhostPkg, ghostStart, event.timeStamp))
-                        currentGhostPkg = null
-                        ghostStart = -1L
-                    }
-                }
-            }
-        }
-        if (!isHuman && currentGhostPkg != null && ghostStart != -1L && ghostStart < end) {
-            ghosts.add(Triple(currentGhostPkg, ghostStart, minOf(end, System.currentTimeMillis())))
-        }
-        
-        return ghosts.mapNotNull { 
-            val cS = maxOf(it.second, start)
-            val cE = minOf(it.third, end)
-            if (cE > cS) Triple(it.first, cS, cE) else null
-        }
+    /**
+     * The raw stream exactly as the replays receive it (2026-10-23):
+     * millisecond timestamps, in the order queryEvents yields them, NOT
+     * re-sorted. The replays apply a stable sort by timestamp, so arrival
+     * order decides which event wins when milliseconds tie, and second-
+     * granularity log dumps cannot reveal that order. This export is the
+     * only honest way to trace a replay decision on a real device.
+     */
+    suspend fun collectRawEventsForExport(start: Long, end: Long): List<RawEvent> = collectEvents(start, end)
+
+    suspend fun getUsageIntervals(start: Long, end: Long, hiddenApps: Set<String>): Map<String, List<Pair<Long, Long>>> {
+        val collected = collectEvents(start - REPLAY_PRE_BUFFER_MILLIS, end)
+        val cap = minOf(end, System.currentTimeMillis())
+        // Filtering the completed map is stricter than skipping hidden events
+        // mid-replay: an app that was already resumed when the user hid it
+        // would still leak its interval on the next terminator.
+        return replayUsageIntervals(collected, start, end, cap)
+            .filterKeys { it !in hiddenApps }
+    }
+
+    /**
+     * Spans in which an app was resumed while the screen was provably dark:
+     * background re-binds, music mode, lock-screen apps. Not usage, not
+     * ghosts; the fourth category, surfaced for the user to name or dismiss.
+     */
+    /**
+     * The device's merged dark windows (r12p): screen-off to screen-on, no
+     * app attached. Answers "was the screen dark in this stretch" even when
+     * no app resumed through it.
+     */
+    suspend fun getDeviceScreenOffIntervals(start: Long, end: Long): List<Pair<Long, Long>> {
+        val collected = collectEvents(start - REPLAY_PRE_BUFFER_MILLIS, end)
+        val cap = minOf(end, System.currentTimeMillis())
+        return replayDeviceScreenOffIntervals(collected, start, end, cap)
+    }
+
+    suspend fun getScreenOffIntervals(start: Long, end: Long): Map<String, List<Pair<Long, Long>>> {
+        val collected = collectEvents(start - REPLAY_PRE_BUFFER_MILLIS, end)
+        val cap = minOf(end, System.currentTimeMillis())
+        return replayScreenOffIntervals(collected, start, end, cap)
     }
 
     suspend fun mergeIntervals(intervals: List<Pair<Long, Long>>): List<Pair<Long, Long>> {
-        if (intervals.isEmpty()) return emptyList()
-        val sorted = intervals.sortedBy { it.first }
-        val merged = mutableListOf<Pair<Long, Long>>()
-        var current = sorted[0]
-
-        var yieldCounter = 0
-        for (i in 1 until sorted.size) {
-            if (yieldCounter++ % 100 == 0) yield()
-            val next = sorted[i]
-            if (current.second >= next.first) {
-                current = current.copy(second = maxOf(current.second, next.second))
-            } else {
-                merged.add(current)
-                current = next
-            }
-        }
-        merged.add(current)
-        return merged
+        yield()
+        return andromedvn.heuristic.activity.tracker.domain.mergeIntervals(intervals)
     }
 
     suspend fun subtractIntervals(source: List<Pair<Long, Long>>, remove: List<Pair<Long, Long>>): List<Pair<Long, Long>> {
-        var current = source
-        for (rem in remove) {
-            yield()
-            val next = mutableListOf<Pair<Long, Long>>()
-            for (src in current) {
-                if (src.second <= rem.first || src.first >= rem.second) next.add(src) 
-                else { 
-                    if (src.first < rem.first) next.add(src.first to rem.first)
-                    if (src.second > rem.second) next.add(rem.second to src.second) 
-                }
-            }
-            current = next
-        }
-        return current
+        yield()
+        return andromedvn.heuristic.activity.tracker.domain.subtractIntervals(source, remove)
     }
 
     suspend fun sliceIntervals(intervals: List<Pair<Long, Long>>, bucketType: Int): Map<Long, Long> {

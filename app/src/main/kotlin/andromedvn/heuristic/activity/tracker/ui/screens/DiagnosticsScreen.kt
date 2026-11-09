@@ -1,5 +1,6 @@
 package andromedvn.heuristic.activity.tracker.ui.screens
 
+import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,9 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.ActivityRepository
 import andromedvn.heuristic.activity.tracker.ui.components.HatDynamicHeader
+import andromedvn.heuristic.activity.tracker.ui.components.HatOutlinedDialog
 import andromedvn.heuristic.activity.tracker.ui.components.hatSwitchColors
 import andromedvn.heuristic.activity.tracker.ui.components.verticalFadingEdges
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +63,10 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
     
     val currentSettings by repository.settings.collectAsState(initial = null)
 
+    // Both of these are irreversible, so neither runs on a single tap.
+    var confirmClearLogs by remember { mutableStateOf(false) }
+    var confirmSimulateCrash by remember { mutableStateOf(false) }
+
     val diagMatrixLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
@@ -94,6 +100,22 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
         }
     }
 
+    // The ground-truth tool (2026-10-23): every usage event the OS still
+    // holds, in the exact arrival order and millisecond precision the
+    // replays receive. When a span on a card disagrees with what the user
+    // lived, this export settles it: the trace can be replayed line by
+    // line and the decision reproduced exactly.
+    val rawEventLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { repository.exportRawEventStream(it) }
+                    withContext(Dispatchers.Main) { Toast.makeText(context, "Raw Event Stream Exported", Toast.LENGTH_SHORT).show() }
+                } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Export Failed", Toast.LENGTH_SHORT).show() } }
+            }
+        }
+    }
+
     Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets(0,0,0,0)) { innerPadding ->
         Column(
             modifier = Modifier
@@ -117,7 +139,7 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                         item {
                             DiagnosticToggleItem(
                                 title = "Bypass History Limit", 
-                                subtitle = "Allows navigation past device memory limits. Missing history will render as blank gaps.", 
+                                subtitle = "Allows navigation past Android's history limit. Missing history will render as blank gaps.", 
                                 checked = currentSettings!!.bypassHistoryLimit
                             ) { state -> 
                                 scope.launch { repository.storage.saveSettings(currentSettings!!.copy(bypassHistoryLimit = state)) }
@@ -126,38 +148,86 @@ fun DiagnosticsScreen(navController: NavController, repository: ActivityReposito
                     }
                     
                     item {
-                        DiagnosticSettingsItem("Export Total Unbounded Matrix", "Exports every pair of <start, end> coordinates retained over the system's lifetime for all apps and events. JSON encoded array dump.") { 
-                            val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
-                            diagMatrixLauncher.launch("HAT_Calculated_Matrix_$date.json") 
+                        // The arena fix (2026-10-28): the first symptom of archive
+                        // failure must never be silent loss. Show exactly how far
+                        // the archive reaches - days after this line live only in
+                        // Android's short-retention log.
+                        val archiveCursor = currentSettings?.archiveCursorMillis ?: 0L
+                        val coverageText = if (archiveCursor > 0L) {
+                            val fmt = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+                            "History is archived through ${fmt.format(Date(archiveCursor))}. Days after this are only in Android's short-retention log until the next sync."
+                        } else {
+                            "The archiver has not completed a pass yet on this install. History is only in Android's short-retention log until the first sync."
+                        }
+                        DiagnosticSettingsItem("Archive Coverage", coverageText) { }
+                    }
+                    item {
+                        DiagnosticSettingsItem("Export Total Unbounded Matrix", "Exports every app interval the system still holds, for all apps, as JSON.") {
+                            val date = TimeUtils.stamp()
+                            diagMatrixLauncher.launch("HAT_Calculated_Matrix_$date.json")
+                        }
+                    }
+                    item {
+                        DiagnosticSettingsItem("Export Raw Event Stream", "Exports the last 3 days of raw usage events in original order, to the millisecond, for tracing gap decisions.") {
+                            val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+                            rawEventLauncher.launch("HAT_Raw_Events_$stamp.txt")
                         }
                     }
                     item {
                         DiagnosticSettingsItem("Export Diagnostic Events", "Export non-fatal logic errors (Vault merges, read/write anomalies).") {
-                            val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
+                            val date = TimeUtils.stamp()
                             diagEventLauncher.launch("HAT_Diagnostics_$date.txt")
                         }
                     }
                     item {
                         DiagnosticSettingsItem("Export Crash Logs", "Export stack traces and breadcrumbs of fatal runtime crashes.") {
-                            val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date())
+                            val date = TimeUtils.stamp()
                             crashLogLauncher.launch("HAT_Crash_Logs_$date.txt")
                         }
                     }
                     item {
                         DiagnosticSettingsItem("Clear Diagnostic Logs", "Delete all stored crash and diagnostic logs to free up space.") {
-                            scope.launch {
-                                repository.clearCrashLogs()
-                                Toast.makeText(context, "Logs Cleared", Toast.LENGTH_SHORT).show()
-                            }
+                            confirmClearLogs = true
                         }
                     }
                     item {
-                        DiagnosticSettingsItem("Simulate Fatal Crash", "Trigger a deliberate runtime exception to natively test the disaster recovery hatch.") {
-                            throw RuntimeException("Diagnostic Test Crash initiated by user.")
+                        DiagnosticSettingsItem("Simulate Fatal Crash", "Deliberately crashes the app to test error recovery.") {
+                            confirmSimulateCrash = true
                         }
                     }
                 }
             }
         }
+
+    if (confirmClearLogs) {
+        HatOutlinedDialog(onDismissRequest = { confirmClearLogs = false }, title = "Delete all logs?") {
+            Text("Permanently deletes all stored crash and diagnostic logs. This cannot be undone.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { confirmClearLogs = false }) { Text("Cancel") }
+                TextButton(onClick = {
+                    confirmClearLogs = false
+                    scope.launch {
+                        repository.clearCrashLogs()
+                        Toast.makeText(context, "Logs Cleared", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+
+    if (confirmSimulateCrash) {
+        HatOutlinedDialog(onDismissRequest = { confirmSimulateCrash = false }, title = "Simulate a crash?") {
+            Text("HAT will deliberately crash. Any unsaved work in the current session is lost, and the app will restart into its recovery screen. Use this only to check that crash recovery works.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { confirmSimulateCrash = false }) { Text("Cancel") }
+                TextButton(onClick = {
+                    confirmSimulateCrash = false
+                    throw RuntimeException("Diagnostic Test Crash initiated by user.")
+                }) { Text("Crash Now", color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
     }
 }

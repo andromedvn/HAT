@@ -1,6 +1,11 @@
 package andromedvn.heuristic.activity.tracker
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
+import andromedvn.heuristic.activity.tracker.domain.TourStep
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -24,7 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.util.Consumer
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -36,6 +41,13 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import andromedvn.heuristic.activity.tracker.data.ActivityRepository
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import androidx.lifecycle.lifecycleScope
+import andromedvn.heuristic.activity.tracker.domain.AppTourState
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
+import andromedvn.heuristic.activity.tracker.ui.components.TourStepOverlay
+import andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
 import andromedvn.heuristic.activity.tracker.data.OfflineStorage
 import andromedvn.heuristic.activity.tracker.data.ThemeType
 import andromedvn.heuristic.activity.tracker.data.UserSettings
@@ -58,6 +70,15 @@ class MainActivity : ComponentActivity() {
 
         val storage = OfflineStorage.getInstance(applicationContext)
         val repository = ActivityRepository(applicationContext, storage)
+
+        // REMOVED 2026-09-30: the automatic startup dedupe.
+        //
+        // It deleted rows before the user saw anything, with no prompt, no undo, and no
+        // record of what was removed. An earlier version of it grouped by time window
+        // only and destroyed genuinely distinct labels. The user's decision (2026-10-01)
+        // is that duplicates are SHOWN inside Total Offline Time and the user chooses.
+        //
+        HatLogger.log("MainActivity: duplicate labels are reported, never auto-deleted")
 
         setContent {
             var settings by remember { mutableStateOf<UserSettings?>(null) }
@@ -96,7 +117,7 @@ class MainActivity : ComponentActivity() {
                         if (event == Lifecycle.Event.ON_RESUME) {
                             HatLogger.log("MainActivity: ON_RESUME (Global Propagation)")
                             repository.forceInvalidateCache()
-                            WorkerScheduler.updateWorkers(applicationContext, settings!!.archiveSyncIntervalHours)
+                            WorkerScheduler.updateWorkers(applicationContext, settings!!.archiveSyncIntervalHours, settings!!.autoBackupIntervalHours)
                             dashboardViewModel.triggerBackgroundArchiveSync()
                             
                             if (isFirstLaunch) {
@@ -111,7 +132,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val actualStartDestination = remember(settings) {
-                    if (!hasUsageStatsPermission(applicationContext)) "permissions" else "dashboard"
+                    // Usage access alone is not completion: a user who escaped
+                    // onboarding (killed app, skipped battery) must land back in
+                    // onboarding, or the guided tour never arms.
+                    if (!hasUsageStatsPermission(applicationContext) || settings?.hasSeenOnboarding == false) "permissions" else "dashboard"
                 }
 
                 Box(modifier = Modifier
@@ -132,15 +156,21 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         
-                        composable("permissions") { 
-                            PermissionsScreen(navController, storage, repository) 
+                        composable(
+                            "permissions?review={review}",
+                            arguments = listOf(navArgument("review") { defaultValue = "false" })
+                        ) { backStackEntry ->
+                            val review = backStackEntry.arguments?.getString("review")?.toBoolean() ?: false
+                            PermissionsScreen(navController, storage, repository, reviewMode = review)
                         }
 
                         composable(
-                            route = "dashboard",
+                            route = "dashboard?startTour={startTour}",
+                            arguments = listOf(navArgument("startTour") { defaultValue = "false" }),
                             deepLinks = listOf(navDeepLink { uriPattern = "hat://dashboard" })
-                        ) { 
-                            DashboardScreen(navController, dashboardViewModel) 
+                        ) { backStackEntry ->
+                            val startTour = backStackEntry.arguments?.getString("startTour")?.toBoolean() ?: false
+                            DashboardScreen(navController, dashboardViewModel, startTour = startTour)
                         }
                         
                         composable(
@@ -148,7 +178,9 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(navArgument("type") { type = NavType.StringType }, navArgument("id") { type = NavType.StringType })
                         ) { backStackEntry ->
                             val type = backStackEntry.arguments?.getString("type") ?: "app"
-                            val id = backStackEntry.arguments?.getString("id") ?: ""
+                            // Nav path segments are URI-encoded on the way in; labels are free user
+                            // text, so decode before using the value as a lookup key.
+                            val id = Uri.decode(backStackEntry.arguments?.getString("id") ?: "")
                             ActivityDetailsScreen(navController, type, id, dashboardViewModel, repository)
                         }
                         
@@ -187,6 +219,76 @@ class MainActivity : ComponentActivity() {
                             LicensesScreen(navController) 
                         }
                     }
+
+                    // The app tour: ONE overlay above the whole navigation
+                    // (2026-11-01). It reads the global step and the global
+                    // registry, so screen handoffs can never drop it. The
+                    // label-dialog step is the exception: the dialog is its
+                    // own window, so it hosts its own banner (r12) and the
+                    // main overlay stays hidden for that step.
+                    val tourStep = AppTourState.current
+                    val tourInDialog = tourStep?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG
+                    // Keep the last rendered step so the fade-out has content.
+                    // The overlay STAYS MOUNTED while the tour is on the
+                    // label-dialog step (r12f): it simply sits behind the two
+                    // dialog windows, so the tour never vanishes between the
+                    // tap and the dialog appearing. The fade is only for the
+                    // end of the tour.
+                    var lastTourStep by remember { mutableStateOf<TourStep?>(null) }
+                    if (tourStep != null) lastTourStep = tourStep
+                    val overlayVisible = AppTourState.active
+                    val overlayAlpha by animateFloatAsState(
+                        targetValue = if (overlayVisible) 1f else 0f,
+                        animationSpec = tween(150),
+                        label = "tourOverlayAlpha"
+                    )
+                    androidx.activity.compose.BackHandler(enabled = AppTourState.active && !tourInDialog) {
+                        val prev = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex - 1)
+                        if (prev != null && prev.route != (tourStep?.route ?: "")) {
+                            navController.popBackStack(prev.route, false)
+                        } else if (prev == null) {
+                            AppTourState.end()
+                            lifecycleScope.launch { storage.saveSettings(storage.settings.first().copy(hasSeenTour = true)) }
+                        }
+                        // The dialog step has no overlay of its own in this
+                        // window; back must never land on it.
+                        AppTourState.stepIndex = (AppTourState.stepIndex - 1).coerceAtLeast(0)
+                        if (AppTourState.current?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG) {
+                            AppTourState.stepIndex = (AppTourState.stepIndex - 1).coerceAtLeast(0)
+                        }
+                    }
+                    if (overlayAlpha > 0.02f && lastTourStep != null) TourStepOverlay(
+                        registry = AppTourRegistry,
+                        currentStep = lastTourStep,
+                        globalIndex = AppTourState.stepIndex.coerceAtMost(DashboardTourSteps.steps.size - 1),
+                        globalCount = DashboardTourSteps.steps.size,
+                        inputEnabled = overlayVisible,
+                        modifier = Modifier.alpha(overlayAlpha),
+                        onNext = {
+                            val next = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex + 1)
+                            if (next == null) {
+                                AppTourState.end()
+                                lifecycleScope.launch { storage.saveSettings(storage.settings.first().copy(hasSeenTour = true)) }
+                            } else if (next.route != (tourStep?.route ?: "")) {
+                                navController.navigate(next.route)
+                            }
+                            AppTourState.stepIndex++
+                        },
+                        onBack = {
+                            val prev = DashboardTourSteps.steps.getOrNull(AppTourState.stepIndex - 1)
+                            if (prev != null && prev.route != (tourStep?.route ?: "")) {
+                                navController.popBackStack(prev.route, false)
+                            }
+                            AppTourState.stepIndex--
+                            if (AppTourState.current?.screen == DashboardTourSteps.SCREEN_LABEL_DIALOG) {
+                                AppTourState.stepIndex--
+                            }
+                        },
+                        onSkip = {
+                            AppTourState.end()
+                            lifecycleScope.launch { storage.saveSettings(storage.settings.first().copy(hasSeenTour = true)) }
+                        }
+                    )
                 }
             }
         }

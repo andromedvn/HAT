@@ -3,7 +3,6 @@ package andromedvn.heuristic.activity.tracker.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -17,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Android
-import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -33,7 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +40,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
+import andromedvn.heuristic.activity.tracker.domain.chartSyncKey
 import andromedvn.heuristic.activity.tracker.ui.components.*
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.viewmodel.*
@@ -69,13 +68,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     var returnScrollIndex by rememberSaveable { mutableIntStateOf(-1) }
     var returnScrollOffset by rememberSaveable { mutableIntStateOf(0) }
     
-    var ghostStart by rememberSaveable { mutableLongStateOf(-1L) }
-    var ghostEnd by rememberSaveable { mutableLongStateOf(-1L) }
-    var ghostPkg by rememberSaveable { mutableStateOf("") }
-    var ghostAppName by rememberSaveable { mutableStateOf("") }
-    var showGhostDialog by rememberSaveable { mutableStateOf(false) }
-    var showIdleActionDialog by rememberSaveable { mutableStateOf(false) }
-    
+                
     val selectedSessions = remember { mutableStateListOf<SessionItem>() }
     var showSessionDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -89,8 +82,6 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
 
     val handleBack: () -> Unit = {
         if (showDatePicker) { showDatePicker = false }
-        else if (showIdleActionDialog) { showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }
-        else if (showGhostDialog) { showGhostDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }
         else if (showSessionDialog) { showSessionDialog = false }
         else if (selectedSessions.isNotEmpty()) { selectedSessions.clear() }
         else if (chartHighlight != null) { dashboardViewModel.setChartHighlight(null) }
@@ -99,7 +90,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     }
 
     val isResumed = lifecycleState == Lifecycle.State.RESUMED
-    BackHandler(enabled = (returnScrollIndex != -1 || showIdleActionDialog || showGhostDialog || showSessionDialog || selectedSessions.isNotEmpty() || chartHighlight != null || showDatePicker) && !showEditDialog && !showDeleteDialog && !showHideDialog && isResumed) { handleBack() }
+    BackHandler(enabled = (returnScrollIndex != -1 || showSessionDialog || selectedSessions.isNotEmpty() || chartHighlight != null || showDatePicker) && !showEditDialog && !showDeleteDialog && !showHideDialog && isResumed) { handleBack() }
 
     LaunchedEffect(type, id, dashState.startTime, dashState.endTime, dashState.timeRange) { 
         detailsViewModel.loadDetails(type, id, dashState.startTime, dashState.endTime, dashState.timeRange) 
@@ -129,12 +120,12 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
     
     if (showEditDialog && uiState.activity is OfflineActivityItem) {
         val offItem = uiState.activity as OfflineActivityItem
-        ActivityEditorDialog(initialTitle = offItem.title, initialIconName = offItem.iconName, suggestions = emptyList(), ledgerContext = null, onDismiss = { showEditDialog = false }, onSave = { newTitle, newIcon -> detailsViewModel.updateActivity(offItem.title, newTitle, newIcon, dashState.startTime, dashState.endTime) { showEditDialog = false; dashboardViewModel.loadDashboardData(force = true); navController.popBackStack() } })
+        ActivityEditorDialog(initialTitle = offItem.title, initialIconName = offItem.iconName, suggestions = emptyList(), ledgerContext = null, onDismiss = { showEditDialog = false }, onSave = { newTitle, newIcon, _ -> detailsViewModel.updateActivity(offItem.title, newTitle, newIcon, dashState.startTime, dashState.endTime) { showEditDialog = false; dashboardViewModel.loadDashboardData(force = true); navController.popBackStack() } })
     }
     
     if (showHideDialog) {
         HatOutlinedDialog(onDismissRequest = { showHideDialog = false }, title = "Hide App?") {
-            Text("This app will be hidden from your dashboard. You can restore it in Settings.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("This app will be hidden from your timeline. You can restore it in Settings.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { showHideDialog = false }) { Text("Cancel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -144,20 +135,37 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
         }
     }
 
-    if (showIdleActionDialog) {
-        HatOutlinedDialog(onDismissRequest = { showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }, title = "Idle Session") {
-            Text("$ghostAppName was on screen for a long stretch with no real interaction — possibly left open, playing audio, or idle.\n\nDid you actually use it? Dismiss if yes. Label if you were doing something else.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { dashboardViewModel.dismissGhost(ghostPkg, ghostStart, ghostEnd); showIdleActionDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }) { Text("Dismiss", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                Spacer(modifier = Modifier.width(16.dp))
-                TextButton(onClick = { showIdleActionDialog = false; showGhostDialog = true }) { Text("Label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
+
+
+    // Batch conversion dialog (2026-10-23): the Convert button has been a
+    // silent dead end since v1.0.0 (Finding 2), setting a flag nothing
+    // rendered while the convert function sat uncalled. It exists now.
+    if (showSessionDialog && selectedSessions.isNotEmpty()) {
+        val pkgForBatch = (uiState.activity as? AppUsageItem)?.packageName
+        // BETWEEN parity with the Label Gaps merge: count the recorded-time
+        // blocks the merge leaves untouched (computed once per dialog open).
+        var betweenCount by remember(showSessionDialog, selectedSessions.size) { mutableStateOf(0) }
+        LaunchedEffect(showSessionDialog, selectedSessions.size) {
+            if (selectedSessions.isNotEmpty()) {
+                val lo = selectedSessions.minOf { it.startTime }
+                val hi = selectedSessions.maxOf { it.endTime }
+                betweenCount = dashboardViewModel.countUsageBlocksBetween(lo, hi)
             }
         }
-    }
-    
-    if (showGhostDialog && ghostPkg.isNotEmpty() && ghostStart != -1L) {
-        ActivityEditorDialog(initialTitle = "Sleep", initialIconName = "Sleep", suggestions = dashState.recentSuggestions, ledgerContext = LedgerContext.IdleSession(ghostStart, ghostEnd, ghostAppName, ghostPkg), onDismiss = { showGhostDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L }, onSave = { outTitle, outIcon -> dashboardViewModel.convertGhostTime(ghostPkg, ghostStart, ghostEnd, outTitle, outIcon); showGhostDialog = false; ghostPkg = ""; ghostAppName = ""; ghostStart = -1L; ghostEnd = -1L; navController.popBackStack() })
+        if (pkgForBatch != null) {
+            ActivityEditorDialog(
+                initialTitle = "", initialIconName = "Walk",
+                suggestions = dashState.recentSuggestions,
+                ledgerContext = LedgerContext.BatchMerge(selectedSessions.size, selectedSessions.sumOf { it.displayedDuration }, betweenCount),
+                onDismiss = { showSessionDialog = false },
+                onSave = { outTitle, outIcon, _ ->
+                    dashboardViewModel.saveMultipleGaps(selectedSessions.map { UsageGap(it.startTime, it.endTime) }, outTitle, outIcon)
+                    selectedSessions.clear()
+                    showSessionDialog = false
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -203,8 +211,22 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                     if (event != null && pt != null) {
                                         if (returnScrollIndex == -1) { returnScrollIndex = listState.firstVisibleItemIndex; returnScrollOffset = listState.firstVisibleItemScrollOffset }
                                         dashboardViewModel.setChartHighlight(event)
-                                        val matchIndex = uiState.sessionList.indexOfFirst { if (dashState.timeRange == TimeRangeLabel.DAY) Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY).toString() == pt.syncTag else pt.syncTag.contains(it.getTimeRangeStr(dashState.timeRange).split(",")[0]) }
-                                        if (matchIndex != -1) scope.launch { listState.animateScrollToItem(matchIndex + 1 + if(uiState.activity is AppUsageItem && (uiState.activity as AppUsageItem).ghostIntervals.isNotEmpty()) (uiState.activity as AppUsageItem).ghostIntervals.size else 0) } 
+                                        // Match on the locale-independent bucket key. The old
+                                        // comparison formatted the session start with
+                                        // getTimeRangeStr (Locale.getDefault) and substring-matched
+                                        // it, so on a non-English device the strings differed and
+                                        // no row was ever found.
+                                        val matchIndex = uiState.sessionList.indexOfFirst { chartSyncKey(it.startTime, dashState.timeRange) == pt.syncTag }
+                                        // Exactly two items precede the sessions: the dynamic
+                                        // header and the block carrying the icon row, the chart
+                                        // and the SESSIONS caption (+1 landed on that caption,
+                                        // one row above the target). So +2 is the first session row.
+                                        //
+                                        // There is deliberately no term for ghostIntervals.size.
+                                        // A ghost is not a row of its own - it only annotates an
+                                        // existing session (isGhost, below) - so adding its count
+                                        // here overshot the list by however many ghosts there were.
+                                        if (matchIndex != -1) scope.launch { listState.animateScrollToItem(matchIndex + 2) }
                                     } else { dashboardViewModel.setChartHighlight(null); returnScrollIndex = -1 }
                                 }
                             )
@@ -220,16 +242,51 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                     val appActivity = uiState.activity as? AppUsageItem
 
                     if (renderList.isEmpty() && (uiState.activity == null || uiState.activity!!.durationInMillis <= 0L)) {
-                        item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(icon = if (type == "app") Icons.Default.Smartphone else Icons.AutoMirrored.Filled.DirectionsWalk, title = "No Activity", subtitle = "No sessions or offline logs for this on the selected date.") } }
+                        item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(icon = if (type == "app") Icons.Default.Smartphone else Icons.AutoMirrored.Filled.DirectionsWalk, title = "No Activity", subtitle = "Nothing recorded for this period.") } }
                     } else if (!uiState.isLoading) {
                         if (renderList.isEmpty()) {
-                            item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.Default.Splitscreen, "No Session Data", "Detailed sessions data are not found for this activity") } }
+                            item { Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) { EmptyStateCard(Icons.Default.Splitscreen, "No Session Data", "No sessions recorded for this activity") } }
                         } else {
                             itemsIndexed(renderList, key = { _, session -> "${session.startTime}_${session.endTime}" }) { index, session ->
                                 val isLast = index == renderList.lastIndex
-                                val pinOffset = 16.dp + with(LocalDensity.current) { 8.sp.toDp() } 
+                                val pinOffset = 16.dp + with(LocalDensity.current) { 8.sp.toDp() }
                                 val isSessionSelected = selectedSessions.contains(session)
-                                val isGhost = appActivity?.ghostIntervals?.any { ghost -> session.startTime <= ghost.startMillis && session.endTime >= ghost.endMillis } == true
+                                // Bar -> row highlight (consistent-codebase pass 1):
+                                // the chart long-press already scrolls here; the row
+                                // now wears the same highlight border every other
+                                // screen's cards wear. Selection keeps precedence.
+                                // Overlap match: a session spans buckets, so it
+                                // lights when ANY hour it covers is the pressed bar
+                                // (same walk the gap cards use).
+                                val isHighlighted = if (chartHighlight?.point == null) false else {
+                                    val tag = chartHighlight.point!!.syncTag
+                                    var t = session.startTime
+                                    var hit = false
+                                    while (t < session.endTime && !hit) {
+                                        if (chartSyncKey(t, dashState.timeRange) == tag) hit = true
+                                        val c = java.util.Calendar.getInstance().apply { timeInMillis = t }
+                                        c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0)
+                                        c.add(java.util.Calendar.HOUR_OF_DAY, 1)
+                                        t = c.timeInMillis
+                                    }
+                                    hit
+                                }
+
+                                fun handleLongPress(s: SessionItem) {
+                                    // Ratified jobs (CONSISTENCY.md): on an app
+                                    // page long-press starts the Convert
+                                    // selection; on an offline page it highlights
+                                    // this session's bars in the History chart.
+                                    if (type == "app" && selectedSessions.isEmpty()) {
+                                        selectedSessions.add(s)
+                                    } else if (type != "app") {
+                                        val pt = uiState.chartData.firstOrNull { point -> chartSyncKey(s.startTime, dashState.timeRange) == point.syncTag }
+                                        if (pt != null) {
+                                            if (returnScrollIndex == -1) { returnScrollIndex = listState.firstVisibleItemIndex; returnScrollOffset = listState.firstVisibleItemScrollOffset }
+                                            dashboardViewModel.setChartHighlight(HighlightEvent(pt, stackIndex = -1))
+                                        }
+                                    }
+                                }
 
                                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(IntrinsicSize.Min)) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(32.dp).fillMaxHeight()) {
@@ -239,11 +296,11 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                     }
                                     Card(
                                         modifier = Modifier.weight(1f).padding(bottom = 12.dp)
-                                            .border(if(isSessionSelected) 2.dp else 1.dp, MaterialTheme.colorScheme.primary.copy(alpha=if(isSessionSelected) 1f else 0.5f), RoundedCornerShape(16.dp))
+                                            .border(if(isSessionSelected || isHighlighted) 2.dp else 1.dp, MaterialTheme.colorScheme.primary.copy(alpha=if(isSessionSelected || isHighlighted) 1f else 0.5f), RoundedCornerShape(16.dp))
                                             .clip(RoundedCornerShape(16.dp))
                                             .combinedClickable(
                                                 onClick = { if (selectedSessions.isNotEmpty()) { if (isSessionSelected) selectedSessions.remove(session) else selectedSessions.add(session) } },
-                                                onLongClick = { if (type == "app" && selectedSessions.isEmpty()) { if (isGhost && appActivity != null) { ghostPkg = appActivity.packageName; ghostAppName = appActivity.title; ghostStart = session.startTime; ghostEnd = session.endTime; showIdleActionDialog = true } else { selectedSessions.add(session) } } }
+                                                onLongClick = { handleLongPress(session) }
                                             ), 
                                         colors = CardDefaults.cardColors(containerColor = if(isSessionSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.05f) else Color.Transparent)
                                     ) {
@@ -251,13 +308,6 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                             Column {
                                                 Text(session.getTimeRangeStr(dashState.timeRange), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                                                 
-                                                if (isGhost) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                                                        Icon(Icons.Default.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Idle Session Detected", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                                    }
-                                                }
                                             }
                                             Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp)) {
                                                 Text(session.activeDurationStr, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
@@ -272,45 +322,18 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
             }
         }
 
-        AnimatedVisibility(
-            visible = selectedSessions.isNotEmpty(),
-            enter = androidx.compose.animation.slideInVertically(initialOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400)),
-            exit = androidx.compose.animation.slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeOut(tween(400)),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp).windowInsetsPadding(WindowInsets.navigationBars),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        BatchSelectionBar(
+                visible = selectedSessions.isNotEmpty(),
+                count = selectedSessions.size,
+                // Must be displayedDuration (active sum), not spanDuration
+                // (wall span), or the header total exceeds the sum of the
+                // session rows below it whenever a cluster has an internal gap.
+                totalDurationText = TimeUtils.formatDuration(selectedSessions.sumOf { it.displayedDuration })
             ) {
-                Box(modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(modifier = Modifier.weight(1f, fill=false).padding(end = 16.dp)) { 
-                            Text("${selectedSessions.size} Selected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(TimeUtils.formatDuration(selectedSessions.sumOf { it.spanDuration }), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                            val isOnlyGhosts = selectedSessions.all { s -> (uiState.activity as? AppUsageItem)?.ghostIntervals?.any { g -> s.startTime <= g.startMillis && s.endTime >= g.endMillis } == true }
-                            if (isOnlyGhosts) {
-                                PromptOutlineButton("Dismiss") {
-                                    val pkg = (uiState.activity as? AppUsageItem)?.packageName
-                                    if (pkg != null) {
-                                        selectedSessions.forEach { dashboardViewModel.dismissGhost(pkg, it.startTime, it.endTime) }
-                                        selectedSessions.clear()
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                            }
-                            PromptHighlightButton("Convert") { 
-                                dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = selectedSessions.first().startTime }.get(Calendar.HOUR_OF_DAY))
-                                showSessionDialog = true 
-                            }
-                        }
-                    }
+                PromptHighlightButton("Convert") {
+                    dashboardViewModel.loadSuggestionsForHour(Calendar.getInstance().apply { timeInMillis = selectedSessions.first().startTime }.get(Calendar.HOUR_OF_DAY))
+                    showSessionDialog = true
                 }
             }
-        }
     }
 }

@@ -1,0 +1,19 @@
+# Release signing configuration — TEMPLATE
+#
+# Copy this file to `key.properties` (same directory) and fill in the real
+# values. `key.properties` is gitignored and must never be committed.
+#
+# The keystore itself is NOT in the repository. It is a binary file you must
+# back up somewhere permanent and independent — losing it means you can never
+# publish an update to HAT again, ever. See RELEASE.md.
+#
+# Generate a keystore with:
+#   keytool -genkeypair -v \
+#     -keystore hat-release.jks \
+#     -alias hat \
+#     -keyalg RSA -keysize 4096 -validity 10000
+
+storeFile=hat-release.jks
+keyAlias=hat
+storePassword=REPLACE_WITH_YOUR_STORE_PASSWORD
+keyPassword=REPLACE_WITH_YOUR_KEY_PASSWORD

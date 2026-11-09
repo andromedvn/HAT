@@ -11,11 +11,13 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import java.security.MessageDigest
 
 object VaultSecurity {
     // Note: This is an integrity key, not cryptographic security against the device owner.
     // Tying this to hardware IDs would permanently break cross-device vault migration.
     private const val SECRET_KEY = "HAT_HEURISTIC_VAULT_SECURE_KEY_V1"
+    const val AUTO_BACKUP_NAME = "HAT_AutoBackup.zip"
     private const val ALGORITHM = "HmacSHA256"
 
     private fun getMac(): Mac {
@@ -52,6 +54,43 @@ object VaultSecurity {
         }
     }
 
+    /**
+     * Rolling Vault (r12p): open (or create) HAT_AutoBackup.zip inside the
+     * user-picked SAF tree and hand the caller its output stream. The same
+     * document is reused every run, so a schedule overwrites one file instead
+     * of accumulating them. Returns null when the tree is gone (user deleted
+     * the folder or revoked the permission) or anything fails.
+     */
+    fun openAutoBackupStream(context: android.content.Context, treeUriString: String): OutputStream? {
+        return try {
+            val treeUri = android.net.Uri.parse(treeUriString)
+            val docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            val dirUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            val resolver = context.contentResolver
+            val children = resolver.query(
+                android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId),
+                arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null, null, null
+            )
+            var docUri: android.net.Uri? = null
+            children?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(1) == AUTO_BACKUP_NAME) {
+                        docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0))
+                        break
+                    }
+                }
+            }
+            val target = docUri ?: android.provider.DocumentsContract.createDocument(
+                resolver, dirUri, "application/zip", AUTO_BACKUP_NAME)
+            target?.let { resolver.openOutputStream(it, "wt") }
+        } catch (e: Exception) {
+            HatLogger.logError("VaultSecurity", "Rolling Vault open failed: ${e.message}")
+            null
+        }
+    }
+
     fun importMasterVault(inputStream: InputStream, tempDir: File): Pair<File, String>? {
         val mac = getMac()
         var prefsStr: String? = null
@@ -67,7 +106,14 @@ object VaultSecurity {
                     // SECURITY PATCH: Zip-Slip Prevention (Canonical Path Validation)
                     val targetFile = File(tempDir, entry.name)
                     val canonicalTarget = targetFile.canonicalPath
-                    if (!canonicalTarget.startsWith(canonicalTempDir)) {
+                    // The separator matters: without it, a sibling directory
+                    // whose name merely STARTS WITH the temp dir's name (e.g.
+                    // tempDir "vault_tmp" vs a crafted "../vault_tmp2/x.db")
+                    // passes the prefix check and escapes. An entry exactly AT
+                    // the temp dir itself is not a file write and stays legal.
+                    if (canonicalTarget != canonicalTempDir &&
+                        !canonicalTarget.startsWith(canonicalTempDir + File.separator)
+                    ) {
                         HatLogger.logError("VaultSecurity", "Zip Slip blocked: Extracted file path traverses outside temp directory -> ${entry.name}")
                         zis.closeEntry()
                         entry = zis.nextEntry
@@ -101,9 +147,16 @@ object VaultSecurity {
 
             if (prefsStr != null && dbTempFile.exists() && signatureStr != null) {
                 val calculatedSig = Base64.encodeToString(mac.doFinal(), Base64.NO_WRAP)
-                if (calculatedSig == signatureStr) {
+                // Constant-time comparison: String == short-circuits on the
+                // first differing byte, which leaks how many leading bytes of
+                // a forged signature match. MessageDigest.isEqual does not.
+                if (MessageDigest.isEqual(
+                        calculatedSig.toByteArray(Charsets.UTF_8),
+                        signatureStr.toByteArray(Charsets.UTF_8)
+                    )
+                ) {
                     HatLogger.log("VaultSecurity: Signature verified.")
-                    return Pair(dbTempFile, prefsStr!!)
+                    return Pair(dbTempFile, prefsStr)
                 } else {
                     HatLogger.logError("VaultSecurity", "Signature mismatch. Expected: $signatureStr, Calculated: $calculatedSig")
                 }

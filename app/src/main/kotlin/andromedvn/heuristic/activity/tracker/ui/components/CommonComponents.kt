@@ -1,9 +1,28 @@
 package andromedvn.heuristic.activity.tracker.ui.components
 
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.Font
+import andromedvn.heuristic.activity.tracker.R
+import andromedvn.heuristic.activity.tracker.domain.NavRouteCodec
+import andromedvn.heuristic.activity.tracker.utils.HeuristicQuotes
+import andromedvn.heuristic.activity.tracker.domain.ChartMode
+import andromedvn.heuristic.activity.tracker.domain.startOfLocalDay
+import andromedvn.heuristic.activity.tracker.domain.ChartPoint
+import andromedvn.heuristic.activity.tracker.domain.DashboardTourSteps
+import andromedvn.heuristic.activity.tracker.utils.SPONSOR_URL
+import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -21,8 +40,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -52,9 +73,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -65,12 +88,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.AppUsageItem
+import andromedvn.heuristic.activity.tracker.data.GapNeighbor
 import andromedvn.heuristic.activity.tracker.data.TimeRangeLabel
+import andromedvn.heuristic.activity.tracker.ui.theme.argbToStoredLong
+import andromedvn.heuristic.activity.tracker.ui.theme.formatHexColor
+import andromedvn.heuristic.activity.tracker.ui.theme.parseHexColor
 import andromedvn.heuristic.activity.tracker.utils.AppIconLoader
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import kotlinx.coroutines.delay
 import java.util.Calendar
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 fun Modifier.verticalFadingEdges(canScrollUp: Boolean, canScrollDown: Boolean, topEdgeHeight: Dp = 16.dp, bottomEdgeHeight: Dp = 32.dp): Modifier = this.graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
@@ -97,12 +125,17 @@ val ICON_REGISTRY = mapOf(
 
 data class PresetIcon(val iconName: String, val icon: ImageVector)
 val AVAILABLE_ICONS = ICON_REGISTRY.map { PresetIcon(it.key, it.value) }
+/** One gap-dialog ledger row: label, the base value (may ellipsize), the never-cut suffix, and whether the suffix is a muted annotation. */
+private data class Row4(val label: String, val base: String, val suffix: String?, val note: Boolean)
+
 data class HighlightEvent(val point: ChartPoint? = null, val stackIndex: Int = -1, val timestamp: Long = System.currentTimeMillis(), val isLongPress: Boolean = false, val isFromChart: Boolean = true, val sourceKey: String = "", val activeTags: Set<String> = emptySet())
 
 sealed class LedgerContext {
-    data class StandardGap(val startMillis: Long, val endMillis: Long) : LedgerContext()
-    data class IdleSession(val startMillis: Long, val endMillis: Long, val appName: String, val pkgName: String) : LedgerContext()
-    data class BatchMerge(val count: Int, val totalDurationMillis: Long) : LedgerContext()
+    data class StandardGap(val startMillis: Long, val endMillis: Long, val precededBy: GapNeighbor? = null, val followedBy: GapNeighbor? = null) : LedgerContext()
+    /** The merge rewrites only the selected gaps; [betweenCount] is the
+     *  number of recorded-time blocks sitting between them that stay
+     *  untouched. Renders as a row only when it is above zero. */
+    data class BatchMerge(val count: Int, val totalDurationMillis: Long, val betweenCount: Int = 0) : LedgerContext()
 }
 
 @Composable
@@ -158,21 +191,22 @@ fun PromptHighlightButton(text: String, onClick: () -> Unit) {
     }
 }
 
-@Composable
-fun PromptOutlineButton(text: String, onClick: () -> Unit) {
-    Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Transparent).border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(50)).clickable { onClick() }.padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
-    }
-}
+/** Linear-style ledger voice: the bundled JetBrains Mono (no downloadable fonts, no INTERNET permission). */
+val LedgerMono = FontFamily(Font(R.font.jetbrains_mono_regular), Font(R.font.jetbrains_mono_medium))
 
 @Composable
-fun HatOutlinedDialog(onDismissRequest: () -> Unit, title: String, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = onDismissRequest) {
-        Card(modifier = Modifier.fillMaxWidth().border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text(text = title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(16.dp))
-                content()
+fun HatOutlinedDialog(onDismissRequest: () -> Unit, title: String, bottomGap: Dp = 0.dp, content: @Composable ColumnScope.() -> Unit) {
+    Dialog(onDismissRequest = onDismissRequest, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        // bottomGap (r12l): dialog awareness - when another dialog or the
+        // tour card owns the bottom of the screen, this dialog shifts up and
+        // leaves a clear gap instead of overlapping it.
+        Box(modifier = Modifier.fillMaxSize().padding(bottom = bottomGap), contentAlignment = Alignment.Center) {
+            Card(modifier = Modifier.fillMaxWidth().widthIn(max = 380.dp).padding(horizontal = 20.dp).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text(text = title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(16.dp))
+                    content()
+                }
             }
         }
     }
@@ -190,7 +224,7 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
     fun isSameDay(a: Long, b: Long): Boolean { val calA = Calendar.getInstance().apply { timeInMillis = a }; val calB = Calendar.getInstance().apply { timeInMillis = b }; return calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) && calA.get(Calendar.DAY_OF_YEAR) == calB.get(Calendar.DAY_OF_YEAR) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(16.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(16.dp)) {
+        Card(modifier = Modifier.fillMaxWidth().border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp)) {
             Box(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Select Date", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp))
@@ -253,57 +287,188 @@ fun HatDatePickerModal(initialDate: Long, oldestData: Long, bypassHistoryLimit: 
     }
 }
 
+// Ledger (r12t): one mono label-value row of the gap's fact table. The
+// label is the signage voice; the value is the logged fact. No verbs.
+
+// Bento (r12n): the mono kicker above each bounded record block in the
+// label dialog; the same labelSmall uppercase treatment as the settings
+// group headers.
 @Composable
-fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+fun DialogBlockHeader(text: String) {
+    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Spacer(modifier = Modifier.height(8.dp))
+}
+
+@Composable
+fun ActivityEditorDialog(initialTitle: String, initialIconName: String, suggestions: List<String>, ledgerContext: LedgerContext? = null, onDismiss: () -> Unit, onSave: (String, String, Long) -> Unit, bottomGap: Dp = 0.dp) {
     var title by remember { mutableStateOf(initialTitle) }
     var selectedIconName by remember { mutableStateOf(initialIconName) }
+    // The label's start, taken from the device's evidence. HAT saves the
+    // gap it recorded; no manual nudging (owner call, 2026-11-02).
+    var adjustedStart by remember(ledgerContext) {
+        mutableStateOf(
+            when (val ctx = ledgerContext) {
+                is LedgerContext.StandardGap -> ctx.startMillis
+                else -> -1L
+            }
+        )
+    }
 
-    HatOutlinedDialog(onDismissRequest = onDismiss, title = "Label Activity") {
+    HatOutlinedDialog(bottomGap = bottomGap, onDismissRequest = onDismiss, title = "Label Activity") {
         if (ledgerContext != null) {
-            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                when (ledgerContext) {
-                    is LedgerContext.StandardGap -> {
-                        val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
-                        val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
-                        Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    is LedgerContext.IdleSession -> {
-                        val timeStr = "${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.startMillis)} to ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(ledgerContext.endMillis)}"
-                        val durStr = TimeUtils.formatDuration(ledgerContext.endMillis - ledgerContext.startMillis)
-                        Text("Time Range: $timeStr ($durStr)", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("App in focus: ${ledgerContext.appName} (${ledgerContext.pkgName})", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Detection: Continuous screen-on", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    is LedgerContext.BatchMerge -> {
-                        Text("Action: Merging ${ledgerContext.count} distinct gaps", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Total tracked time: ${TimeUtils.formatDuration(ledgerContext.totalDurationMillis)}", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Note: App usage between these gaps will remain unaffected.", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Tour (r12d): the tour's own dialog window cutouts around this
+            // content while the label-dialog step is active.
+            //
+            // Coordinates (r12i): this dialog's root is wrap-content and
+            // centered, so root coords are NOT screen coords. The tour
+            // overlay draws in its own fullscreen root, so the cutout must be
+            // registered in true screen coordinates: root bounds + the
+            // dialog view's offset on screen.
+            val tourDialogView = LocalView.current
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).then(
+                if (andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == DashboardTourSteps.ID_LABEL_DIALOG)
+                    Modifier.onGloballyPositioned { coords ->
+                        val b = coords.boundsInRoot()
+                        val loc = IntArray(2)
+                        tourDialogView.getLocationOnScreen(loc)
+                        AppTourRegistry.register(DashboardTourSteps.ID_LABEL_DIALOG, androidx.compose.ui.geometry.Rect(
+                            loc[0] + b.left, loc[1] + b.top, loc[0] + b.right, loc[1] + b.bottom
+                        ))
+                    } else Modifier
+            )) {
+                // Ledger (r12t, owner verdict): no sentences at all. THE GAP
+                // is a mono label-value table - base bounds always, provable
+                // event rows when the log supports them, merge rows in the
+                // batch flow. Nothing here narrates.
+                DialogBlockHeader("Gap details")
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    when (ledgerContext) {
+                        is LedgerContext.StandardGap -> {
+                            // Owner spec (2026-11-08): rows auto-sort longest
+                            // value first - a staircase, not a ragged edge. A
+                            // suffix (paren time, day word, span note) that
+                            // cannot fit beside its base steps aside so the
+                            // base completes at full size; the time it drops is
+                            // the same instant START/END already carry. The
+                            // font NEVER shrinks; only an absurdly long name
+                            // ellipsizes, and never its time.
+                            BoxWithConstraints {
+                                val rawRows = buildList {
+                                    val dur = TimeUtils.formatDurationSecs(ledgerContext.endMillis - ledgerContext.startMillis)
+                                    val days = TimeUtils.spanDays(ledgerContext.startMillis, ledgerContext.endMillis)
+                                    val crossing = days > 1
+                                    add(Row4("DURATION", dur, if (crossing) "(spans $days days)" else null, true))
+                                    if (crossing) {
+                                        add(Row4("START", TimeUtils.formatTimeSecs(ledgerContext.startMillis), TimeUtils.relativeDayLabel(ledgerContext.startMillis), true))
+                                        add(Row4("END", TimeUtils.formatTimeSecs(ledgerContext.endMillis), TimeUtils.relativeDayLabel(ledgerContext.endMillis), true))
+                                    } else {
+                                        add(Row4("START", TimeUtils.formatTimeSecs(ledgerContext.startMillis), null, true))
+                                        add(Row4("END", TimeUtils.formatTimeSecs(ledgerContext.endMillis), null, true))
+                                    }
+                                    ledgerContext.precededBy?.let { add(Row4("BEFORE", it.name, "(" + TimeUtils.formatTimeSecs(it.endMillis) + ")", false)) }
+                                    ledgerContext.followedBy?.let { if (!it.ongoing) add(Row4("AFTER", it.name, "(" + TimeUtils.formatTimeSecs(it.startMillis) + ")", false)) }
+                                }
+                                val measurer = rememberTextMeasurer()
+                                val labelStyle = MaterialTheme.typography.labelMedium.copy(fontFamily = LedgerMono)
+                                val valueStyle = MaterialTheme.typography.labelMedium
+                                val noteStyle = valueStyle.copy(fontSize = 10.sp)
+                                val density = LocalDensity.current
+                                val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                val labelDp = with(density) {
+                                    rawRows.maxOf { measurer.measure(AnnotatedString(it.label), labelStyle).size.width }.toDp() + 12.dp
+                                }
+                                val availPx = with(density) { (maxWidth - labelDp - 24.dp).toPx() }
+                                fun natural(row: Row4): Float = with(density) {
+                                    measurer.measure(AnnotatedString(row.base), valueStyle).size.width +
+                                        (row.suffix?.let { measurer.measure(AnnotatedString("  " + it), if (row.note) noteStyle else valueStyle).size.width } ?: 0)
+                                }.toFloat()
+                                // First pass: a suffix that cannot fit the shared
+                                // budget steps aside (base completes, no shrink).
+                                val budget = minOf(rawRows.maxOf { natural(it) }, availPx)
+                                val trimmed = rawRows.map { row ->
+                                    if (row.suffix != null && natural(row) > budget) row.copy(suffix = null) else row
+                                }
+                                // Second pass: final widths, longest value first.
+                                val finalRows = trimmed.map { it to natural(it) }.sortedByDescending { it.second }
+                                val valueDp = with(density) { minOf(finalRows.maxOf { it.second }, availPx).toDp() }
+                                Column {
+                                    finalRows.forEach { (row, _) ->
+                                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                            Text(row.label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(labelDp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Row(modifier = Modifier.width(valueDp)) {
+                                                Text(row.base, style = valueStyle, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                row.suffix?.let {
+                                                    Text("  " + it, style = if (row.note) noteStyle else valueStyle, color = if (row.note) mutedColor else MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        is LedgerContext.BatchMerge -> {
+                            BoxWithConstraints {
+                                val rows = buildList {
+                                    add(Row4("MERGING", "${ledgerContext.count} gaps", null, true))
+                                    add(Row4("TOTAL", TimeUtils.formatDuration(ledgerContext.totalDurationMillis), null, true))
+                                    if (ledgerContext.betweenCount > 0) add(Row4("BETWEEN", "${ledgerContext.betweenCount} blocks stay", null, true))
+                                }
+                                val measurer = rememberTextMeasurer()
+                                val labelStyle = MaterialTheme.typography.labelMedium.copy(fontFamily = LedgerMono)
+                                val valueStyle = MaterialTheme.typography.labelMedium
+                                val density = LocalDensity.current
+                                val labelDp = with(density) {
+                                    rows.maxOf { measurer.measure(AnnotatedString(it.label), labelStyle).size.width }.toDp() + 12.dp
+                                }
+                                val availPx = with(density) { (maxWidth - labelDp - 24.dp).toPx() }
+                                val valueDp = with(density) {
+                                    val natural = rows.maxOf { measurer.measure(AnnotatedString(it.base), valueStyle).size.width }.toFloat()
+                                    minOf(natural, availPx.coerceAtLeast(1f)).toDp()
+                                }
+                                Column {
+                                    rows.forEach { row ->
+                                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                            Text(row.label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(labelDp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Text(row.base, style = valueStyle, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(valueDp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
+                        
+                        }
                     }
                 }
             }
         }
-        
-        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Activity Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)))
-        Spacer(modifier = Modifier.height(16.dp))
-        if (suggestions.isNotEmpty()) {
-            Text("Suggested for this hour", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(suggestions) { suggestion -> SuggestionChip(onClick = { title = suggestion; val match = AVAILABLE_ICONS.find { it.iconName.contains(suggestion, ignoreCase = true) || suggestion.contains(it.iconName, ignoreCase = true) }; if (match != null) selectedIconName = match.iconName }, label = { Text(suggestion) }, border = SuggestionChipDefaults.suggestionChipBorder(true, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))) }
+        Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Activity Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)))
+                Spacer(modifier = Modifier.height(16.dp))
+                if (suggestions.isNotEmpty()) {
+                    // Header cut (r12n): the engine serves recent labels, so
+                    // the chips speak for themselves.
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(suggestions) { suggestion -> SuggestionChip(onClick = { title = suggestion; val match = AVAILABLE_ICONS.find { it.iconName.contains(suggestion, ignoreCase = true) || suggestion.contains(it.iconName, ignoreCase = true) }; if (match != null) selectedIconName = match.iconName }, label = { Text(suggestion) }, border = SuggestionChipDefaults.suggestionChipBorder(true, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))) }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                Text("Icon", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(AVAILABLE_ICONS) { preset ->
+                        val isSelected = selectedIconName == preset.iconName
+                        Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(30)).background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(30)).clickable { selectedIconName = preset.iconName }, contentAlignment = Alignment.Center) { Icon(preset.icon, contentDescription = null, tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+                // The tour's label-dialog step hides Save: the tour card sits
+                // where Save would be, and saving mid-tour is not the flow.
+                val tourDialogStep = andromedvn.heuristic.activity.tracker.domain.AppTourState.current?.id == DashboardTourSteps.ID_LABEL_DIALOG
+                if (!tourDialogStep) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName, adjustedStart) }
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        Text("Icon", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        Spacer(modifier = Modifier.height(8.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(AVAILABLE_ICONS) { preset ->
-                val isSelected = selectedIconName == preset.iconName
-                Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(30)).background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent).border(if(isSelected) 2.dp else 1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(30)).clickable { selectedIconName = preset.iconName }, contentAlignment = Alignment.Center) { Icon(preset.icon, contentDescription = null, tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-        }
-        Spacer(modifier = Modifier.height(24.dp))
-        DialogHighlightButton("Save", MaterialTheme.colorScheme.primary) { if (title.isNotBlank()) onSave(title, selectedIconName) }
     }
 }
 
@@ -316,10 +481,10 @@ fun HatDynamicHeader(title: String, subtitle: String, actions: @Composable RowSc
 }
 
 @Composable
-fun TimeSelector(currentRange: TimeRangeLabel, onRangeSelected: (TimeRangeLabel) -> Unit) {
+fun TimeSelector(currentRange: TimeRangeLabel, modifier: Modifier = Modifier, onRangeSelected: (TimeRangeLabel) -> Unit) {
     val options = listOf(TimeRangeLabel.DAY, TimeRangeLabel.WEEK, TimeRangeLabel.MONTH)
     val selectedIndex = options.indexOf(currentRange)
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(52.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(50)).padding(4.dp)) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().height(52.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(4.dp).selectableGroup()) {
         val itemWidth = maxWidth / 3
         val indicatorOffset by animateDpAsState(targetValue = itemWidth * selectedIndex, animationSpec = tween(300, easing = FastOutSlowInEasing), label = "indicator")
         Box(modifier = Modifier.offset(x = indicatorOffset).width(itemWidth).fillMaxHeight().clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)).border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
@@ -328,19 +493,21 @@ fun TimeSelector(currentRange: TimeRangeLabel, onRangeSelected: (TimeRangeLabel)
                 val isSelected = index == selectedIndex
                 val text = when (range) { TimeRangeLabel.DAY -> "Day"; TimeRangeLabel.WEEK -> "Week"; TimeRangeLabel.MONTH -> "Month" }
                 val textColor by animateColorAsState(targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), animationSpec = tween(300, easing = FastOutSlowInEasing), label = "text")
-                Box(modifier = Modifier.weight(1f).fillMaxHeight().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { onRangeSelected(range) }), contentAlignment = Alignment.Center) { Text(text = text, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium), color = textColor) }
+                // selectable() rather than clickable(): a screen reader otherwise
+                // announces "Day", "Week" and "Month" as three identical options
+                // with no indication of which is active.
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().selectable(selected = isSelected, onClick = { onRangeSelected(range) }), contentAlignment = Alignment.Center) { Text(text = text, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium), color = textColor) }
             }
         }
     }
 }
 
 @Composable
-fun SummaryStatCard(modifier: Modifier = Modifier, title: String, value: String, badgeText: String?, onClick: () -> Unit) {
+fun SummaryStatCard(modifier: Modifier = Modifier, title: String, value: String, onClick: () -> Unit) {
     Card(modifier = modifier.defaultMinSize(minHeight = 110.dp).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp)).clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = Color.Transparent), shape = RoundedCornerShape(24.dp)) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                  Text(text = title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), minLines = 2)
-                 if (badgeText != null) { Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary.copy(alpha=0.15f)).border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp)) { Text(badgeText, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) } }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = value, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
@@ -362,7 +529,7 @@ fun EmptyStateCard(icon: ImageVector, title: String, subtitle: String) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun RealActivityListItem(navController: NavController, app: AppUsageItem, color: Color, progress: Float, onLongClick: () -> Unit = {}, isHighlighted: Boolean = false) {
-    val mod = Modifier.fillMaxWidth().padding(bottom = 12.dp).border(if(isHighlighted) 2.dp else 1.dp, color.copy(alpha = if(isHighlighted) 1f else 0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = { navController.navigate("details/app/${Uri.encode(app.packageName)}") }, onLongClick = onLongClick)
+    val mod = Modifier.fillMaxWidth().padding(bottom = 12.dp).border(if(isHighlighted) 2.dp else 1.dp, color.copy(alpha = if(isHighlighted) 1f else 0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = { navController.navigate(NavRouteCodec.appDetailsRoute(app.packageName)) }, onLongClick = onLongClick)
     Card(modifier = mod, colors = CardDefaults.cardColors(containerColor = if (isHighlighted) color.copy(alpha=0.1f) else Color.Transparent)) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -386,7 +553,7 @@ fun RealActivityListItem(navController: NavController, app: AppUsageItem, color:
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun MockOfflineListItem(name: String, duration: String, iconName: String, color: Color, progress: Float, isSelectedForAction: Boolean = false, onClick: () -> Unit = {}, onLongClick: () -> Unit = {}, isHighlighted: Boolean = false) {
+fun MockOfflineListItem(name: String, duration: String, iconName: String, color: Color, progress: Float, isSelectedForAction: Boolean = false, onClick: () -> Unit = {}, onLongClick: () -> Unit = {}, isHighlighted: Boolean = false, storedRowCount: Int = 1) {
     val icon = ICON_REGISTRY[iconName] ?: Icons.AutoMirrored.Filled.DirectionsWalk
     val showHighlight = isHighlighted || isSelectedForAction
     val mod = Modifier.fillMaxWidth().padding(bottom = 12.dp).border(if(showHighlight) 2.dp else 1.dp, color.copy(alpha = if(showHighlight) 1f else 0.5f), RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -399,6 +566,18 @@ fun MockOfflineListItem(name: String, duration: String, iconName: String, color:
                     Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                         Text(name, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("Offline Activity", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        // HONESTY (user decision 2026-10-01): if this entry is backed by more
+                        // than one stored row, say so right here. HAT shows duplicates instead
+                        // of deleting them, because silently removing the user's data is
+                        // exactly what this app must never do.
+                        if (storedRowCount > 1) {
+                            Text(
+                                "$storedRowCount copies saved - tap and hold, then delete, to remove",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2
+                            )
+                        }
                     }
                     Text(duration, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -442,6 +621,92 @@ fun PermissionRequestCard(context: Context) {
     }
 }
 
+/**
+ * The empty-bucket hint card shared by all four chart screens. Was four
+ * hand-pasted copies that had already drifted (animation timing, the battery
+ * lookup, which highlight field it watched). The caller decides WHEN to show
+ * it (the showHint predicate differs per chart); everything inside is one copy.
+ */
+@Composable
+fun EmptyBucketHintCard(
+    showHint: Boolean,
+    highlight: HighlightEvent?,
+    chartMode: ChartMode,
+    totalScreenTimeMillis: Long,
+    isDayView: Boolean,
+    isDataReliable: Boolean,
+    hasSeenHistoryLimitWarning: Boolean,
+    osRetentionDays: Int,
+    onMarkHistoryLimitWarningSeen: () -> Unit
+) {
+    AnimatedVisibility(visible = showHint, enter = fadeIn(tween(400)), exit = fadeOut(tween(400))) {
+        Column(modifier = Modifier.padding(top = 16.dp)) {
+            val isFuture = highlight?.point?.isFuture == true
+            val context = LocalContext.current
+            val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            val isBatteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+            val quote = remember(highlight) {
+                HeuristicQuotes.getQuote(
+                    point = highlight?.point,
+                    totalScreenTimeMillis = totalScreenTimeMillis,
+                    isDayView = isDayView,
+                    isDataReliable = isDataReliable,
+                    hasSeenHistoryLimitWarning = hasSeenHistoryLimitWarning,
+                    osRetentionDays = osRetentionDays,
+                    chartMode = chartMode,
+                    isBatteryExempt = isBatteryExempt)
+            }
+            LaunchedEffect(highlight) {
+                if (!isDataReliable && !isFuture && !hasSeenHistoryLimitWarning) {
+                    onMarkHistoryLimitWarningSeen()
+                }
+            }
+            HeuristicTipCard(quote = quote)
+        }
+    }
+}
+
+/**
+ * The bottom-center batch-selection bar shared by three screens (was three
+ * drifting copies: 1dp/16dp vs 2dp/24dp card, different count labels). The
+ * caller supplies visibility, the count, an optional total line and the
+ * action buttons; the anatomy is one copy. Must sit inside a Box (it aligns
+ * itself to the bottom center).
+ */
+@Composable
+fun androidx.compose.foundation.layout.BoxScope.BatchSelectionBar(
+    visible: Boolean,
+    count: Int,
+    label: String = "Selected",
+    totalDurationText: String? = null,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(tween(400)),
+        exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeOut(tween(400)),
+        modifier = Modifier.align(Alignment.BottomCenter)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp).windowInsetsPadding(WindowInsets.navigationBars),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            shape = RoundedCornerShape(24.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(modifier = Modifier.weight(1f, fill = false).padding(end = 16.dp)) {
+                    Text("$count $label", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (totalDurationText != null) {
+                        Text(totalDurationText, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically, content = content)
+            }
+        }
+    }
+}
+
 @Composable
 fun HeuristicTipCard(quote: String) {
     Card(modifier = Modifier.fillMaxWidth().wrapContentHeight(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background), shape = RoundedCornerShape(24.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
@@ -459,17 +724,130 @@ fun HeuristicTipCard(quote: String) {
     }
 }
 
-fun getDayOffsetString(targetMillis: Long, currentDayStartMillis: Long): String {
-    val cal = Calendar.getInstance().apply { timeInMillis = targetMillis }
-    val diffDays = ((currentDayStartMillis - getStartOfDay(cal)) / 86400000L).toInt()
-    return when {
-        diffDays == 1 -> " (Yesterday)"
-        diffDays > 1 -> " ($diffDays days ago)"
-        else -> ""
+
+fun getStartOfDay(cal: Calendar): Long = startOfLocalDay(cal.timeInMillis)
+
+// -----------------------------------------------------------------------------
+// THEME COMPONENTS
+// Ported from HAT Pro (CommonComponents.kt) so the two codebases stay
+// diffable. Only deviation: parsing goes through the pure, unit-tested
+// parseHexColor/formatHexColor in ui/theme/ColorParsing.kt rather than
+// re-implementing the parse inline with android.graphics.Color.parseColor.
+// -----------------------------------------------------------------------------
+
+@Composable
+fun SettingsGroupParentCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(24.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.02f)),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            content()
+        }
     }
 }
 
-fun getStartOfDay(cal: Calendar): Long { 
-    val clone = cal.clone() as Calendar; clone.set(Calendar.HOUR_OF_DAY, 0); clone.set(Calendar.MINUTE, 0); clone.set(Calendar.SECOND, 0); clone.set(Calendar.MILLISECOND, 0)
-    return clone.timeInMillis 
+@Composable
+fun HexColorInput(currentColor: Color, onColorChange: (Color) -> Unit) {
+    var textState by remember { mutableStateOf(formatHexColor(argbToStoredLong(currentColor.toArgb()))) }
+    var errorState by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+
+    // Only overwrite the text while the user is not typing, so an in-progress
+    // entry is never yanked out from under them by a recomposition.
+    LaunchedEffect(currentColor) { if (!isFocused) textState = formatHexColor(argbToStoredLong(currentColor.toArgb())) }
+    LaunchedEffect(textState) {
+        delay(300)
+        val parsed = parseHexColor(textState)
+        if (parsed != null) { onColorChange(Color(parsed.toInt())); errorState = false }
+        else errorState = textState.isNotBlank()
+    }
+
+    Card(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(16.dp)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("CUSTOM HEX CODE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = textState,
+                onValueChange = { input -> var newText = input; if (!newText.startsWith("#")) newText = "#" + newText.replace("#", ""); if (newText.length <= 9) textState = newText.uppercase() },
+                label = { Text("e.g. #FF8000") },
+                isError = errorState,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().onFocusChanged { isFocused = it.isFocused },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+            )
+            // The support ask lives right here, every time. Not a dialog, not
+            // once-per-install: a quiet line under the hex input, always
+            // visible while the user is customizing their theme. Making your
+            // app yours is the moment you're most likely to appreciate the
+            // work that went into it, so that's where the reminder sits.
+            Spacer(modifier = Modifier.height(12.dp))
+            val context = LocalContext.current
+            Text(
+                "HAT is free, built by one person. Your support makes more of this possible.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth().clickable { context.openExternalWebLink(SPONSOR_URL) }
+            )
+        }
+    }
+}
+
+@Composable
+fun ThemePreviewBox(derivedColor: Color) {
+    // The Pro preview with the user's changes (2026-10-20, trimmed 2026-10-29):
+    // - Three elements only: chart bars, calendar circle, D/W/M pill. The
+    //   dot+line card is gone (owner's call) - what remains is what the
+    //   dashboard actually shows.
+    // - Circle shows 22, pill has three segments (D/W/M) matching the
+    //   Day/Week/Month switcher.
+    // - All elements share a 36dp bounding height for optical alignment.
+    Box(
+        modifier = Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(16.dp)).background(derivedColor.copy(alpha = 0.05f)).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                // 1. Chart bars: three, 36dp tall, bottom-aligned, descending
+                //    heights so the group reads as one bar chart at a glance.
+                Box(modifier = Modifier.height(36.dp), contentAlignment = Alignment.BottomCenter) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+                        Canvas(modifier = Modifier.width(12.dp).height(36.dp)) {
+                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
+                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
+                        }
+                                                Canvas(modifier = Modifier.width(12.dp).height(24.dp)) {
+                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
+                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
+                        }
+
+                        // Bar 3 sits between the other two: taller than the
+                        // middle bar, never as tall as the first (owner, 2026-11-02).
+                        Canvas(modifier = Modifier.width(12.dp).height(30.dp)) {
+                            val strokeW = 1.5.dp.toPx(); val inset = strokeW / 2f; val barSize = Size(size.width - strokeW, size.height - strokeW); val rad = CornerRadius(size.width / 2 - inset)
+                            drawRoundRect(derivedColor.copy(alpha = 0.2f), Offset(inset, inset), barSize, rad); drawRoundRect(derivedColor, Offset(inset, inset), barSize, rad, style = Stroke(strokeW))
+                        }
+                    }
+                }
+                Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(derivedColor.copy(alpha = 0.15f)).border(2.dp, derivedColor, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("22", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = derivedColor)
+                }
+                // Miniature Day/Week/Month switcher: same grammar as the real
+                // TimeSelector (owner, 2026-10-21).
+                Box(modifier = Modifier.width(102.dp).height(36.dp).border(1.dp, derivedColor.copy(alpha = 0.5f), RoundedCornerShape(50)).padding(3.dp)) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(50)).background(derivedColor.copy(alpha = 0.15f)).border(2.dp, derivedColor, RoundedCornerShape(50)), contentAlignment = Alignment.Center) { Text("Day", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp), color = derivedColor) }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text("Week", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, fontSize = 9.sp), color = derivedColor.copy(alpha = 0.6f)) }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text("Month", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, fontSize = 9.sp), color = derivedColor.copy(alpha = 0.6f)) }
+                    }
+                }
+            }
+        }
+    }
 }

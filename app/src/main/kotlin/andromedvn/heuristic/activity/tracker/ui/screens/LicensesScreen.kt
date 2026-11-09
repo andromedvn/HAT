@@ -24,7 +24,6 @@ fun LicensesScreen(navController: NavController) {
                 .padding(bottom = innerPadding.calculateBottomPadding())
                 .windowInsetsPadding(WindowInsets.statusBars)
         ) {
-            // FIXED: Separated horizontal and top padding
             Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) {
                 HatDynamicHeader(title = "Licenses", subtitle = "Open Source") {
                     IconButton(onClick = { navController.popBackStack() }) {
@@ -41,10 +40,11 @@ fun LicensesScreen(navController: NavController) {
                         Text(
                             text = "HAT is built using the following open-source frameworks and libraries, provided under the Apache License 2.0:\n\n" +
                                    "• The Android Open Source Project (AOSP)\n" +
-                                   "• Jetpack Compose UI Toolkit\n" +
+                                   "• Jetpack Compose UI Toolkit (UI, Material 3, Material Icons Extended)\n" +
+                                   "• Jetpack Activity & Navigation\n" +
                                    "• Kotlin Programming Language\n" +
                                    "• Kotlinx Coroutines & Serialization\n" +
-                                   "• AndroidX DataStore & WorkManager",
+                                   "• AndroidX Core, Lifecycle, DataStore & WorkManager",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

@@ -3,8 +3,48 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- The request-ignore dialog itself: without this declaration some ROMs
+         finish the handler silently and the battery page never advances. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+      HAT runs no foreground service. ArchiveSyncWorker is a plain
+      CoroutineWorker: there is no setForeground() call anywhere in HAT, no
+      <service> element above, and no foregroundServiceType.
+
+      androidx.work:work-runtime DOES declare FOREGROUND_SERVICE (and
+      RECEIVE_BOOT_COMPLETED) in its own manifest, so both merge into the
+      shipped APK unless they are stripped here , verified on the built
+      release artifact, where both were present while HAT never uses them:
+
+        - FOREGROUND_SERVICE only matters for a worker that calls
+          setForeground(); none does. Stripping it cannot break scheduling,
+          which runs through SystemJobService.
+        - RECEIVE_BOOT_COMPLETED is only consumed by WorkManager's
+          systemalarm.RescheduleReceiver, which work-runtime itself disables
+          on API 23+ (HAT's minSdk is 26). JobScheduler persists the periodic
+          archive request across reboots on its own.
+
+      The result matches the documented posture exactly: an auditor running
+      `aapt dump permissions` finds neither permission in the shipped binary.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
+
+    <!--
+      androidx.work:work-runtime declares ACCESS_NETWORK_STATE in its own manifest
+      so that callers can use NetworkType.CONNECTED constraints. HAT's only
+      WorkManager constraint is setRequiresBatteryNotLow(), so this permission is
+      unused here.
+
+      It is stripped so the shipped binary matches the Privacy Policy's claim that
+      HAT declares neither INTERNET nor ACCESS_NETWORK_STATE. Anyone can confirm
+      this with `aapt dump permissions`. Note that ACCESS_NETWORK_STATE would not
+      have allowed network traffic in any case , only INTERNET does , but an
+      auditor should not find a discrepancy between the policy and the binary.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
     <queries>
         <intent>

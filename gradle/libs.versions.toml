@@ -1,19 +1,35 @@
 [versions]
-agp = "8.1.3"
-kotlin = "1.9.22"
-coreKtx = "1.12.0"
-lifecycleRuntimeKtx = "2.7.0"
-activityCompose = "1.8.2"
-composeBom = "2024.02.00"
-navigationCompose = "2.7.7"
-serialization = "1.6.3"
-datastore = "1.0.0"
-workManager = "2.9.0"
+# Upgraded 2026-09-25: AGP 8.1.3 could not compile against API 36. HAT targets
+# SDK 36 because that is what current AndroidX / Compose libraries are built
+# and tested against, not because any store requires it. HAT is distributed
+# through GitHub Releases only.
+#
+# AGP 8.13.2 is the last 8.x line and supports max API 36.1 on Gradle 8.13 /
+# JDK 17. Chosen deliberately over AGP 9.x, which is a major-version jump with
+# far heavier breaking changes than this upgrade needs.
+agp = "8.13.2"
+kotlin = "2.3.21"
+# AndroidX versions are deliberately held at the AGP-8.13-era releases. The
+# current ones (core 1.19.x, lifecycle 2.10+, navigation 2.10+, Compose BOM
+# 2026.x) declare "requires Android Gradle plugin 9.0.0 or higher" and fail the
+# build outright. Raise these only together with an AGP 9 upgrade.
+coreKtx = "1.17.0"
+lifecycleRuntimeKtx = "2.9.4"
+activityCompose = "1.12.1"
+composeBom = "2025.10.01"
+navigationCompose = "2.9.6"
+serialization = "1.9.0"
+datastore = "1.1.7"
+workManager = "2.10.5"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+# Required from Kotlin 2.0 onward. Replaces the old
+# `composeOptions { kotlinCompilerExtensionVersion = ... }` block, which is
+# removed in app/build.gradle.kts. Must match the Kotlin version exactly.
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -26,8 +42,6 @@ androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
-androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
-androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }

@@ -30,19 +30,6 @@ object ColorUtils {
         newHsl[2] = (tone / 100f).coerceIn(0f, 1f)
         return Color(AndroidColorUtils.HSLToColor(newHsl))
     }
-
-    fun adjustBrightness(color: Color, fraction: Float): Color {
-        val hsl = FloatArray(3)
-        AndroidColorUtils.colorToHSL(color.toArgb(), hsl)
-        hsl[2] = (hsl[2] + fraction).coerceIn(0f, 1f)
-        return Color(AndroidColorUtils.HSLToColor(hsl))
-    }
-
-    fun generateMonochromaticPalette(base: Color, steps: Int = 10): List<Color> {
-        return List(steps) { i ->
-            adjustBrightness(base, -(i * 0.045f)) 
-        }
-    }
 }
 
 fun generateMonochromaticDark(seed: Color): ColorScheme {
@@ -66,10 +53,13 @@ fun ComposeEmptyActivityTheme(settings: UserSettings, content: @Composable () ->
     val context = LocalContext.current
     val dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-    // FOSS PURGE: Hardcoded fallback to Orange (0xFFFF8000)
+    // FALLBACK: derives from the stored accent so a custom colour survives on
+    // devices without dynamic colour. Pre-fix this discarded settings.staticColor
+    // and settings.extractedColor and hardcoded orange, which is also why the
+    // crash-recovery screen (which asks for red) rendered orange.
     val scheme = when (settings.themeType) {
-        ThemeType.DYNAMIC -> if (dynamicAvailable) dynamicDarkColorScheme(context) else generateMonochromaticDark(Color(0xFFFF8000))
-        ThemeType.STATIC -> generateMonochromaticDark(Color(0xFFFF8000))
+        ThemeType.DYNAMIC -> if (dynamicAvailable) dynamicDarkColorScheme(context) else generateMonochromaticDark(Color(settings.extractedColor))
+        ThemeType.STATIC -> generateMonochromaticDark(Color(settings.staticColor))
     }
 
     val view = LocalView.current
@@ -77,7 +67,12 @@ fun ComposeEmptyActivityTheme(settings: UserSettings, content: @Composable () ->
         SideEffect {
             val window = (view.context as Activity).window
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            // Deprecated in API 35 in favour of edge-to-edge + enableEdgeToEdge(),
+            // but they still work and the modern replacement is a visual change
+            // that needs device verification. Suppressed deliberately, not overlooked.
+            @Suppress("DEPRECATION")
             window.statusBarColor = android.graphics.Color.TRANSPARENT
+            @Suppress("DEPRECATION")
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

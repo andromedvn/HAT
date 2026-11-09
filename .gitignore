@@ -5,9 +5,13 @@
 .DS_Store
 /build
 /app/build
+.kotlin/
 .acside/
 *.jks
 *.keystore
+key.properties
 cmd.sh
-CHANGELOG.md
 docs/
+
+# Hermes Agent local planning artifacts
+.hermes/

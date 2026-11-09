@@ -1,0 +1,144 @@
+name: JVM Unit Tests
+
+# Runs the pure-logic interval-math suite on every push and pull request.
+# No Android emulator: the tests are plain JVM JUnit4, so the job needs only a
+# JDK. This keeps CI fast enough to actually be used, and it cannot be broken by
+# emulator flakiness.
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Interval math and event replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --console=plain --no-daemon
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/testDebugUnitTest/
+          retention-days: 14
+
+  # The unit tests above cannot catch a release-only failure: R8 minification,
+  # the merged manifest, and Android Lint all only run when a release APK is
+  # built. HAT's entire pitch is a minimal permission surface, and lint is the
+  # checker that audits exactly that , so a release build is part of CI.
+  build-and-lint:
+    name: Release build + lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # CI has no key.properties. -PallowDebugSignedRelease is exactly the
+      # escape hatch app/build.gradle.kts exposes for verification builds; the
+      # artifact is uploaded for inspection and must never be published.
+      - name: Build release APK (R8 enabled)
+        run: ./gradlew :app:assembleRelease --console=plain --no-daemon -PallowDebugSignedRelease=true
+
+      - name: Android Lint
+        run: ./gradlew :app:lintRelease --console=plain --no-daemon -PallowDebugSignedRelease=true
+
+      # The privacy claim is a product feature, so it is asserted rather than
+      # trusted. Fails the build if INTERNET ever reaches a release manifest.
+      - name: Assert no INTERNET permission in the release manifest
+        run: |
+          status=0
+          while IFS= read -r manifest; do
+            if grep -q 'android.permission.INTERNET' "$manifest"; then
+              echo "::error file=$manifest::INTERNET permission present in a release manifest"
+              status=1
+            fi
+          done < <(find app/build/intermediates -path '*release*' -name 'AndroidManifest.xml')
+          if [ "$status" -eq 0 ]; then
+            echo "OK: no INTERNET permission in any release manifest"
+          fi
+          exit "$status"
+
+      - name: Upload debug-signed release APK (CI has no signing key)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hat-release-debug-signed-DO-NOT-PUBLISH
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 7
+
+  # The copy rules are a constitution article (AGENTS.md, article 5), so they
+  # are asserted rather than trusted. Zero tolerance: no em dashes anywhere,
+  # not in the docs, not in the app's code, not even in comments. The scan is
+  # a single grep, deliberately without false positives.
+  copy-scan:
+    name: Copy rules (no em dashes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fail on any em or en dash
+        run: |
+          status=0
+          while IFS= read -r file; do
+            if grep -q $'\u2014\|\u2013' "$file"; then
+              line=$(grep -n $'\u2014\|\u2013' "$file" | head -1 | cut -d: -f1)
+              echo "::error file=$file,line=$line::em or en dash found. Copy uses periods, commas, and colons."
+              status=1
+            fi
+          done < <(find . -path ./.git -prune -o \
+            \( -name '*.md' -o -name '*.kt' -o -name '*.xml' -o -name '*.kts' -o -name '*.toml' \) \
+            -not -path './docs/*' -print)
+          if [ "$status" -eq 0 ]; then
+            echo "OK: no em or en dashes anywhere"
+          fi
+          exit "$status"

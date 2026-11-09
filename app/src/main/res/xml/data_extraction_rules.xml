@@ -1,15 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  HAT backs up nothing, in either direction.
+
+  The `file` domain is where HatLogger writes its diagnostic log, which can
+  contain app package names and exception detail. It was not excluded here, so
+  "Transfer to new phone" on Android 12+ would have copied those logs onto the
+  new device even though android:allowBackup="false" was set. allowBackup only
+  governs cloud backup; device-to-device transfer is governed by this file.
+
+  The device_* domains cover device-protected (direct-boot) storage and are
+  listed for the same reason.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />
+        <exclude domain="file" />
         <exclude domain="database" />
         <exclude domain="sharedpref" />
         <exclude domain="external" />
+        <exclude domain="device_root" />
+        <exclude domain="device_file" />
+        <exclude domain="device_database" />
+        <exclude domain="device_sharedpref" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" />
+        <exclude domain="file" />
         <exclude domain="database" />
         <exclude domain="sharedpref" />
         <exclude domain="external" />
+        <exclude domain="device_root" />
+        <exclude domain="device_file" />
+        <exclude domain="device_database" />
+        <exclude domain="device_sharedpref" />
     </device-transfer>
 </data-extraction-rules>

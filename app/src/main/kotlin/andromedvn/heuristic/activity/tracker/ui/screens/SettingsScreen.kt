@@ -4,20 +4,18 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -29,15 +27,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import andromedvn.heuristic.activity.tracker.data.*
+import andromedvn.heuristic.activity.tracker.domain.DetailLevel
+import andromedvn.heuristic.activity.tracker.domain.startOfLocalDay
+import andromedvn.heuristic.activity.tracker.domain.nextLocalMidnight
 import andromedvn.heuristic.activity.tracker.domain.HeuristicEngine
+import andromedvn.heuristic.activity.tracker.domain.shouldShowSupportPrompt
 import andromedvn.heuristic.activity.tracker.ui.components.*
+import andromedvn.heuristic.activity.tracker.ui.theme.argbToStoredLong
 import andromedvn.heuristic.activity.tracker.utils.HatLogger
+import andromedvn.heuristic.activity.tracker.utils.restoreVaultAndRestart
+import andromedvn.heuristic.activity.tracker.utils.SPONSOR_URL
+import andromedvn.heuristic.activity.tracker.utils.openExternalWebLink
 import andromedvn.heuristic.activity.tracker.utils.TimeUtils
 import andromedvn.heuristic.activity.tracker.utils.UsageStatsEngine
 import andromedvn.heuristic.activity.tracker.worker.WorkerScheduler
@@ -53,6 +61,7 @@ import java.util.Locale
 
 @Composable
 fun SettingsScreen(navController: NavController, repository: ActivityRepository) {
+    val tourRegistry = andromedvn.heuristic.activity.tracker.ui.components.AppTourRegistry
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val storage = remember { OfflineStorage.getInstance(context) }
@@ -62,6 +71,7 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
     
     val scrollState = rememberScrollState()
     var customDialogSetting by remember { mutableStateOf<String?>(null) } 
+    var showSupportPrompt by remember { mutableStateOf(false) }
     var localSortType by remember(currentSettings?.sortType) { mutableStateOf(currentSettings?.sortType ?: SortType.DURATION) }
 
     var showExportDatePicker by rememberSaveable { mutableStateOf(false) }
@@ -81,7 +91,20 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
     val updateSettings: (UserSettings) -> Unit = { newSet -> 
         scope.launch {
             storage.saveSettings(newSet)
-            WorkerScheduler.updateWorkers(context, newSet.archiveSyncIntervalHours)
+            WorkerScheduler.updateWorkers(context, newSet.archiveSyncIntervalHours, newSet.autoBackupIntervalHours)
+        }
+    }
+
+    // Rolling Vault (r12p): picking the folder grants persistable write
+    // permission; the schedule then overwrites HAT_AutoBackup.zip in place.
+    val backupFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(
+                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            updateSettings(currentSettings!!.copy(autoBackupUri = uri.toString()))
+            andromedvn.heuristic.activity.tracker.worker.WorkerScheduler.updateWorkers(context, currentSettings!!.archiveSyncIntervalHours, if (currentSettings!!.autoBackupIntervalHours > 0) currentSettings!!.autoBackupIntervalHours else 0)
+            Toast.makeText(context, "Backup folder set. HAT_AutoBackup.zip will be written there on schedule.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -89,8 +112,14 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    context.contentResolver.openOutputStream(uri)?.use { repository.exportSecureVault(it) }
-                    withContext(Dispatchers.Main) { Toast.makeText(context, "Master Vault Exported", Toast.LENGTH_SHORT).show() }
+                    val ok = context.contentResolver.openOutputStream(uri)?.use { repository.exportSecureVault(it) } ?: false
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            context,
+                            if (ok) "Master Vault Exported" else "Export Failed - database was busy, try again",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Export Failed", Toast.LENGTH_SHORT).show() } }
             }
         }
@@ -98,29 +127,8 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val success = context.contentResolver.openInputStream(uri)?.use { repository.restoreSecureVault(it, context.cacheDir) } ?: false
-                    withContext(Dispatchers.Main) { 
-                        if(success) {
-                            Toast.makeText(context, "Vault Restored. Restarting safely...", Toast.LENGTH_LONG).show()
-                            delay(1000)
-                            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-                            val componentName = intent?.component
-                            val restartIntent = Intent.makeRestartActivityTask(componentName)
-                            context.startActivity(restartIntent)
-                            Runtime.getRuntime().exit(0)
-                        } else {
-                            Toast.makeText(context, "Error: Invalid or Tampered File", Toast.LENGTH_LONG).show() 
-                        }
-                    }
-                } catch (e: Exception) { withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to read file", Toast.LENGTH_SHORT).show() } }
-            }
+            scope.launch { restoreVaultAndRestart(context, repository, uri) }
         }
-    }
-
-    val openWebLink = { url: String ->
-        try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (e: Exception) {}
     }
 
     if (showExportDatePicker) {
@@ -136,22 +144,26 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     try {
                         val engine = HeuristicEngine(repository, UsageStatsEngine(context))
                         
-                        val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
-                        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                        val start = cal.timeInMillis
-                        cal.add(Calendar.DAY_OF_YEAR, 1)
-                        val end = cal.timeInMillis - 1
+                        val start = startOfLocalDay(selectedDateMillis)
+                        val end = nextLocalMidnight(selectedDateMillis) - 1
                         
                         val hiddenPkgs = storage.getHiddenPackagesFlow().first()
-                        val ackGhosts = repository.getAcknowledgedGhostsBetween(start - 86400000L, end + 86400000L)
                         
-                        val (rawScreenTime, _, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, currentSettings!!.ghostTimeTriggerMins, hiddenPkgs, ackGhosts)
+                        val (_, screenTime, topAppsList) = engine.getAppUsage(start, end, TimeRangeLabel.DAY, hiddenPkgs)
                         val offlineItems = engine.getOfflineActivities(start, end, TimeRangeLabel.DAY)
                         
-                        val totalOfflineMillis = offlineItems.sumOf { it.durationInMillis }
-                        val totalCombinedRaw = rawScreenTime + totalOfflineMillis
+                        // Must be sharded against app foreground time, exactly as the
+                        // dashboard does. Summing raw offline durations double-counted
+                        // any overlap, and the clamp below then silently absorbed the
+                        // error into a wrong "Total Tracked" instead of surfacing it.
+                        // This is exported text the user reads and shares, so an
+                        // inconsistent pair of numbers matters more here than anywhere.
+                        val totalOfflineMillis = engine
+                            .getShardedOfflineIntervals(start, end)
+                            .sumOf { it.second - it.first }
+                        val totalCombinedRaw = screenTime + totalOfflineMillis
                         val clampedCombined = minOf(totalCombinedRaw, end - start)
-                        val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - rawScreenTime else totalOfflineMillis
+                        val clampedOffline = if (totalCombinedRaw > end - start) (end - start) - screenTime else totalOfflineMillis
             
                         val dateStr = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(start))
                         
@@ -162,13 +174,13 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                         if (offlineItems.isEmpty()) sb.appendLine("None logged.")
                         else offlineItems.forEach { sb.appendLine("- ${it.title}: ${it.timeFormatted}") }
                         
-                        sb.appendLine("\n[App Usage]")
+                        sb.appendLine("\n[Apps Usage]")
                         if (topAppsList.isEmpty()) sb.appendLine("None logged.")
                         else topAppsList.take(15).forEach { sb.appendLine("- ${it.title}: ${it.timeFormatted}") }
                         
                         sb.appendLine("\n[Totals]")
-                        sb.appendLine("Screen Time: ${TimeUtils.formatDuration(rawScreenTime)}")
-                        sb.appendLine("Offline Time: ${TimeUtils.formatDuration(clampedOffline)}")
+                        sb.appendLine("Screen Time: ${TimeUtils.formatDuration(screenTime)}")
+                        sb.appendLine("Offline Activity: ${TimeUtils.formatDuration(clampedOffline)}")
                         sb.appendLine("Total Tracked: ${TimeUtils.formatDuration(clampedCombined)}")
                         
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -188,23 +200,41 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
 
     if (customDialogSetting != null) {
         var input by remember { mutableStateOf("") }
+        // Previously this was `input.toIntOrNull() ?: 0`, so clearing the field
+        // and tapping Save silently wrote 0 into the setting. For the archive
+        // interval that is not merely a no-op, it is a badly broken value; for
+        // the others it disabled the feature without the user ever being told.
+        val parsedValue = input.toIntOrNull()
+        // The detail minimum is capped at one day (1440 min): no
+        // HAT range is longer than a day, so a bigger minimum would guarantee
+        // an empty app (no gaps worth showing, or no question cards at all).
+        // The limit is stated in the error message, never silently clamped.
+        val maxAllowed = when (customDialogSetting) { "archive" -> 9999; "merge" -> 60; else -> DetailLevel.CUSTOM_MAX_MINUTES }
+        val valueError = when {
+            input.isBlank() -> "Enter a value"
+            parsedValue == null -> "Digits only"
+            parsedValue <= 0 -> "Must be at least 1"
+            parsedValue > maxAllowed -> "Must be $maxAllowed or less"
+            else -> null
+        }
         HatOutlinedDialog(onDismissRequest = { customDialogSetting = null }, title = "Custom Value") {
             OutlinedTextField(
-                value = input, onValueChange = { if (it.all { char -> char.isDigit() }) input = it }, 
-                label = { Text(if (customDialogSetting == "gap" || customDialogSetting == "cluster" || customDialogSetting == "ghost") "Minutes" else "Hours") }, 
+                value = input, onValueChange = { if (it.all { char -> char.isDigit() }) input = it },
+                label = { Text(if (customDialogSetting == "archive") "Hours" else "Minutes") },
+                isError = valueError != null,
+                supportingText = { if (valueError != null) Text(valueError, color = MaterialTheme.colorScheme.error) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
             )
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { customDialogSetting = null }) { Text("Cancel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(modifier = Modifier.width(16.dp))
-                TextButton(onClick = { 
-                    val value = input.toIntOrNull() ?: 0
+                TextButton(enabled = valueError == null, onClick = {
+                    val value = parsedValue ?: return@TextButton
                     when (customDialogSetting) {
-                        "gap" -> updateSettings(currentSettings!!.copy(minGapThresholdMins = value))
-                        "cluster" -> updateSettings(currentSettings!!.copy(sessionClusteringMins = value))
                         "archive" -> updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = value))
-                        "ghost" -> updateSettings(currentSettings!!.copy(ghostTimeTriggerMins = value))
+                        "detail" -> updateSettings(currentSettings!!.copy(detailLevel = DetailLevel.CUSTOM, customDetailMinutes = value))
+                        "merge" -> updateSettings(currentSettings!!.copy(sessionMergeMinutes = value))
                     }
                     customDialogSetting = null
                 }) { Text("Save", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary) }
@@ -212,16 +242,44 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
         }
     }
 
+    if (showSupportPrompt) {
+        SupportPromptDialog(onDismissed = { showSupportPrompt = false })
+    }
+
     Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets(0,0,0,0)) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()).windowInsetsPadding(WindowInsets.statusBars).verticalScroll(scrollState)) {
             Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                Column(modifier = Modifier.tutorialTarget("settingsScreen", tourRegistry)) {
                 HatDynamicHeader(title = "Settings", subtitle = "App Configuration")
+                }
 
                 // GROUP 1: THEME ENGINE
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("THEME ENGINE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    ThemeOptionItem("Dynamic Material", "Extracts colors from system wallpaper.", currentSettings!!.themeType == ThemeType.DYNAMIC) { updateSettings(currentSettings!!.copy(themeType = ThemeType.DYNAMIC)) }
-                    ThemeOptionItem("Default Material", "Uses the classic HAT Orange.", currentSettings!!.themeType == ThemeType.STATIC) { updateSettings(currentSettings!!.copy(themeType = ThemeType.STATIC)) }
+                    SettingsGroupParentCard {
+                        ThemePreviewBox(MaterialTheme.colorScheme.primary)
+                        ThemeOptionItem("Dynamic Material", "Extracts colors from system wallpaper.", currentSettings!!.themeType == ThemeType.DYNAMIC) { updateSettings(currentSettings!!.copy(themeType = ThemeType.DYNAMIC)) }
+                        ThemeOptionItem("Custom Material", "Pick any accent color you like.", currentSettings!!.themeType == ThemeType.STATIC) {
+                            val alreadySeen = currentSettings!!.hasSeenSupportPrompt
+                            val shouldPrompt = shouldShowSupportPrompt(alreadySeen, reachedThemeControl = true)
+                            if (shouldPrompt) showSupportPrompt = true
+                            // The "seen" flag is persisted in the SAME write as the theme change.
+                            // Writing it from the dialog's dismiss handler instead would race the
+                            // theme write and can silently revert the user's choice.
+                            updateSettings(currentSettings!!.copy(themeType = ThemeType.STATIC, hasSeenSupportPrompt = alreadySeen || shouldPrompt))
+                        }
+
+                        AnimatedVisibility(
+                            visible = currentSettings!!.themeType == ThemeType.STATIC,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            HexColorInput(Color(currentSettings!!.staticColor)) { newColor ->
+                                updateSettings(currentSettings!!.copy(staticColor = argbToStoredLong(newColor.toArgb())))
+                            }
+                        }
+                    }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
@@ -230,28 +288,57 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                     Text("DATA CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
                     SettingsItem("Daily Summary", "Copy a text summary of your timeline to the clipboard.") { showExportDatePicker = true }
                     SettingsItem("Hidden Apps", "Show or hide apps from your timeline.") { navController.navigate("hidden_apps") }
-                    SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date()); exportLauncher.launch("HAT_Vault_$date.zip") }
+                    SettingsItem("Battery Optimization", "Keep the archive running by exempting HAT from battery optimization. Tap this if the onboarding battery exemption button does not work.") {
+                        try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (e: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                    }
+                    SettingsItem("Backup Master Vault", "Export full timeline, app history, and settings.") { val date = TimeUtils.stamp(); exportLauncher.launch("HAT_Vault_$date.zip") }
                     SettingsItem("Restore Master Vault", "Import a previously saved master vault.") { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
+                    HatSlidingSelector<Int>("Automatic Backup", "Re-writes an encrypted backup of everything to the folder below on a schedule. Same file, always overwritten.", listOf("Off" to 0, "12h" to 12, "24h" to 24), currentSettings!!.autoBackupIntervalHours, "", { hours ->
+                        updateSettings(currentSettings!!.copy(autoBackupIntervalHours = hours))
+                        if (hours > 0 && currentSettings!!.autoBackupUri.isBlank()) {
+                            Toast.makeText(context, "Pick a backup folder next.", Toast.LENGTH_LONG).show()
+                            backupFolderLauncher.launch(null)
+                        }
+                        andromedvn.heuristic.activity.tracker.worker.WorkerScheduler.updateWorkers(context, currentSettings!!.archiveSyncIntervalHours, hours)
+                    }, null)
+                    SettingsItem(
+                        if (currentSettings!!.autoBackupUri.isBlank()) "Backup Folder" else "Backup Folder: set",
+                        if (currentSettings!!.autoBackupUri.isBlank()) "Choose where the automatic backup file lives. It can be a cloud-synced folder."
+                        else "HAT_AutoBackup.zip is overwritten in this folder on schedule. Tap to change it."
+                    ) { backupFolderLauncher.launch(null) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
                 // GROUP 3: HEURISTIC ENGINE
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("HEURISTIC ENGINE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Duration" to SortType.DURATION, "Recent" to SortType.RECENT, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
-                    HatSlidingSelector<Int>("Idle App Detection", "Flag an app as a 'Suspicious Idle Session' if it stays on screen without interaction.", listOf("Off" to 0, "30m" to 30, "1h" to 60, "Custom" to -1), currentSettings!!.ghostTimeTriggerMins, "m", { updateSettings(currentSettings!!.copy(ghostTimeTriggerMins = it)) }, { customDialogSetting = "ghost" })
-                    HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to archive your usage history before Android deletes it.", listOf("Off" to 0, "2h" to 2, "6h" to 6, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
-                    HatSlidingSelector<Int>("Actionable Gap Minimum", "Hides tiny gaps from your labeling list so you aren't asked to categorize quick bathroom breaks.\nThe time itself is never deleted from your timeline.", listOf("Off" to 0, "5m" to 5, "15m" to 15, "Custom" to -1), currentSettings!!.minGapThresholdMins, "m", { updateSettings(currentSettings!!.copy(minGapThresholdMins = it)) }, { customDialogSetting = "gap" })
-                    HatSlidingSelector<Int>("Session Merge Tolerance", "If you switch apps and come back within this window,\nHAT treats it as one continuous session.", listOf("Off" to 0, "1m" to 1, "5m" to 5, "Custom" to -1), currentSettings!!.sessionClusteringMins, "m", { updateSettings(currentSettings!!.copy(sessionClusteringMins = it)) }, { customDialogSetting = "cluster" })
+                    // Selector convention (the owner's, 2026-10-23): the default
+                    // is always the leftmost option, on every dial. Recent is
+                    // the stored sort default, 12h is the sync default, 1 min
+                    // is the fresh gap default, 15 min is the fresh idle
+                    // default.
+                    HatSlidingSelector<SortType>("Global Timeline Sort", "Determines the order of apps and activities\non the main dashboard cards.", listOf("Recent" to SortType.RECENT, "Duration" to SortType.DURATION, "Chrono" to SortType.CHRONOLOGICAL), localSortType, "", { localSortType = it; updateSettings(currentSettings!!.copy(sortType = it)) }, null)
+                    HatSlidingSelector<Int>("Gap Minimum", "Gaps shorter than this don't appear to declutter the timeline. A gap is time where you weren't on your phone.", listOf("1 min" to DetailLevel.ONE_MIN, "5 min" to DetailLevel.FIVE_MIN, "15 min" to DetailLevel.FIFTEEN_MIN, "Custom" to -1), if (currentSettings!!.detailLevel == DetailLevel.CUSTOM) currentSettings!!.customDetailMinutes else currentSettings!!.detailLevel, " min", { updateSettings(currentSettings!!.copy(detailLevel = it)) }, { customDialogSetting = "detail" })
+                    HatSlidingSelector<Int>("Session Merge", "Visits to the same app separated by less than this become one session on the details screen.", DetailLevel.SESSION_MERGE_PRESETS + ("Custom" to -1), currentSettings!!.sessionMergeMinutes, " min", { updateSettings(currentSettings!!.copy(sessionMergeMinutes = it)) }, { customDialogSetting = "merge" })
+                    HatSlidingSelector<Int>("Background History Sync", "Wakes up periodically to copy your usage history before Android deletes it. There is no Off: Android deletes old records, the archive keeps them.", listOf("12h" to 12, "6h" to 6, "2h" to 2, "Custom" to -1), currentSettings!!.archiveSyncIntervalHours, "h", { updateSettings(currentSettings!!.copy(archiveSyncIntervalHours = it)) }, { customDialogSetting = "archive" })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
-                // GROUP 4: ABOUT & LEGAL
+                // GROUP 4: SUPPORT (donations handled entirely on an external page)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("SUPPORT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
+                    SettingsItem("Support Development", "HAT is free and has no ads or subscriptions. Support keeps one developer building full-time.") { context.openExternalWebLink(SPONSOR_URL) }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+
+                // GROUP 5: ABOUT & LEGAL
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ABOUT & LEGAL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                    SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { openWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }
-                    SettingsItem("Terms of Service", "Conditions of use and liability limitations.") { openWebLink("https://andromedvn.github.io/HAT/TERMS.html") }
+                    SettingsItem("Privacy Policy", "How HAT processes your usage data locally.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/PRIVACY.html") }
+                    SettingsItem("Terms of Service", "Conditions of use and liability limitations.") { context.openExternalWebLink("https://andromedvn.github.io/HAT/TERMS.html") }
                     SettingsItem("Open Source Licenses", "Third-party software attributions.") { navController.navigate("licenses") }
+                    SettingsItem("How HAT Works", "Shows the onboarding screens again.") { navController.navigate("permissions?review=true") }
+                    SettingsItem("Tutorial", "Replay the tour guide.") { navController.navigate("dashboard?startTour=true") }
                     
                     Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
                         Text("HAT Engine v$appVersion", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
@@ -260,6 +347,8 @@ fun SettingsScreen(navController: NavController, repository: ActivityRepository)
                 
                 Spacer(modifier = Modifier.height(32.dp))
             }
+        }
+        
         }
     }
 }
