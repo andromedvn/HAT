@@ -184,16 +184,6 @@ From the recovery screen you can export crash logs and diagnostic events, erase 
 
 ---
 
-## Screenshots
-
-> Screenshots available in [`fastlane/metadata/android/en-US/images/phoneScreenshots/`](fastlane/metadata/android/en-US/images/phoneScreenshots/)
-
-| | | | | |
-|:---:|:---:|:---:|:---:|:---:|
-| <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" width="260"/> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.jpg" width="260"/> |
-
----
-
 ## Architecture
 
 HAT uses MVVM with Jetpack Compose. A few of the design decisions are non-obvious enough to be worth documenting here.
