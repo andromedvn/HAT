@@ -1,0 +1,6 @@
+The label dialog becomes a receipt: provable facts only, no sentences.
+
+- Theme customizer: wallpaper palette or any accent color
+- Session Merge: a new setting (1, 2, 5 minutes, or custom)
+- Rolling Vault auto-backup on a schedule
+- Idle detection removed: unaccounted time is a Gap, always

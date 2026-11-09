@@ -1,32 +1,28 @@
 Categories:
-  - Time
-License: AGPL-3.0
+  - Time Tracker
+License: AGPL-3.0-or-later
 AuthorName: dvn
-AuthorEmail: noreply@github.com
 WebSite: https://github.com/andromedvn/HAT
 SourceCode: https://github.com/andromedvn/HAT
 IssueTracker: https://github.com/andromedvn/HAT/issues
 Changelog: https://github.com/andromedvn/HAT/releases
-Bitcoin: none
-Summary: Screen time tracker that helps you track and label gaps when you are not using your phone
-Description: |-
-    Heuristic Activity Tracker (HAT) is more than just a screen time tracker, it helps you track and label gaps when you are not using your phone.
 
-    * Every app session for any day, week, or month, clustered with the real total
-    * The time you were not on your phone becomes a Gap, and you name it
-    * The app never guesses: unaccounted time is a Gap, always
-    * History archiving keeps your past before Android deletes it
-    * No account, no INTERNET permission, no cloud. Everything stays on your device
+AutoName: HAT
 
 RepoType: git
 Repo: https://github.com/andromedvn/HAT.git
-Binaries: https://github.com/andromedvn/HAT/releases/download/v%v/HAT-%v.apk
-AllowedAPKSigningKeys: F6552DDB2ECD0247C86AEC00A40F1C97416D5DF87CCF10FA0052009761964244
 
 Builds:
   - versionName: 1.2.0
     versionCode: 5
-    commit: dffbb9d9f38f93bf048995394d1f3514f82dce85
+    commit: 2938e3ae37cabb57ecbd62b00c7d442ea06d5dca
     subdir: app
     gradle:
       - yes
+    gradleprops:
+      - allowDebugSignedRelease=true
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 1.2.0
+CurrentVersionCode: 5
