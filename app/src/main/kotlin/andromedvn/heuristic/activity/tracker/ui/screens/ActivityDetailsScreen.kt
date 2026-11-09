@@ -259,7 +259,7 @@ fun ActivityDetailsScreen(navController: NavController, type: String, id: String
                                 // lights when ANY hour it covers is the pressed bar
                                 // (same walk the gap cards use).
                                 val isHighlighted = if (chartHighlight?.point == null) false else {
-                                    val tag = chartHighlight.point!!.syncTag
+                                    val tag = chartHighlight.point.syncTag
                                     var t = session.startTime
                                     var hit = false
                                     while (t < session.endTime && !hit) {

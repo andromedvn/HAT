@@ -65,6 +65,27 @@ class LabelCrossingMidnightTest {
         // No DST, so a day is 86_399_999 ms. DST behaviour is DstClockChangeTest's
         // job; mixing the two would make these numbers ambiguous.
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Manila"))
+        buildFixtures()
+    }
+
+    // Every fixture MUST be built here, never as a field initializer: field
+    // init runs BEFORE the pin, so the fixtures would carry the JVM's ambient
+    // zone while in-method at() calls carry the pinned zone. On a UTC+8 dev
+    // box the two happen to agree and the bug hides; CI (UTC) caught it.
+    private lateinit var day10: Calendar
+    private lateinit var day11: Calendar
+    private lateinit var day12: Calendar
+    private var labelStart = 0L
+    private var labelEnd = 0L
+    private var labelDuration = 0L
+
+    private fun buildFixtures() {
+        day10 = at(2024, Calendar.MARCH, 10, 12, 0)
+        day11 = at(2024, Calendar.MARCH, 11, 12, 0)
+        day12 = at(2024, Calendar.MARCH, 12, 12, 0)
+        labelStart = at(2024, Calendar.MARCH, 10, 23, 30).timeInMillis
+        labelEnd = at(2024, Calendar.MARCH, 11, 0, 30).timeInMillis
+        labelDuration = labelEnd - labelStart
     }
 
     @After
@@ -136,16 +157,7 @@ class LabelCrossingMidnightTest {
     private fun isVisibleToQuery(rowTimestamp: Long, start: Long, end: Long): Boolean =
         rowTimestamp >= start && rowTimestamp <= end
 
-    // --- the label under test ----------------------------------------------
-
-    private val day10 = at(2024, Calendar.MARCH, 10, 12, 0)
-    private val day11 = at(2024, Calendar.MARCH, 11, 12, 0)
-    private val day12 = at(2024, Calendar.MARCH, 12, 12, 0)
-
-    /** 23:30 on the 10th through 00:30 on the 11th: a one-hour label. */
-    private val labelStart = at(2024, Calendar.MARCH, 10, 23, 30).timeInMillis
-    private val labelEnd = at(2024, Calendar.MARCH, 11, 0, 30).timeInMillis
-    private val labelDuration = labelEnd - labelStart
+    // --- the label under test (fixtures built in pinZone, see above) -------
 
     // --- the read side, in the production function -------------------------
 

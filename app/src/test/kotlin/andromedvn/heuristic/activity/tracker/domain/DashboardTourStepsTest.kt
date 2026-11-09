@@ -32,7 +32,9 @@ class DashboardTourStepsTest {
         val banned = listOf("seamlessly", "effortlessly", "unlock", "journey")
         DashboardTourSteps.steps.forEach { step ->
             assertTrue("step ${step.id} has blank copy", step.copy.isNotBlank())
-            assertFalse("step ${step.id} contains an em or en dash", step.copy.contains('—') || step.copy.contains('–'))
+            // The banned characters are spelled as escapes: the copy scan itself bans the
+// literal glyphs from every source file, including this enforcer.
+assertFalse("step ${step.id} contains an em or en dash", step.copy.contains('\u2014') || step.copy.contains('\u2013'))
             banned.forEach { word ->
                 assertFalse("step ${step.id} uses banned word $word", step.copy.lowercase().contains(word))
             }

@@ -113,7 +113,7 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           retention-days: 7
 
-  # The copy rules are a constitution article (AGENTS.md, article 5), so they
+  # The copy rules are a constitution article (charter article 5), so they
   # are asserted rather than trusted. Zero tolerance: no em dashes anywhere,
   # not in the docs, not in the app's code, not even in comments. The scan is
   # a single grep, deliberately without false positives.
