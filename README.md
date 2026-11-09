@@ -25,6 +25,12 @@
 
 [Privacy Policy](https://andromedvn.github.io/HAT/PRIVACY.html) · [Terms of Service](https://andromedvn.github.io/HAT/TERMS.html) · [Report a Bug](../../issues) · [Request a Feature](../../issues) · [Releases](../../releases)
 
+<br/>
+
+<a href="https://ko-fi.com/andromedvn">
+  <img src="https://ko-fi.com/img/githubbutton_sm.svg" width="280" alt="Support HAT on Ko-fi"/>
+</a>
+
 </div>
 
 ---
@@ -545,7 +551,9 @@ No, and that is a decision rather than a pending step. HAT is distributed throug
 
 **Who built this?**
 
-[andromedvn](https://github.com/andromedvn). One person, no company, no budget, currently going full-time on this. (The first prototypes were built on-device with [ACS (Android Code Studio)](https://github.com/AndroidCSOfficial/android-code-studio); HAT is now built on desktop.) HAT will always be free with no ads and no locked features. If it's been useful to you, your support is what keeps the updates coming: **[ko-fi.com/andromedvn](https://ko-fi.com/andromedvn)**, and if it hasn't, that's fine too.
+[andromedvn](https://github.com/andromedvn). One person, no company, no budget, currently going full-time on this. (The first prototypes were built on-device with [ACS (Android Code Studio)](https://github.com/AndroidCSOfficial/android-code-studio); HAT is now built on desktop.)
+
+HAT will always be free with no ads and no locked features. If it's been useful to you, your support is what keeps the updates and more projects coming: **[ko-fi.com/andromedvn](https://ko-fi.com/andromedvn)**, or alternatively tell a friend.
 
 ---
 
