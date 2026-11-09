@@ -23,7 +23,7 @@
 
 <br/>
 
-[Privacy Policy](https://andromedvn.github.io/HAT/PRIVACY.html) · [Terms of Service](https://andromedvn.github.io/HAT/TERMS.html) · [Report a Bug](../../issues) · [Request a Feature](../../issues)
+[Privacy Policy](https://andromedvn.github.io/HAT/PRIVACY.html) · [Terms of Service](https://andromedvn.github.io/HAT/TERMS.html) · [Report a Bug](../../issues) · [Request a Feature](../../issues) · [Releases](../../releases)
 
 </div>
 
@@ -31,7 +31,15 @@
 
 ## What is HAT?
 
-**Heuristic Activity Tracker (HAT)** is more than just a screen time tracker, it helps you track and label gaps when you are not using your phone.
+**HAT** is more than just a screen time tracker, it helps you track and label gaps when you are not using your phone.
+
+<p align="center">
+  <img src="docs/screenshots/1.jpg" width="19%" alt="Dashboard: the day at a glance" />
+  <img src="docs/screenshots/2.jpg" width="19%" alt="Label gaps" />
+  <img src="docs/screenshots/3.jpg" width="19%" alt="Label Activity dialog" />
+  <img src="docs/screenshots/4.jpg" width="19%" alt="App sessions" />
+  <img src="docs/screenshots/5.jpg" width="19%" alt="Settings" />
+</p>
 
 It does this by watching your app usage, something Android already tracks in the background, and inverting it. Every minute you weren't on your phone becomes an unlabeled block of time called a **gap**. You can leave those gaps empty, or fill them in: `Sleeping`, `Working`, `Reading`, `At the gym`. Over time, you end up with a complete picture of how you spend both your screen time and your offline time.
 
@@ -108,18 +116,18 @@ The archive worker runs by default, every 12 hours, and a catch-up sync runs whe
 
 **Daily Text Summary**. Copies a plain-text summary of a single day's app usage, labelled offline activities, and totals to your clipboard. The section headers are written as `[Offline Activities]`, `[App Usage]`, and `[Totals]`, bracketed labels, not Markdown headings, so they paste cleanly into a note or an LLM prompt without rendering as literal `##` syntax. (An earlier version of this README described it as a "Markdown Summary" and recommended Obsidian/Notion; the output has never been Markdown.)
 
-**Master Vault (Backup & Restore)**. Your entire local database, app usage history, offline logs, hidden apps, dismissed sessions, dismissed screen-off spans, can be exported as a single integrity-signed `.zip` file called the Master Vault. There is no encryption: the zip entries are plain files. What the export gives you is tamper detection, an HMAC-SHA256 signature over the contents, so a file that was modified or corrupted after export is rejected on import instead of being silently loaded.
+**Master Vault (Backup & Restore)**. Your entire local database, app usage history, offline logs, hidden apps, dismissed sessions, dismissed screen-off gaps, can be exported as a single integrity-signed `.zip` file called the Master Vault. There is no encryption: the zip entries are plain files. What the export gives you is tamper detection, an HMAC-SHA256 signature over the contents, so a file that was modified or corrupted after export is rejected on import instead of being silently loaded.
 
 ### Screen-Off Activity
 
-Sometimes an app keeps running for hours while the screen is off: a playlist in your pocket, a lock-screen utility, background music mode. No one is using the phone, so counting those hours as screen time would make every total wrong. HAT splits them out into their own category, Screen-Off Activity.
+Sometimes an app keeps running for hours while the screen is off: music or a podcast left playing, a navigation app guiding a drive, a workout tracker on a run. No one is using the phone, so counting those hours as screen time would make every total wrong. HAT puts them into their own category, which is screen off activity.
 
-Each span gets its own card with the app, the exact hours, and two exits:
+Each gap gets its own card with the app, the exact hours, and two exits:
 
-- **Name it**. The span becomes an offline label, like any other
-- **Count it as usage**. The span is merged back into that app's totals
+- **Name it**. The gap becomes an offline label, like any other
+- **Count it as usage**. The gap is merged back into that app's totals
 
-Nothing is auto-decided. A span only lands here when the events show the app resumed while the screen was off, and spans shorter than 15 minutes never surface at all. Dismissed spans can be restored later from the Gaps screen.
+Nothing is auto-decided. A gap only lands here when the events show the app resumed while the screen was off, and gaps shorter than 15 minutes never surface at all. Dismissed screen-off gaps can be restored later from the Gaps screen.
 
 ### History Archiving
 
@@ -144,14 +152,14 @@ On devices below Android 12, the dynamic mode falls back to a monochromatic pale
 
 ### Settings
 
-Four dials. Everything else was removed because one honest number beat overlapping ones.
+Four settings. Everything else was removed because one honest number beat overlapping ones.
 
 | Setting | What it does |
 |---|---|
 | **Global Timeline Sort** | Order items by recent activity, total duration, or chronological first-use |
-| **Gap Minimum** | Gaps shorter than this don't appear to declutter the timeline. A gap is time where you weren't on your phone. Presets: 1 min (the fresh-install default), 5 min, 15 min, or any custom value from 1 to 1440 minutes |
-| **Session Merge** | Visits to the same app separated by less than this become one session on the details screen. Presets: 1 min (the default), 2 min, 5 min, or any custom value from 1 to 60 minutes |
-| **Background History Sync** | How often the archive worker runs: 12 hours (the default), 6 hours, 2 hours, or custom. There is no Off: the worker is what keeps your history alive before Android deletes it |
+| **Gap Minimum** | Gaps shorter than what is set to this setting don't appear to declutter the timeline. A gap is time where you weren't on your phone. Presets: 1 min (the fresh-install default), 5 min, 15 min, or any custom value from 1 to 1440 minutes |
+| **Session Merge** | Visits to the same app separated by less than what is set to this setting become one session on the details screen. Presets: 1 min (the default), 2 min, 5 min, or any custom value from 1 to 60 minutes |
+| **Background History Sync** | How often the archive worker runs: 12 hours (the default), 6 hours, 2 hours, or custom. There is no Off: the worker is what keeps your history alive before Android deletes it. When the battery is low, the sync waits until the battery recovers. The battery exemption does not override this; it is what keeps the job alive when the OS would pause it |
 
 Session merging has its own dial (see the table): visits to the same app within the tolerance become one session on the details screen. Gaps and charts are unaffected - merging shapes the session list only.
 
