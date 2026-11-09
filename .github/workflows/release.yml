@@ -45,6 +45,11 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           APK=$(ls app/build/outputs/apk/release/app-release.apk)
+          # The F-Droid Binaries URL expects HAT-<version>.apk, so the asset
+          # name is part of the publication contract.
+          NAMED="HAT-${TAG#v}.apk"
+          cp "$APK" "$NAMED"
+          APK="$NAMED"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
           else
