@@ -10,7 +10,9 @@
 
 <br/>
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-orange.svg?style=flat-square)](https://www.gnu.org/licenses/agpl-3.0) [![Material You](https://img.shields.io/badge/Theme-Material_You-orange.svg?style=flat-square)](#dynamic-theme-engine) [![Android](https://img.shields.io/badge/Platform-Android_8.0%2B-orange.svg?style=flat-square&logo=android&logoColor=white)](https://developer.android.com) [![Kotlin](https://img.shields.io/badge/Language-Kotlin-orange.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org) [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack_Compose-orange.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-orange.svg?style=flat-square)](https://www.gnu.org/licenses/agpl-3.0) [![Material You](https://img.shields.io/badge/Theme-Material_You-orange.svg?style=flat-square)](#dynamic-theme-engine) [![Android](https://img.shields.io/badge/Platform-Android_8.0%2B-orange.svg?style=flat-square&logo=android&logoColor=white)](https://developer.android.com) [![Kotlin](https://img.shields.io/badge/Language-Kotlin-orange.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org) 
+
+[![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack_Compose-orange.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 
 [![No Internet](https://img.shields.io/badge/Internet_Permission-NONE-brightgreen.svg?style=flat-square)](https://andromedvn.github.io/HAT/PRIVACY.html) [![No Tracking](https://img.shields.io/badge/Tracking-ZERO-brightgreen.svg?style=flat-square)](#privacy--security) [![No Cloud](https://img.shields.io/badge/Cloud-NONE-brightgreen.svg?style=flat-square)](#privacy--security) [![Releases](https://img.shields.io/badge/Releases-GitHub-brightgreen.svg?style=flat-square)](https://github.com/andromedvn/HAT/releases)
 
